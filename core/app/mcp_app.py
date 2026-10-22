@@ -41,6 +41,40 @@ def recent_weights(days: int = 14) -> dict[str, Any]:
 
 
 @mcp.tool()
+def record_bp(systolic: float, diastolic: float, period: Optional[str] = None, at: Optional[str] = None, text: Optional[str] = None,
+              idempotency_key: Optional[str] = None) -> dict[str, Any]:
+    """Log a blood pressure reading in mmHg (systolic over diastolic). period = morning or evening if the user said so.
+    at = ISO local date/time of the reading (omit for now). text = the user's original words. idempotency_key as for record_weight."""
+    return service.record_bp(systolic, diastolic, period, at, text, idempotency_key)
+
+
+@mcp.tool()
+def recent_blood_pressure(days: int = 14) -> dict[str, Any]:
+    """List the blood pressure readings logged in the last N days (newest first)."""
+    return service.recent_bp(days)
+
+
+@mcp.tool()
+def record_wakeup(at: Optional[str] = None, text: Optional[str] = None, idempotency_key: Optional[str] = None) -> dict[str, Any]:
+    """Log getting up. at = ISO local date/time of waking (omit for now). text = the user's original words. idempotency_key as for record_weight."""
+    return service.record_wakeup(at, text, idempotency_key)
+
+
+@mcp.tool()
+def recent_wakeups(days: int = 14) -> dict[str, Any]:
+    """List the wake-ups logged in the last N days (newest first)."""
+    return service.recent_wakeups(days)
+
+
+@mcp.tool()
+def amend(receipt_id: str, kg: Optional[float] = None, systolic: Optional[float] = None, diastolic: Optional[float] = None,
+          period: Optional[str] = None, at: Optional[str] = None) -> dict[str, Any]:
+    """Correct an entry already saved, by its receipt id (m123 for weight or blood pressure, e45 for a wake-up). Give only what changes:
+    kg (weight); systolic, diastolic, period (blood pressure); at (any entry, ISO local time). Prefer this over undo plus a new entry."""
+    return service.amend(receipt_id, kg, systolic, diastolic, period, at)
+
+
+@mcp.tool()
 def resolve(pending_id: str, confirm: bool) -> dict[str, Any]:
     """Answer a needs_confirmation question: confirm true saves the entry, false cancels it."""
     return service.resolve(pending_id, confirm)
@@ -48,7 +82,7 @@ def resolve(pending_id: str, confirm: bool) -> dict[str, Any]:
 
 @mcp.tool()
 def undo(receipt_id: str) -> dict[str, Any]:
-    """Remove an entry by its receipt id (for example m123)."""
+    """Remove an entry by its receipt id (for example m123 or e45)."""
     return service.undo(receipt_id)
 
 
