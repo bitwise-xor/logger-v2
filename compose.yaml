@@ -1,17 +1,48 @@
 services:
+  db:
+    image: postgres:17.11@sha256:2d2b8998d31037bf721cfdf764d76ba74171b4fab3431b7f72c27c56ddbdf9e3
+    container_name: logger-v2-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: pgadmin
+      POSTGRES_PASSWORD: ${PG_SUPERUSER_PASSWORD}
+      APP_OWNER_PASSWORD: ${APP_OWNER_PASSWORD}
+      CORE_RW_PASSWORD: ${CORE_RW_PASSWORD}
+    volumes:
+      - ./pgdata:/var/lib/postgresql/data
+      - ./db/initdb:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pgadmin -d appdata"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - internal
+
   core:
     build: ./core
     image: logger-v2-core:pilot
     container_name: logger-v2-core
     restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DB_HOST: db
+      APP_OWNER_PASSWORD: ${APP_OWNER_PASSWORD}
+      CORE_RW_PASSWORD: ${CORE_RW_PASSWORD}
+      MCP_PATH: ${MCP_PATH}
+      ALLOWED_HOSTS: log.19hospitalroad.fyi
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3).status == 200 else 1)"]
       interval: 30s
       timeout: 5s
       retries: 3
     networks:
+      - internal
       - proxy
 
 networks:
+  internal:
   proxy:
     external: true
