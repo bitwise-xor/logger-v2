@@ -7,10 +7,21 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from . import service
-from .config import EXTRA_ALLOWED_HOSTS, MCP_PATH
+from mcp.server.auth.settings import AuthSettings, ClientRegistrationOptions
+
+from . import auth
+from .config import EXTRA_ALLOWED_HOSTS, MCP_PATH, PUBLIC_URL
+
+provider = auth.OwnerProvider(PUBLIC_URL)
 
 mcp = MCPServer(
     "logger-v2",
+    auth_server_provider=provider,
+    auth=AuthSettings(
+        issuer_url=PUBLIC_URL, resource_server_url=PUBLIC_URL + MCP_PATH, validate_token_resource=False,
+        client_registration_options=ClientRegistrationOptions(enabled=True, valid_scopes=[auth.SCOPE], default_scopes=[auth.SCOPE]),
+        required_scopes=[auth.SCOPE],
+    ),
     instructions=("Personal logger (pilot). Send only real log messages to these tools. Never invent values; when a reply says "
                   "needs_confirmation, ask the user and then call resolve. Send ISO local times (Europe/Berlin) in `at`."),
 )
@@ -44,6 +55,9 @@ def undo(receipt_id: str) -> dict[str, Any]:
 @mcp.custom_route("/health", methods=["GET"])
 async def health(_: Request) -> JSONResponse:
     return JSONResponse({"status": "ok", "service": "logger-v2-core"})
+
+
+auth.add_login_routes(mcp, provider)
 
 
 def build_app():
