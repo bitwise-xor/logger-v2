@@ -95,10 +95,11 @@ def test_wrong_password_wrong_code_replay_and_lockout():
         req = start(c, cid, "v" * 50)
         assert c.post("/login", data={"req": req, "password": "nope", "code": code_now()}).status_code == 401
         assert c.post("/login", data={"req": req, "password": PW, "code": "000000"}).status_code == 401
-        ok = c.post("/login", data={"req": req, "password": PW, "code": code_now()})
+        good = code_now()   # one code for both logins, so a 30 s boundary cannot make the second one a fresh code
+        ok = c.post("/login", data={"req": req, "password": PW, "code": good})
         assert ok.status_code == 302
         req2 = start(c, cid, "w" * 50)
-        assert c.post("/login", data={"req": req2, "password": PW, "code": code_now()}).status_code == 401  # same code twice
+        assert c.post("/login", data={"req": req2, "password": PW, "code": good}).status_code == 401  # same code twice
         for _ in range(5):
             c.post("/login", data={"req": req2, "password": "bad", "code": "111111"})
         assert c.post("/login", data={"req": req2, "password": PW, "code": code_now(1)}).status_code == 429

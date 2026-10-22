@@ -20,3 +20,4 @@ PUBLIC_URL = os.environ.get("PUBLIC_URL", "https://log.19hospitalroad.fyi").rstr
 # Where the AI apps send the browser back after sign-in (claude.ai now, claude.com possibly later).
 ALLOWED_REDIRECTS = [u.strip() for u in os.environ.get(
     "ALLOWED_REDIRECTS", "https://claude.ai/api/mcp/auth_callback,https://claude.com/api/mcp/auth_callback").split(",") if u.strip()]
+TODAY_HOST = os.environ.get("TODAY_HOST", "today.19hospitalroad.fyi").lower()

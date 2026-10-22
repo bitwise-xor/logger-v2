@@ -9,7 +9,7 @@ from starlette.responses import JSONResponse
 from . import service
 from mcp.server.auth.settings import AuthSettings, ClientRegistrationOptions
 
-from . import auth
+from . import auth, today
 from .config import EXTRA_ALLOWED_HOSTS, MCP_PATH, PUBLIC_URL
 
 provider = auth.OwnerProvider(PUBLIC_URL)
@@ -92,6 +92,7 @@ async def health(_: Request) -> JSONResponse:
 
 
 auth.add_login_routes(mcp, provider)
+today.add_route(mcp)
 
 
 def build_app():
