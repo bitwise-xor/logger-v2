@@ -1,0 +1,20 @@
+# secrets and data (never in git)
+.env
+*.env
+secrets/
+*.pem
+*.key
+pgdata/
+backups/
+*.dump
+*.age
+
+# personal test data (real messages); lives on the VM only
+tests/golden/
+
+# python / editor
+__pycache__/
+*.pyc
+.venv/
+.idea/
+.vscode/
