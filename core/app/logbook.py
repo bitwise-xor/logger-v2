@@ -11,7 +11,7 @@ from typing import Any, Optional
 
 from psycopg.types.json import Jsonb
 
-from . import record
+from . import commands, record
 from .ai.provider import AnthropicProvider, Provider
 from .db import connect
 from .v1_food import _food_cat, _types
@@ -65,8 +65,15 @@ def _message(out: dict) -> str:
             "needs_choice": "Nothing saved yet: a question is open.", "kept": "Kept as text (to-dos come later).",
             "not_logged": "Not logged: this reads as a question or command for you, so answer the user yourself.",
             "needs_confirmation": "Nothing saved yet: please confirm.", "rejected": "Nothing saved.",
-            "cancelled": "Skipped.", "replayed": "Already saved earlier (same message)."}.get(o, o)
+            "cancelled": "Skipped.", "replayed": "Already saved earlier (same message).",
+            "answered": "Found.", "changed": "Changed."}.get(o, o)
+    if o == "not_logged" and out.get("intent") == "command":
+        head = "Nothing done: this reads as a request the logger cannot handle, so answer the user yourself."
     lines = [head] + out.get("receipt", []) + [f"note: {n}" for n in out.get("notes", [])]
+    if out.get("result"):
+        lines.append("Look-up result (answer the user from it, briefly; do not repeat it all):\n" + out["result"])
+    if out.get("command"):
+        lines.append(_message({**out["command"], "questions": []}))
     lines += [f"question {q['question_id']}: {q['question']}" for q in out.get("questions", [])]
     if out.get("read_back"):
         lines.append(out["read_back"])
@@ -133,8 +140,17 @@ def _process(cur, text: str, now: datetime) -> dict:
                     (pid, Jsonb({"text": text, "pred": r.pred, "now": now.isoformat()}), out["read_back"][:500],
                      now + timedelta(hours=record.QUESTION_HOURS)))
         out["questions"] = [{"pending_id": pid, "question": "Confirm this (yes), or correct it by logging again."}]
+    if out["outcome"] == "not_logged" and out.get("intent") == "command":  # a look-up or a change
+        out, used = commands.handle(cur, provider(), r.pred.get("command_text") or text, now, prev)
+        usages += used
+    elif r.pred.get("command_text") and out["outcome"] in ("saved", "partly_saved", "kept"):  # mixed: new entries + a change
+        sub, used = commands.handle(cur, provider(), r.pred["command_text"], now, prev)
+        usages += used
+        out["command"] = sub
+        out["questions"] = out.get("questions", []) + sub.get("questions", [])
     _audit(cur, "log", out["outcome"], {"raw_id": out.get("raw_id"), "private_id": out.get("private_id"),
                                         "questions": [q["pending_id"] for q in out.get("questions", [])], "escalated": escalated,
+                                        "steps": out.get("steps") or out.get("command", {}).get("steps"),
                                         "ai": [{"model": u.model, "in": u.input_tokens + u.cache_read_tokens + u.cache_write_tokens,
                                                 "out": u.output_tokens, "usd": round(u.usd, 6)} for u in usages]})
     return out
@@ -176,7 +192,7 @@ def answer(question_id: str, reply: str) -> dict[str, Any]:
     with connect() as conn, conn.cursor() as cur:
         cur.execute("SELECT * FROM pending WHERE id = %s FOR UPDATE", (question_id,))
         p = cur.fetchone()
-        if not p or p["tool"] not in ("log", "log_confirm", "log_repeat", "add_food_confirm"):
+        if not p or p["tool"] not in ("log", "log_confirm", "log_repeat", "add_food_confirm", "command", "command_confirm"):
             _audit(cur, "answer", "rejected", {"why": "unknown question"})
             return {"outcome": "rejected", "message": "There is no such open question."}
         yes = bool(YES.match(reply))
@@ -184,12 +200,24 @@ def answer(question_id: str, reply: str) -> dict[str, Any]:
             out = record.answer(cur, question_id, reply, now)
         elif p["resolved_at"] is not None or p["expires_at"] < now:
             out = {"outcome": "rejected", "reason": "that question was already answered or has expired"}
+        elif p["tool"] == "command":  # which entry was meant: read the request again with the answer
+            prev, _ = _context(cur, now)
+            out, _ = commands.handle(cur, provider(), f"{p['payload']['text']}\n(Asked: {p['reason']} Answer: {reply})", now, prev)
+            cur.execute("UPDATE pending SET resolved_at = now(), resolution = 'confirmed' WHERE id = %s", (question_id,))
+        elif p["tool"] == "command_confirm" and p["payload"].get("ask_past") and (yes or re.match(r"^\s*(no|nein)\b", reply, re.I)):
+            out = commands.apply(cur, p["payload"], now, past="yes" if yes else "no")
+            if out["outcome"] == "changed":
+                cur.execute("UPDATE pending SET resolved_at = now(), resolution = 'confirmed' WHERE id = %s", (question_id,))
         elif NO.match(reply):
             cur.execute("UPDATE pending SET resolved_at = now(), resolution = 'cancelled' WHERE id = %s", (question_id,))
             out = {"outcome": "cancelled"}
         elif not yes:  # unclear: keep the question open
             out = {"outcome": "needs_confirmation", "reason": "answer yes to save it, or no to drop it",
                    "questions": [{"pending_id": question_id, "question": "Yes or no?"}]}
+        elif p["tool"] == "command_confirm":
+            out = commands.apply(cur, p["payload"], now)
+            if out["outcome"] == "changed":
+                cur.execute("UPDATE pending SET resolved_at = now(), resolution = 'confirmed' WHERE id = %s", (question_id,))
         elif p["tool"] == "log_repeat":
             out = _process(cur, p["payload"]["text"], now)
             cur.execute("UPDATE pending SET resolved_at = now(), resolution = 'confirmed' WHERE id = %s", (question_id,))
@@ -209,5 +237,5 @@ def answer(question_id: str, reply: str) -> dict[str, Any]:
         if "question" in out and "questions" not in out:  # a follow-up question about the same item
             out["questions"] = [{"pending_id": question_id, "question": out.pop("question")}]
         resp = _public(out)
-        _audit(cur, "answer", out["outcome"], {"question_id": question_id, "raw_id": out.get("raw_id")})
+        _audit(cur, "answer", out["outcome"], {"question_id": question_id, "raw_id": out.get("raw_id"), "steps": out.get("steps")})
         return resp

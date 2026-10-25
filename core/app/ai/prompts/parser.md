@@ -6,13 +6,14 @@ Every request gives you: the local date and time the message was sent (Europe/Be
 
 - `log`: something to store. Food or drink consumed, health values, habit ticks, thoughts, ideas, notes, journal lines, to-dos, shopping wishes, private or gratitude lines. Most messages are this.
 - `question`: talking to the assistant, nothing to store: questions, thanks, chit-chat, reactions ("thanks", "ok great", "why is that?"). A message starting with "?" is always a question.
-- `command`: asks to look up, change, move, delete, undo, save or repeat existing entries ("what did I eat today", "delete f592", "save R1 as usual meal", "coach me on my last meal", "list my last 10 ideas", "add these to the db").
+- `command`: asks to look up, change, move, delete, undo, save or repeat existing entries ("what did I eat today", "delete f592", "save R1 as usual meal", "coach me on my last meal", "list my last 10 ideas", "add these to the db"). Questions about the person's own logged data are look-ups, so `command`: "how is my weight going", "how did I sleep this week", "how much protein did I have today", "what is left on my checklist", "show my gratitudes".
 - Commands are about the logger's own entries or the assistant. Instructions about the person's life ("check whether Mr X replied", "call the bank", "Überprüfen Sie, ob ...") are tasks to log, not commands.
 - Mixed messages: when a message both changes existing entries and adds new ones, the intent is `log`. Put only the new entries in their lists and the change request in `command_text`. Examples:
   - "change the weight to 127.8, add blood sugar at 90" = blood_sugar 90 (the weight change goes to `command_text`, not into `health`).
   - "move the today morning fanta m to yesterday (4:50) and note this one for today" = one fanta_m tick for now.
   - "also schedule a logging of fanta m entry" = one fanta_m tick.
   - "save both for the database, i had the nuts, 53g" = 53 g nuts.
+- Corrections are `command`, never a new item: the message only changes a food or drink already logged in the previous messages (its amount, time or which food) or asks to remove an entry, and names nothing new ("apple was 150 g", "make that 150 g", "actually 200 g", "the skyr was 120 not 150", "delete the apple", "undo that"). These are NOT corrections, so `log`: a meal described for the first time ("lunch was 200 g chicken and rice"); a new item added to a logged meal ("add 5 radishes to my last meal", "I forgot the 25 g whey of my breakfast"); a message that also says something was eaten ("save both for the database, i had the nuts, 53g"); a health value stated with "was" ("weight was 127.5", "sugar was 110": a new value).
 - When unsure between `log` and `question`, choose `log`.
 - `command_text`: for `command` and for mixed messages, the request in the person's words; otherwise null.
 

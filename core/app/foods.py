@@ -45,6 +45,20 @@ def pick(cur, cat: dict, term: str, cooked: bool = False, before: Optional[datet
     return f, how, cands
 
 
+def _singulars(term: str) -> list[str]:
+    """The singular of the last word, most likely first: radishes -> radish, cherries -> cherry, apples -> apple."""
+    head, _, last = term.strip().rpartition(" ")
+    last_l = last.lower()
+    forms = []
+    if last_l.endswith("ies") and len(last_l) > 4:
+        forms.append(last[:-3] + "y")
+    if last_l.endswith("es") and len(last_l) > 3:
+        forms.append(last[:-2])
+    if last_l.endswith("s") and not last_l.endswith("ss") and len(last_l) > 3:
+        forms.append(last[:-1])
+    return [f"{head} {f}".strip() for f in forms]
+
+
 UNIT_WORDS = {"piece", "pieces", "slice", "slices", "stuck", "stueck", "portion", "serving"}
 
 
@@ -55,6 +69,12 @@ def _pick(cur, cat: dict, term: str, cooked: bool, before: Optional[datetime]) -
     if d:
         return d, "default", [d]
     matches, how = _find_foods(cat, term)
+    if how not in EXACT and how != "close":  # "radishes": try the singular before guessing
+        for one in _singulars(term):
+            m2, h2 = _find_foods(cat, one)
+            if h2 in EXACT or h2 == "close":
+                matches, how = m2, h2
+                break
     act = [m for m in matches if m["active"]] or matches
     if how in EXACT:
         if len(act) == 1:

@@ -2,6 +2,7 @@
 returns fixed parser answers, so these tests need no API key and show that the provider can be swapped."""
 import copy
 import json
+import re
 
 import pytest
 from starlette.testclient import TestClient
@@ -41,7 +42,33 @@ ANSWERS = {
     "idea: a weekly food chart": P(thoughts=[T("A weekly food chart")]),
     "weight 90": P(health=[H("weight", 90)]),
     "weight 90 kg": P(health=[H("weight", 90)]),
+    "apple was 150 g": P(intent="command", command_text="apple was 150 g"),
+    "what did I eat today": P(intent="command", command_text="what did I eat today"),
+    "the skyr was 120 g": P(intent="command", command_text="the skyr was 120 g"),
+    "weight was 80 not 82.4": P(intent="command", command_text="weight was 80 not 82.4"),
+    "undo that": P(intent="command", command_text="undo that"),
+    "delete the skyr": P(intent="command", command_text="delete the skyr"),
+    "40 g radishes": P(food=[F("radishes", 40)]),
     "50 g frischkaese": P(food=[F("frischkaese", 50, en="cream cheese")]),
+}
+
+def _id(user, pattern):
+    return re.search(pattern, user)[1]
+
+
+def C(*steps, unclear=None):
+    return {"steps": [{"action": a, "args": json.dumps(x)} for a, x in steps], "unclear": unclear}
+
+
+# The command reader's answers: a function of its input, because the ids come from the recent entries it is shown.
+COMMANDS = {
+    "apple was 150 g": lambda u: C(),  # no apple logged: nothing to change
+    "what did I eat today": lambda u: C(("find", {"food": "today"})),
+    "the skyr was 120 g": lambda u: C(("change", {"id": "f" + _id(u, r"f(\d+) [^\n]*Skyr natural"), "fields": {"amount": 120, "unit": "g"}})),
+    "weight was 80 not 82.4": lambda u: C(("change", {"id": "m" + _id(u, r"m(\d+) [^\n]*weight"), "fields": {"value": 80}})),
+    "undo that": lambda u: C(("undo", {})),
+    "delete the skyr": lambda u: C(unclear="Which skyr: the first or the second?"),
+    "delete the skyr\n(Asked:": lambda u: C(("change", {"id": "f" + _id(u, r"f(\d+) [^\n]*Skyr natural"), "delete": True})),
 }
 
 LABEL = dict(kcal=60, protein=1.2, fat=0.3, carbs=13, sugar_total=11, source="label")
@@ -52,6 +79,11 @@ class FakeProvider:
         self.calls = []
 
     def json(self, system, user, schema, model, max_tokens=4000):
+        if 'Request:\n"""\n' in user:  # the command reader
+            text = user.split('Request:\n"""\n', 1)[1].rsplit('\n"""', 1)[0]
+            self.calls.append((text, model))
+            key = max((k for k in COMMANDS if text.startswith(k)), key=len)
+            return COMMANDS[key](user), Usage(model, 1000, 100)
         text = user.split('Message:\n"""\n', 1)[1].rsplit('\n"""', 1)[0]
         self.calls.append((text, model))
         return copy.deepcopy(ANSWERS[text]), Usage(model, 1000, 100)
@@ -251,3 +283,74 @@ def test_the_same_product_under_another_name_asks_first(call, fake):
     assert f"N{old}" not in other["message"]
     same = call("add_food", name="Fresh cheese (Aldi)", **LABEL)  # different name, the same values
     assert f"N{old}" in same["message"]
+
+
+def test_an_answer_can_name_the_food_and_the_amount(call, fake, skyr):
+    asked = call("log", text="150 g skyr and 20 g dragonfruit")
+    fruit = owner_sql("""INSERT INTO foods (name, basis, kcal, protein, fat, carbs, source)
+                         VALUES ('Pitaya', 'g', 60, 1.2, 0.3, 13, 'database') RETURNING id""")[0]["id"]
+    done = call("answer", question_id=asked["questions"][0]["question_id"], reply=f"N{fruit} 150 g")
+    assert done["outcome"] == "saved"
+    assert n("SELECT count(*) AS n FROM food_entries WHERE food_id = %s AND amount = 150", fruit) == 1  # not the 20 g
+
+
+def test_a_correction_is_not_logged_as_a_new_item(call, fake):
+    body = call("log", text="apple was 150 g")
+    assert body["outcome"] == "not_logged" and "Nothing done" in body["message"]
+    assert n("SELECT count(*) AS n FROM food_entries") == 0 and n("SELECT count(*) AS n FROM raw_inbox") == 0
+
+
+def test_a_plural_word_finds_the_singular_food(call, fake):
+    radish = owner_sql("""INSERT INTO foods (name, basis, kcal, protein, fat, carbs, source, state)
+                          VALUES ('Radish, raw', 'g', 16, 0.7, 0.1, 3.4, 'database', 'raw') RETURNING id""")[0]["id"]
+    owner_sql("""INSERT INTO foods (name, basis, kcal, protein, fat, carbs, source)
+                 VALUES ('Raisins', 'g', 299, 3.1, 0.5, 79, 'database')""")
+    body = call("log", text="40 g radishes")
+    assert body["outcome"] == "saved" and n("SELECT count(*) AS n FROM food_entries WHERE food_id = %s", radish) == 1
+
+
+def test_a_look_up_answers_from_the_data_and_saves_nothing(call, fake, skyr):
+    call("log", text="150 g skyr, weight 82.4")
+    body = call("log", text="what did I eat today")
+    assert body["outcome"] == "answered" and "Look-up result" in body["message"] and "Skyr natural" in body["message"]
+    assert n("SELECT count(*) AS n FROM raw_inbox") == 1 and n("SELECT count(*) AS n FROM food_entries") == 1
+
+
+def test_a_change_is_previewed_and_made_only_after_yes(call, fake, skyr):
+    call("log", text="150 g skyr, weight 82.4")
+    asked = call("log", text="the skyr was 120 g")
+    assert asked["outcome"] == "needs_confirmation" and "Preview" in asked["message"] and "120" in asked["message"]
+    assert n("SELECT count(*) AS n FROM food_entries WHERE amount = 150") == 1  # the preview was rolled back
+    done = call("answer", question_id=asked["questions"][0]["question_id"], reply="yes")
+    assert done["outcome"] == "changed", done["message"]
+    assert n("SELECT count(*) AS n FROM food_entries WHERE amount = 120") == 1
+    assert owner_sql("SELECT round(kcal) AS k FROM food_entries")[0]["k"] == 76  # 63 kcal per 100 g, recalculated
+
+
+def test_a_change_can_be_declined(call, fake, skyr):
+    call("log", text="150 g skyr, weight 82.4")
+    asked = call("log", text="weight was 80 not 82.4")
+    no = call("answer", question_id=asked["questions"][0]["question_id"], reply="no")
+    assert no["outcome"] == "cancelled" and n("SELECT count(*) AS n FROM measurements WHERE value1 = 82.4") == 1
+    details = json.dumps([r["detail"] for r in owner_sql("SELECT detail FROM audit_log")])
+    assert "82.4" not in details and '"value"' not in details  # ids and outcomes only, no health values
+
+
+def test_undo_takes_back_the_newest_message(call, fake, skyr):
+    call("log", text="150 g skyr, weight 82.4")
+    asked = call("log", text="undo that")
+    assert asked["outcome"] == "needs_confirmation" and n("SELECT count(*) AS n FROM food_entries") == 1
+    done = call("answer", question_id=asked["questions"][0]["question_id"], reply="yes")
+    assert done["outcome"] == "changed"
+    assert n("SELECT count(*) AS n FROM food_entries") == 0 and n("SELECT count(*) AS n FROM measurements") == 0
+    assert n("SELECT count(*) AS n FROM raw_inbox") == 1  # the message itself stays
+
+
+def test_an_unclear_change_asks_which_entry_first(call, fake, skyr):
+    call("log", text="150 g skyr, weight 82.4")
+    asked = call("log", text="delete the skyr")
+    assert asked["outcome"] == "needs_choice" and "Which skyr" in asked["message"]
+    preview = call("answer", question_id=asked["questions"][0]["question_id"], reply="the first")
+    assert preview["outcome"] == "needs_confirmation" and n("SELECT count(*) AS n FROM food_entries") == 1
+    done = call("answer", question_id=preview["questions"][0]["question_id"], reply="yes")
+    assert done["outcome"] == "changed" and n("SELECT count(*) AS n FROM food_entries") == 0

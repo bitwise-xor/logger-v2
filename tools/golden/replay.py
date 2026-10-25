@@ -46,8 +46,8 @@ class CachedProvider:
         self.cache, self.real, self.live = cache, real, []
 
     def json(self, system, user, schema, model, max_tokens=4000):
-        text = user.split('Message:\n"""\n', 1)[1].rsplit('\n"""', 1)[0]
-        hit = self.cache.get(text)
+        text = user.split('Message:\n"""\n', 1)[1].rsplit('\n"""', 1)[0] if 'Message:\n"""\n' in user else None
+        hit = self.cache.get(text) if text else None  # the command reader is not cached: it goes live
         if model == parser.DEFAULT_MODEL and hit:
             return hit["pred"], Usage(**hit["usage"])
         pred, u = self.real.json(system, user, schema, model, max_tokens)
@@ -107,6 +107,10 @@ def main():
             raw_id = out.get("raw_id")
             for qn in out.get("questions", []):  # answer the way the user would
                 p = q("SELECT tool, payload FROM pending WHERE id = %s", qn["question_id"])[0]
+                if p["tool"] in ("command", "command_confirm"):  # changes to older entries are not compared: leave them
+                    call("answer", question_id=qn["question_id"], reply="no")
+                    res["command"] = True
+                    continue
                 if p["tool"] in ("log_confirm", "log_repeat"):  # v1 saved these repeats, so the user would say yes
                     res["confirmed"] = True
                     res["repeat"] = p["tool"] == "log_repeat"

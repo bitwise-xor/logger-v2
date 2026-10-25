@@ -173,7 +173,7 @@ def save(cur, r: Reading, text: str, channel: str, now: datetime, confirmed: boo
     An odd value (v1's read-back) still holds the whole message until the user confirms.
     The logging day never stops a message: without a wake-up the 05:00 rule is used (v1's chat rule, no_wake)."""
     if r.pred.get("intent") in ("question", "command") and not (r.foods or r.meals or r.entries or r.thoughts or r.private):
-        return {"outcome": "not_logged", "raw_id": None, "questions": []}
+        return {"outcome": "not_logged", "intent": r.pred.get("intent"), "raw_id": None, "questions": []}
     if r.private:
         try:
             return _save_private(cur, r, text, channel, now)
@@ -231,7 +231,11 @@ def answer(cur, pending_id: str, reply: str, now: datetime) -> dict:
     asked_at = datetime.fromisoformat(q["now"])
     it = dict(q["item"])
     alias_note = None
+    grams = None
     if q["kind"] == "food":
+        both = re.fullmatch(r"\s*(.+?)[\s,:]+(\d+(?:[.,]\d+)?)\s*(g|ml)\s*", reply)  # "N3 150 g", "apple, 150g"
+        if both:
+            reply, grams = both[1], float(both[2].replace(",", "."))
         m = re.fullmatch(r"\s*[nN]?#?(\d+)\s*", reply)
         if m:
             f = cat["by_id"].get(int(m[1]))
@@ -247,6 +251,8 @@ def answer(cur, pending_id: str, reply: str, now: datetime) -> dict:
             alias_note = _alias(cur, cat, f, it["food"])
         else:
             alias_note = _word_hint(f, it["food"])
+        if grams is not None:
+            it.update(amount=grams, unit=None, grams_per_unit=None)
     else:
         f = cat["by_id"][q["food_id"]]
         num = re.fullmatch(r"\s*(\d+(?:[.,]\d+)?)\s*(g|ml)?\s*", reply)
