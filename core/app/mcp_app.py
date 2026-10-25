@@ -10,7 +10,7 @@ from . import logbook, service
 from mcp.server.auth.settings import AuthSettings, ClientRegistrationOptions
 
 from . import auth, today
-from .config import EXTRA_ALLOWED_HOSTS, MCP_PATH, PUBLIC_URL
+from .config import EXTRA_ALLOWED_HOSTS, MCP_PATH, PILOT_TOOLS, PUBLIC_URL
 
 provider = auth.OwnerProvider(PUBLIC_URL)
 
@@ -27,6 +27,11 @@ mcp = MCPServer(
 )
 
 
+
+def _pilot(f):
+    """Register a pilot tool only when PILOT_TOOLS=1 (config.py)."""
+    return mcp.tool()(f) if PILOT_TOOLS else f
+
 @mcp.tool()
 def log(text: str, idempotency_key: Optional[str] = None) -> dict[str, Any]:
     """Log one user message (food, drinks, health values, habits, thoughts, private or gratitude lines) in the user's
@@ -40,20 +45,20 @@ def answer(question_id: str, reply: str) -> dict[str, Any]:
     return logbook.answer(question_id, reply)
 
 
-@mcp.tool()
+@_pilot
 def record_weight(kg: float, at: Optional[str] = None, text: Optional[str] = None, idempotency_key: Optional[str] = None) -> dict[str, Any]:
     """Log a body weight in kg. at = ISO local date/time of the weighing (omit for now). text = the user's original words.
     idempotency_key = a new unique string per user message; reuse the same one when retrying the same message."""
     return service.record_weight(kg, at, text, idempotency_key)
 
 
-@mcp.tool()
+@_pilot
 def recent_weights(days: int = 14) -> dict[str, Any]:
     """List the weights logged in the last N days (newest first)."""
     return service.recent_weights(days)
 
 
-@mcp.tool()
+@_pilot
 def record_bp(systolic: float, diastolic: float, period: Optional[str] = None, at: Optional[str] = None, text: Optional[str] = None,
               idempotency_key: Optional[str] = None) -> dict[str, Any]:
     """Log a blood pressure reading in mmHg (systolic over diastolic). period = morning or evening if the user said so.
@@ -61,25 +66,25 @@ def record_bp(systolic: float, diastolic: float, period: Optional[str] = None, a
     return service.record_bp(systolic, diastolic, period, at, text, idempotency_key)
 
 
-@mcp.tool()
+@_pilot
 def recent_blood_pressure(days: int = 14) -> dict[str, Any]:
     """List the blood pressure readings logged in the last N days (newest first)."""
     return service.recent_bp(days)
 
 
-@mcp.tool()
+@_pilot
 def record_wakeup(at: Optional[str] = None, text: Optional[str] = None, idempotency_key: Optional[str] = None) -> dict[str, Any]:
     """Log getting up. at = ISO local date/time of waking (omit for now). text = the user's original words. idempotency_key as for record_weight."""
     return service.record_wakeup(at, text, idempotency_key)
 
 
-@mcp.tool()
+@_pilot
 def recent_wakeups(days: int = 14) -> dict[str, Any]:
     """List the wake-ups logged in the last N days (newest first)."""
     return service.recent_wakeups(days)
 
 
-@mcp.tool()
+@_pilot
 def amend(receipt_id: str, kg: Optional[float] = None, systolic: Optional[float] = None, diastolic: Optional[float] = None,
           period: Optional[str] = None, at: Optional[str] = None) -> dict[str, Any]:
     """Correct an entry already saved, by its receipt id (m123 for weight or blood pressure, e45 for a wake-up). Give only what changes:
@@ -87,13 +92,13 @@ def amend(receipt_id: str, kg: Optional[float] = None, systolic: Optional[float]
     return service.amend(receipt_id, kg, systolic, diastolic, period, at)
 
 
-@mcp.tool()
+@_pilot
 def resolve(pending_id: str, confirm: bool) -> dict[str, Any]:
     """Answer a needs_confirmation question: confirm true saves the entry, false cancels it."""
     return service.resolve(pending_id, confirm)
 
 
-@mcp.tool()
+@_pilot
 def undo(receipt_id: str) -> dict[str, Any]:
     """Remove an entry by its receipt id (for example m123 or e45)."""
     return service.undo(receipt_id)
