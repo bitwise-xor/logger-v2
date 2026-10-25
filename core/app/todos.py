@@ -223,24 +223,55 @@ def retry(cur, provider: Provider, now: datetime) -> dict:
     return out
 
 
-def tick(cur, items: list[str], now: datetime, dry: bool = False) -> list[str]:
-    """'got the milk': tick items off straight away (decided 25.10.); undo puts them back."""
-    batch, lines = "c" + secrets.token_hex(4), []
+def _clean(name: str) -> str:
+    """The item without the words around it: "pizza cutter from the list" -> "pizza cutter"."""
+    name = re.sub(r"\b(from|off|on|in|to)\s+(the|my)\s+(shopping\s+)?(list|todoist)\b.*$", "", name.strip(), flags=re.I)
+    return re.sub(r"\s+in\s+todoist\b.*$", "", name, flags=re.I).strip()
+
+
+def todo(cur, args: dict, now: datetime, dry: bool = False) -> tuple[list[str], bool]:
+    """Changes asked in words, straight away (decided 25.10.); undo takes them back. -> (lines, anything changed).
+    done: tick off ("got the milk"). remove: an item the logger added in the last 24 hours is deleted, any other item
+    is only ticked off (the user's own items are never deleted). back: put a ticked-off item back on the list."""
+    batch, lines, changed = "c" + secrets.token_hex(4), [], False
     tasks = _open(SHOPPING) + _open(LISTS) + _open(INBOX)
-    for name in items:
-        m, exact = _match(name, tasks)
-        if not (exact or len(m) == 1):
-            lines.append(f"'{name}': " + ("several fit: " + "; ".join(_en(t["content"]) for t in m[:6]) + ", say which"
-                                          if m else "not on an open list"))
-            continue
-        t = m[0]
-        if not dry:
-            client().close(t["id"])
-            _record(cur, batch, None, "closed", name, t, _where(t))
-        lines.append(f"Ticked off: {_en(t['content'])}")
+    for kind in ("done", "remove", "back"):
+        for raw in args.get(kind) or []:
+            name = _clean(str(raw))
+            pool = tasks if kind != "back" else _cached(("done", SHOPPING), lambda: client().completed_tasks(SHOPPING))
+            m, exact = _match(name, pool)
+            if not (exact or len(m) == 1):
+                where = "on an open list" if kind != "back" else "among the items ticked off in the last 90 days"
+                lines.append(f"'{name}': " + ("several fit: " + "; ".join(_en(t["content"]) for t in m[:6]) + ", say which"
+                                              if m else f"not found {where}, nothing changed"))
+                continue
+            t = m[0]
+            if kind == "back":
+                if not dry:
+                    client().reopen(t["id"])
+                    _record(cur, batch, None, "reopened", name, t, _where(t))
+                lines.append(f"Back on the list: {_en(t['content'])}")
+            elif kind == "remove" and _ours(cur, t["id"]):
+                if not dry:
+                    client().delete(t["id"])
+                    cur.execute("UPDATE todo_actions SET undone_at = now() WHERE task_id = %s AND op = 'created'", (t["id"],))
+                lines.append(f"Deleted: {_en(t['content'])} (added by the logger)")
+            else:
+                if not dry:
+                    client().close(t["id"])
+                    _record(cur, batch, None, "closed", name, t, _where(t))
+                lines.append(f"Ticked off: {_en(t['content'])}" + (" (your own item, so it is ticked off, not deleted)"
+                                                                     if kind == "remove" else ""))
+            changed = True
     if not dry:
         forget()
-    return lines
+    return lines, changed
+
+
+def _ours(cur, task_id: str) -> bool:
+    cur.execute("""SELECT 1 FROM todo_actions WHERE task_id = %s AND op = 'created' AND undone_at IS NULL
+                   AND at > now() - interval '24 hours'""", (task_id,))
+    return cur.fetchone() is not None
 
 
 def undo(cur, batch: str, dry: bool = False) -> list[str]:

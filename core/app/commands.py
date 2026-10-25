@@ -12,7 +12,7 @@ from .ai import command as reader
 from . import todos
 from .ai.provider import Provider, Usage
 from .todoist import TodoistError
-from .v1_commands import Ask, _bound, _change, _delete_thought, _find, _find_food, _find_health, _find_private
+from .v1_commands import Ask, _bound, _food_today, _change, _delete_thought, _find, _find_food, _find_health, _find_private
 from .v1_food import _num
 from .v1_log import Reject, _day_line, _dm, fmt
 from .v1_thoughts import _short, _thought_row
@@ -60,7 +60,7 @@ def _steps(raw: list[dict]) -> list[dict]:
             raise Reject(f"could not read the request ({e.msg})") from e
         if not isinstance(args, dict):
             raise Reject("could not read the request")
-        allowed = {"find": FIND_ARGS, "change": CHANGE_ARGS, "undo": set(), "todo": {"done"}}[s["action"]]
+        allowed = {"find": FIND_ARGS, "change": CHANGE_ARGS, "undo": set(), "todo": {"done", "remove", "back"}}[s["action"]]
         bad = sorted(set(args) - allowed)
         if bad:
             raise Reject(f"unknown argument(s) {', '.join(bad)} for {s['action']}")
@@ -70,8 +70,22 @@ def _steps(raw: list[dict]) -> list[dict]:
     return out
 
 
-def _run_find(cur, a: dict) -> str:
+def _food_days(cur, a: dict, now: datetime) -> dict:
+    """'today' and 'yesterday' in a food look-up are food days (wake-up to wake-up): after midnight, before the next
+    wake-up, today is still the day that began with the last wake-up, and yesterday the one before it."""
+    words = {"today": 0, "yesterday": 1}
+    a = dict(a)
+    for k in ("since", "until"):
+        n = words.get(str(a.get(k) or "").strip().lower())
+        if n is not None:
+            a[k] = f"{_food_today(cur, now) - timedelta(days=n):%d.%m.%Y}"
+    return a
+
+
+def _run_find(cur, a: dict, now: datetime) -> str:
     limit = a.get("limit") or 20
+    if a.get("food") is not None:
+        a = _food_days(cur, a, now)
     if a.get("todoist") is not None:
         return todos.find(str(a["todoist"]))
     if a.get("private") and (a.get("since") or a.get("until")):
@@ -143,13 +157,15 @@ def _undo(cur, now: datetime, dry: bool = False) -> str:
         _delete_thought(cur, _thought_row(cur, t["id"]))
         gone.append(f"#{t['id']}")
     try:
-        gone += todos.undo(cur, f"r{raw['id']}", dry)
+        in_todoist = todos.undo(cur, f"r{raw['id']}", dry)
     except TodoistError as e:
         raise Reject(f"{e}; nothing changed") from e
     days = sorted({x["day"] for x in food})
     for d in days:
         cur.execute("SELECT assign_meals(%s)", (d,))
-    return (f"OK undid raw #{raw['id']} ('{_short(raw['content'], 60)}'): removed {', '.join(gone)}. The message stays in the inbox."
+    return (f"OK undid raw #{raw['id']} ('{_short(raw['content'], 60)}'): "
+            + (f"removed {', '.join(gone)}. " if gone else "") + (f"In Todoist: {'; '.join(in_todoist)}. " if in_todoist else "")
+            + "The message stays in the inbox."
             + "".join("\n" + _day_line(cur, d) for d in days))
 
 
@@ -186,22 +202,28 @@ def handle(cur, provider: Provider, text: str, now: datetime, previous=()) -> tu
         steps = _steps(cmd["steps"])
     except Reject as e:
         return {"outcome": "rejected", "reason": str(e), "questions": []}, [u]
-    audit = [{"action": s["action"], "id": s["args"].get("id")} for s in steps]
+    audit = [{"action": s["action"], "id": s["args"].get("id"),  # to-do names help trace a miss; never health values
+              **({"items": {k: v for k, v in s["args"].items()}} if s["action"] == "todo" else {})} for s in steps]
     if not steps:
         if not cmd.get("unclear"):
             return {"outcome": "not_logged", "intent": "command", "questions": []}, [u]
         pid = _pending(cur, "command", {"text": text}, cmd["unclear"], now)
         return {"outcome": "needs_choice", "questions": [{"pending_id": pid, "question": cmd["unclear"]}], "steps": audit}, [u]
-    found, changes = [], [s for s in steps if s["action"] in ("change", "undo")]
+    found, changes, done, did = [], [s for s in steps if s["action"] in ("change", "undo")], [], False
     try:
         for s in steps:
             if s["action"] == "find":
-                found.append(_run_find(cur, s["args"]))
-            elif s["action"] == "todo":  # ticking off happens straight away (decided 25.10.); undo puts it back
-                found.append("\n".join(todos.tick(cur, [str(x) for x in s["args"].get("done") or []], now)))
+                found.append(_run_find(cur, s["args"], now))
+            elif s["action"] == "todo":  # to-do changes happen straight away (decided 25.10.); undo takes them back
+                lines, changed = todos.todo(cur, s["args"], now)
+                done += lines
+                did = did or changed
         if not changes:
-            done = any(s["action"] == "todo" for s in steps)
-            return {"outcome": "changed" if done else "answered", "result": "\n\n".join(found), "questions": [], "steps": audit}, [u]
+            if done and not did:  # nothing matched: say so, never "changed"
+                return {"outcome": "rejected", "reason": "\n".join(done), "result": "\n\n".join(found) or None,
+                        "questions": [], "steps": audit}, [u]
+            return {"outcome": "changed" if did else "answered", "receipt": done, "result": "\n\n".join(found) or None,
+                    "questions": [], "steps": audit}, [u]
         preview = _preview(cur, changes, now)
     except Ask as e:  # a food correction that past entries use: v1 asks whether those change too
         pid = _pending(cur, "command_confirm", {"steps": changes, "ask_past": True}, str(e), now)

@@ -31,13 +31,17 @@ args: `id` (from the lists), `fields` (an object), `delete` (true removes it), `
 
 Examples (with f925 = Apple 182 g at 22:33 in the list): "the apple was 150 g" = {"id": "f925", "fields": {"amount": 150, "unit": "g"}}; "make that 150 g" right after the apple was logged = the same; "delete the apple" = {"id": "f925", "delete": true}; "the apple was at 21:00" = {"id": "f925", "fields": {"when": "21:00"}}; "weight was 127.8 not 128.1" (m88 = weight 128.1) = {"id": "m88", "fields": {"value": 127.8}}; "task 57 is done" = {"id": "57", "fields": {"stage": "done"}}.
 
-### todo: tick items off in Todoist
+### todo: change items in Todoist
 
-args: {"done": ["milk", "cola"]}: the items in English, as the person named them. "got the milk", "bought cola and eggs", "milk is done", "remove cola from the shopping list", "I renewed the passport" (a task) = todo. Adding items is never a command (it is logged).
+args, each a list of items in English, plain names only (no "from the list"):
+- `done`: tick off. "got the milk", "bought cola and eggs", "milk is done", "I renewed the passport" (a task).
+- `remove`: take off the list. "remove cola from the shopping list", "delete the pizza cutter", "undo pizza cutter" (an item named after undo). The logger deletes what it added itself and ticks off the rest.
+- `back`: put a ticked-off item back on the list. "untick the milk", "put cola back on the list", "I did not buy the eggs".
+Adding items is never a command (it is logged).
 
 ### undo: take back the newest logged message
 
-args: {}. Everything saved from the newest message of the last 24 hours goes: its food, health rows, thoughts and what it did in Todoist; or the newest tick-off, when that came later. "undo", "undo that", "that was wrong, remove it" (when no single entry is meant) = undo.
+args: {}. Only for "undo" on its own or "undo that": a named item ("undo pizza cutter", "undo the apple") is a `todo` remove or a `change` delete instead. Everything saved from the newest message of the last 24 hours goes: its food, health rows, thoughts and what it did in Todoist; or the newest tick-off, when that came later. "undo", "undo that", "that was wrong, remove it" (when no single entry is meant) = undo.
 
 ## Which entry
 

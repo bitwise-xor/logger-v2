@@ -60,6 +60,10 @@ ANSWERS = {
     "todo: buy fruits": P(todos=[D("Fruits")]),
     "todo: renew passport": P(todos=[D("Renew passport", "tasks")]),
     "got the milk": P(intent="command", command_text="got the milk"),
+    "remove potatoes from the list": P(intent="command", command_text="remove potatoes from the list"),
+    "remove milk": P(intent="command", command_text="remove milk"),
+    "untick the milk": P(intent="command", command_text="untick the milk"),
+    "got the bananas": P(intent="command", command_text="got the bananas"),
     "what is on my shopping list": P(intent="command", command_text="what is on my shopping list"),
     "delete the skyr": P(intent="command", command_text="delete the skyr"),
     "40 g radishes": P(food=[F("radishes", 40)]),
@@ -82,6 +86,10 @@ COMMANDS = {
     "weight was 80 not 82.4": lambda u: C(("change", {"id": "m" + _id(u, r"m(\d+) [^\n]*weight"), "fields": {"value": 80}})),
     "undo that": lambda u: C(("undo", {})),
     "got the milk": lambda u: C(("todo", {"done": ["milk"]})),
+    "remove potatoes from the list": lambda u: C(("todo", {"remove": ["potatoes from the list"]})),
+    "remove milk": lambda u: C(("todo", {"remove": ["milk"]})),
+    "untick the milk": lambda u: C(("todo", {"back": ["milk"]})),
+    "got the bananas": lambda u: C(("todo", {"done": ["bananas"]})),
     "what is on my shopping list": lambda u: C(("find", {"todoist": "shopping"})),
     "delete the skyr": lambda u: C(unclear="Which skyr: the first or the second?"),
     "delete the skyr\n(Asked:": lambda u: C(("change", {"id": "f" + _id(u, r"f(\d+) [^\n]*Skyr natural"), "delete": True})),
@@ -481,3 +489,21 @@ def test_a_close_name_is_asked_and_new_creates_it(call, fake, todo):
     assert body["outcome"] == "needs_choice" and "Meat seasoning" in body["message"]  # not taken silently
     done = call("answer", question_id=body["questions"][0]["question_id"], reply="new")
     assert done["outcome"] == "saved" and "Created: Meat (Meat & Seafood, aldi)" in done["message"]
+
+
+def test_remove_deletes_only_what_the_logger_added_and_back_unticks(call, fake, todo):
+    call("log", text="todo: buy milk, cola, potatoes")
+    body = call("log", text="remove potatoes from the list")  # added by the logger: deleted
+    assert body["outcome"] == "changed" and "Deleted: Potatoes" in body["message"]
+    assert not any(t["content"] == "Potatoes" for t in todo.tasks.values())
+    body = call("log", text="remove milk")  # the user's own item: only ticked off
+    assert "Ticked off: Milk" in body["message"] and todo.tasks["a1"]["checked"] and "a1" in todo.tasks
+    body = call("log", text="untick the milk")
+    assert "Back on the list: Milk" in body["message"] and not todo.tasks["a1"]["checked"]
+
+
+def test_a_tick_off_that_matches_nothing_says_so(call, fake, todo):
+    body = call("log", text="got the bananas")
+    assert body["outcome"] == "rejected" and "not found" in body["message"] and body["message"].startswith("Nothing changed")
+    steps = owner_sql("SELECT detail FROM audit_log WHERE tool = 'log' ORDER BY id DESC LIMIT 1")[0]["detail"]["steps"]
+    assert steps[0]["items"] == {"done": ["bananas"]}  # the to-do names are kept, so a miss can be traced

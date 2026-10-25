@@ -67,6 +67,8 @@ def _message(out: dict) -> str:
             "needs_confirmation": "Nothing saved yet: please confirm.", "rejected": "Nothing saved.",
             "cancelled": "Skipped.", "replayed": "Already saved earlier (same message).",
             "answered": "Found.", "changed": "Changed."}.get(o, o)
+    if o == "rejected" and out.get("steps"):  # a command that matched nothing
+        head = "Nothing changed."
     if o == "not_logged" and out.get("intent") == "command":
         head = "Nothing done: this reads as a request the logger cannot handle, so answer the user yourself."
     lines = [head] + out.get("receipt", []) + [f"note: {n}" for n in out.get("notes", [])]
