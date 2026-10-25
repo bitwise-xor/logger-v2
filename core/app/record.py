@@ -271,15 +271,23 @@ def _word_hint(f: dict, word: str) -> str:
     return f"to let '{word.strip()}' find N{f['id']} {f['name']} next time, save it with food_words"
 
 
-def _similar(cat: dict, name: str) -> list[dict]:
-    """Foods that look like the one about to be created ("Salad greens, mixed" vs N176 "Salad greens, mixed, raw")."""
+def _similar(cur, cat: dict, name: str, nf: NewFood) -> list[dict]:
+    """Foods that look like the one about to be created: by name ("Salad greens, mixed" vs N176 "Salad greens, mixed,
+    raw"), by the base name before the first comma ("Cottage cheese, half-fat" vs "Cottage cheese, semi-fat"), or by
+    the same values per 100 g (the same label added twice under another name)."""
     seen, out = set(), []
-    for term in (name, re.sub(r"\(.*?\)", " ", name)):
+    for term in (name, re.sub(r"\(.*?\)", " ", name), name.split(",")[0]):
         matches, how = _find_foods(cat, term)
         for m in matches:
             if how != "fuzzy" and m["id"] not in seen and m["active"]:
                 seen.add(m["id"])
                 out.append(m)
+    cur.execute("""SELECT id FROM foods WHERE active AND basis = %s AND kcal = %s AND protein = %s AND fat = %s AND carbs = %s
+                   ORDER BY id""", (nf.basis, nf.kcal, nf.protein, nf.fat, nf.carbs))
+    for r in cur.fetchall():
+        if r["id"] not in seen and r["id"] in cat["by_id"]:
+            seen.add(r["id"])
+            out.append(cat["by_id"][r["id"]])
     return out[:6]
 
 
@@ -355,7 +363,7 @@ def add_food(cur, name: str, values: dict, channel: str, now: datetime, question
                         note=it["note"], drink=it["drink"] if it["drink"] is not None else drink, new=nf, confirmed=confirmed)
     else:
         item = FoodItem(food=name, amount=1, when=_iso(now, False), drink=drink, new=nf, confirmed=confirmed)
-    similar = [] if confirmed else _similar(_food_cat(cur), name)
+    similar = [] if confirmed else _similar(cur, _food_cat(cur), name, nf)
     read_back, code = None, None
     try:
         prep = v1_log._prepare_food(cur, [item], [], [], None, True, food_code, when, [])

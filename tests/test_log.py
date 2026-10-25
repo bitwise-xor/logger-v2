@@ -240,3 +240,14 @@ def test_a_new_food_that_looks_like_an_existing_one_asks_first(call, fake):
     assert n("SELECT count(*) AS n FROM foods WHERE name = 'Salad greens, mixed'") == 0
     done = call("answer", question_id=body["questions"][0]["question_id"], reply="yes")  # create it anyway
     assert done["outcome"] == "saved" and n("SELECT count(*) AS n FROM foods WHERE name = 'Salad greens, mixed'") == 1
+
+
+def test_the_same_product_under_another_name_asks_first(call, fake):
+    old = owner_sql("""INSERT INTO foods (name, basis, kcal, protein, fat, carbs, source)
+                       VALUES ('Cottage cheese, semi-fat (ja!)', 'g', 60, 1.2, 0.3, 13, 'label') RETURNING id""")[0]["id"]
+    body = call("add_food", name="Cottage cheese, half-fat (ja!)", **LABEL)  # same base name and the same label values
+    assert body["outcome"] == "needs_confirmation" and f"N{old}" in body["message"]
+    other = call("add_food", name="Quark, plain", **{**LABEL, "kcal": 61})  # different name, different values
+    assert f"N{old}" not in other["message"]
+    same = call("add_food", name="Fresh cheese (Aldi)", **LABEL)  # different name, the same values
+    assert f"N{old}" in same["message"]
