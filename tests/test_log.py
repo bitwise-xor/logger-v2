@@ -7,9 +7,10 @@ import re
 import pytest
 from starlette.testclient import TestClient
 
-from app import logbook
+from app import logbook, todos
 from app.ai.provider import Usage
 from app.mcp_app import build_app
+from app.todoist import FakeTodoist
 from conftest import owner_sql
 
 HDR = {"Accept": "application/json, text/event-stream", "Content-Type": "application/json", "Host": "log.example.test"}
@@ -24,6 +25,10 @@ def P(**kw):
 def F(food, amount, unit="g", when=None, drink=None, en=None):
     return dict(food=food, food_en=en or food, amount=amount, unit=unit, grams_per_unit=None, cooked=False, drink=drink,
                 when=when, note=None)
+
+
+def D(item, list_="shopping", store=None):
+    return dict(item=item, list=list_, store=store)
 
 
 def H(type_, value=None, value2=None, when=None):
@@ -49,6 +54,13 @@ ANSWERS = {
     "the skyr was 120 g": P(intent="command", command_text="the skyr was 120 g"),
     "weight was 80 not 82.4": P(intent="command", command_text="weight was 80 not 82.4"),
     "undo that": P(intent="command", command_text="undo that"),
+    "todo: buy milk, cola, potatoes": P(todos=[D("Milk"), D("Cola"), D("Potatoes")]),
+    "todo: buy chips": P(todos=[D("Chips")]),
+    "todo: buy meat": P(todos=[D("meat")]),
+    "todo: buy fruits": P(todos=[D("Fruits")]),
+    "todo: renew passport": P(todos=[D("Renew passport", "tasks")]),
+    "got the milk": P(intent="command", command_text="got the milk"),
+    "what is on my shopping list": P(intent="command", command_text="what is on my shopping list"),
     "delete the skyr": P(intent="command", command_text="delete the skyr"),
     "40 g radishes": P(food=[F("radishes", 40)]),
     "50 g frischkaese": P(food=[F("frischkaese", 50, en="cream cheese")]),
@@ -69,8 +81,17 @@ COMMANDS = {
     "the skyr was 120 g": lambda u: C(("change", {"id": "f" + _id(u, r"f(\d+) [^\n]*Skyr natural"), "fields": {"amount": 120, "unit": "g"}})),
     "weight was 80 not 82.4": lambda u: C(("change", {"id": "m" + _id(u, r"m(\d+) [^\n]*weight"), "fields": {"value": 80}})),
     "undo that": lambda u: C(("undo", {})),
+    "got the milk": lambda u: C(("todo", {"done": ["milk"]})),
+    "what is on my shopping list": lambda u: C(("find", {"todoist": "shopping"})),
     "delete the skyr": lambda u: C(unclear="Which skyr: the first or the second?"),
     "delete the skyr\n(Asked:": lambda u: C(("change", {"id": "f" + _id(u, r"f(\d+) [^\n]*Skyr natural"), "delete": True})),
+}
+
+PLACES = {  # the placement call for new Todoist items
+    "Potatoes": {"section": "Produce", "label": "aldi", "generic": False},
+    "meat": {"section": "Meat & Seafood", "label": "aldi", "generic": False},
+    "Fruits": {"section": "Produce", "label": "aldi", "generic": True},
+    "Renew passport": {"section": "Paperwork", "label": None, "generic": False},
 }
 
 LABEL = dict(kcal=60, protein=1.2, fat=0.3, carbs=13, sugar_total=11, source="label")
@@ -81,6 +102,10 @@ class FakeProvider:
         self.calls = []
 
     def json(self, system, user, schema, model, max_tokens=4000):
+        if user.startswith("Item: "):  # placing a new Todoist item
+            item = user.split("\n", 1)[0][len("Item: "):]
+            self.calls.append((item, model))
+            return dict(PLACES[item]), Usage(model, 300, 20)
         if 'Request:\n"""\n' in user:  # the command reader
             text = user.split('Request:\n"""\n', 1)[1].rsplit('\n"""', 1)[0]
             self.calls.append((text, model))
@@ -97,6 +122,30 @@ def fake():
     logbook.PROVIDER = f
     yield f
     logbook.PROVIDER = None
+
+
+@pytest.fixture
+def todo():
+    S, L = todos.SHOPPING, todos.LISTS
+    f = FakeTodoist(
+        sections={S: [("s1", "Produce"), ("s2", "Dairy & Eggs"), ("s3", "Beverages"), ("s4", "Snacks & Sweets"),
+                     ("s5", "Meat & Seafood")],
+                  L: [("l1", "Paperwork"), ("l2", "To do Sometime")]},
+        tasks=[dict(id="a1", content="Milk | Lait | Milch", project_id=S, section_id="s2", labels=["aldi"]),
+               dict(id="a2", content="Oat Milk | Lait d'avoine | Hafermilch", project_id=S, section_id="s2", checked=True,
+                    completed_at="2026-10-20T10:00:00Z"),
+               dict(id="a3", content="Cola | Cola | Cola", project_id=S, section_id="s3", labels=["aldi"], checked=True,
+                    completed_at="2026-10-21T10:00:00Z"),
+               dict(id="a4", content="Kettle Chips | Chips | Chips", project_id=S, section_id="s4", checked=True,
+                    completed_at="2026-10-22T10:00:00Z"),
+               dict(id="a5", content="Tortilla Chips | Tortilla | Tortilla-Chips", project_id=S, section_id="s4", checked=True,
+                    completed_at="2026-10-19T10:00:00Z"),
+               dict(id="a6", content="Meat seasoning", project_id=S, section_id="s4")])
+    todos.CLIENT = f
+    todos.forget()
+    yield f
+    todos.CLIENT = None
+    todos.forget()
 
 
 @pytest.fixture
@@ -365,3 +414,70 @@ def test_a_project_is_created_only_from_a_project_line(call, fake):
     body = call("log", text="project garden: planted tomatoes")
     assert n("SELECT count(*) AS n FROM thoughts WHERE thought_type = 'project'") == 1
     assert n("SELECT count(*) AS n FROM thought_links WHERE link_type = 'part_of'") == 1
+
+
+def test_shopping_items_follow_v1s_rules(call, fake, todo):
+    body = call("log", text="todo: buy milk, cola, potatoes")
+    assert body["outcome"] == "saved", body["message"]
+    assert "Already on your list: Milk" in body["message"] and "Unchecked: Cola" in body["message"]
+    assert "Created: Potatoes (Produce, aldi)" in body["message"]
+    assert not todo.tasks["a3"]["checked"] and todo.log[-1][0] == "add"
+    assert [r["op"] for r in owner_sql("SELECT op FROM todo_actions ORDER BY id")] == ["exists", "reopened", "created"]
+
+
+def test_undo_takes_back_what_a_message_did_in_todoist(call, fake, todo):
+    call("log", text="todo: buy milk, cola, potatoes")
+    n_calls = len(todo.log)
+    asked = call("log", text="undo that")
+    assert asked["outcome"] == "needs_confirmation" and "delete Potatoes" in asked["message"]
+    assert len(todo.log) == n_calls  # the preview never touches Todoist
+    done = call("answer", question_id=asked["questions"][0]["question_id"], reply="yes")
+    assert done["outcome"] == "changed" and todo.tasks["a3"]["checked"]
+    assert not any(t["content"] == "Potatoes" for t in todo.tasks.values())
+    assert n("SELECT count(*) AS n FROM todo_actions WHERE undone_at IS NULL AND op <> 'exists'") == 0
+
+
+def test_several_close_items_become_a_question(call, fake, todo):
+    body = call("log", text="todo: buy chips")
+    assert body["outcome"] == "needs_choice" and "Kettle Chips" in body["message"] and "Tortilla Chips" in body["message"]
+    done = call("answer", question_id=body["questions"][0]["question_id"], reply="tortilla")
+    assert done["outcome"] == "saved" and not todo.tasks["a5"]["checked"] and todo.tasks["a4"]["checked"]
+
+
+def test_a_generic_word_and_a_task(call, fake, todo):
+    body = call("log", text="todo: buy fruits")
+    assert "group of things" in body["message"] and not any(e[0] == "add" for e in todo.log)
+    body = call("log", text="todo: renew passport")
+    assert "Created: Renew passport (Paperwork)" in body["message"]
+    assert any(t["content"] == "Renew passport" and t["section_id"] == "l1" for t in todo.tasks.values())
+
+
+def test_items_wait_while_todoist_is_down_and_go_with_the_next_message(call, fake, todo):
+    todo.down = True
+    body = call("log", text="todo: buy milk, cola, potatoes")
+    assert "waits" in body["message"] and n("SELECT count(*) AS n FROM todo_actions WHERE op = 'waiting'") == 3
+    todo.down = False
+    body = call("log", text="idea: a weekly food chart")
+    assert "Sent to Todoist now" in body["message"] and "Created: Potatoes" in body["message"]
+    assert n("SELECT count(*) AS n FROM todo_actions WHERE op = 'waiting' AND undone_at IS NULL") == 0
+
+
+def test_ticking_off_is_straight_away_and_undo_puts_it_back(call, fake, todo):
+    body = call("log", text="got the milk")
+    assert body["outcome"] == "changed" and "Ticked off: Milk" in body["message"] and todo.tasks["a1"]["checked"]
+    asked = call("log", text="undo that")
+    assert "put Milk back on the list" in asked["message"]
+    call("answer", question_id=asked["questions"][0]["question_id"], reply="yes")
+    assert not todo.tasks["a1"]["checked"]
+
+
+def test_the_shopping_list_can_be_looked_up(call, fake, todo):
+    body = call("log", text="what is on my shopping list")
+    assert body["outcome"] == "answered" and "Dairy & Eggs: Milk [aldi]" in body["message"]
+
+
+def test_a_close_name_is_asked_and_new_creates_it(call, fake, todo):
+    body = call("log", text="todo: buy meat")
+    assert body["outcome"] == "needs_choice" and "Meat seasoning" in body["message"]  # not taken silently
+    done = call("answer", question_id=body["questions"][0]["question_id"], reply="new")
+    assert done["outcome"] == "saved" and "Created: Meat (Meat & Seafood, aldi)" in done["message"]

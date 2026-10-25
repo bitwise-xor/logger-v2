@@ -11,7 +11,7 @@ from typing import Any, Optional
 
 from psycopg.types.json import Jsonb
 
-from . import commands, record
+from . import commands, record, todos
 from .ai.provider import AnthropicProvider, Provider
 from .db import connect
 from .v1_food import _food_cat, _types
@@ -62,7 +62,7 @@ def _message(out: dict) -> str:
     """One short text for the chat app to pass on."""
     o = out["outcome"]
     head = {"saved": "Saved.", "partly_saved": "Saved what was clear; one or more questions are open.",
-            "needs_choice": "Nothing saved yet: a question is open.", "kept": "Kept as text (to-dos come later).",
+            "needs_choice": "Nothing saved yet: a question is open.", "kept": "Kept as text.",
             "not_logged": "Not logged: this reads as a question or command for you, so answer the user yourself.",
             "needs_confirmation": "Nothing saved yet: please confirm.", "rejected": "Nothing saved.",
             "cancelled": "Skipped.", "replayed": "Already saved earlier (same message).",
@@ -132,8 +132,21 @@ def log(text: str, idempotency_key: Optional[str] = None) -> dict[str, Any]:
 def _process(cur, text: str, now: datetime) -> dict:
     """Read, save and audit one message; the caller makes it public."""
     prev, meals = _context(cur, now)
+    sent = todos.retry(cur, provider(), now)  # to-dos that waited because Todoist was down
     r, usages, escalated = record.read(cur, provider(), text, now, prev, meals)
+    usages += sent["usages"]
     out = record.save(cur, r, text, CHANNEL, now)
+    if r.pred.get("todos") and out.get("raw_id"):  # to-dos and shopping go to Todoist (v1's rules, in todos.py)
+        t = todos.apply(cur, provider(), r.pred["todos"], out["raw_id"], now, text)
+        usages += t["usages"]
+        out["receipt"] = out.get("receipt", []) + t["receipt"]
+        out["notes"] = out.get("notes", []) + t["notes"]
+        asked = record._ask(cur, out["raw_id"], t["ask"], now)
+        out["questions"] = out.get("questions", []) + asked
+        if out["outcome"] in ("kept", "needs_choice"):
+            out["outcome"] = "partly_saved" if t["receipt"] and asked else "saved" if t["receipt"] else "needs_choice" if asked else out["outcome"]
+    if sent["receipt"] or sent["notes"]:
+        out["notes"] = out.get("notes", []) + sent["receipt"] + sent["notes"]
     if out["outcome"] == "needs_confirmation":  # v1's read-back: keep the reading, the user's yes saves it
         pid = "p" + secrets.token_hex(4)
         cur.execute("INSERT INTO pending (id, tool, payload, reason, expires_at) VALUES (%s, 'log_confirm', %s, %s, %s)",
@@ -196,10 +209,12 @@ def answer(question_id: str, reply: str) -> dict[str, Any]:
             _audit(cur, "answer", "rejected", {"why": "unknown question"})
             return {"outcome": "rejected", "message": "There is no such open question."}
         yes = bool(YES.match(reply))
-        if p["tool"] == "log":
+        if p["tool"] == "log" and p["payload"].get("kind") != "todo":
             out = record.answer(cur, question_id, reply, now)
         elif p["resolved_at"] is not None or p["expires_at"] < now:
             out = {"outcome": "rejected", "reason": "that question was already answered or has expired"}
+        elif p["tool"] == "log":  # which shopping item was meant
+            out = todos.answer(cur, provider(), p, reply, now)
         elif p["tool"] == "command":  # which entry was meant: read the request again with the answer
             prev, _ = _context(cur, now)
             out, _ = commands.handle(cur, provider(), f"{p['payload']['text']}\n(Asked: {p['reason']} Answer: {reply})", now, prev)

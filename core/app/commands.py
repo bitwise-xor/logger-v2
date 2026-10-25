@@ -9,7 +9,9 @@ from datetime import datetime, timedelta
 from psycopg.types.json import Jsonb
 
 from .ai import command as reader
+from . import todos
 from .ai.provider import Provider, Usage
+from .todoist import TodoistError
 from .v1_commands import Ask, _bound, _change, _delete_thought, _find, _find_food, _find_health, _find_private
 from .v1_food import _num
 from .v1_log import Reject, _day_line, _dm, fmt
@@ -17,7 +19,7 @@ from .v1_thoughts import _short, _thought_row
 from .when import BERLIN
 
 FIND_ARGS = {"thought_id", "query", "tag", "area", "thought_type", "stage", "project", "needs_review", "unreviewed_links",
-             "since", "until", "private", "limit", "health", "food"}
+             "since", "until", "private", "limit", "health", "food", "todoist"}
 CHANGE_ARGS = {"id", "fields", "delete", "past"}
 QUESTION_HOURS = 72
 
@@ -58,7 +60,7 @@ def _steps(raw: list[dict]) -> list[dict]:
             raise Reject(f"could not read the request ({e.msg})") from e
         if not isinstance(args, dict):
             raise Reject("could not read the request")
-        allowed = {"find": FIND_ARGS, "change": CHANGE_ARGS, "undo": set()}[s["action"]]
+        allowed = {"find": FIND_ARGS, "change": CHANGE_ARGS, "undo": set(), "todo": {"done"}}[s["action"]]
         bad = sorted(set(args) - allowed)
         if bad:
             raise Reject(f"unknown argument(s) {', '.join(bad)} for {s['action']}")
@@ -70,6 +72,8 @@ def _steps(raw: list[dict]) -> list[dict]:
 
 def _run_find(cur, a: dict) -> str:
     limit = a.get("limit") or 20
+    if a.get("todoist") is not None:
+        return todos.find(str(a["todoist"]))
     if a.get("private") and (a.get("since") or a.get("until")):
         return _private_between(cur, a, limit)
     if a.get("private"):
@@ -106,14 +110,24 @@ def _private_between(cur, a: dict, limit: int) -> str:
             + "\n".join(f"P{r['id']} [{r['label']}] {fmt(r['received_at'])}: {r['summary'] or _short(r['content'], 160)}" for r in rows))
 
 
-def _undo(cur, now: datetime) -> str:
-    """v2's undo: everything saved from the newest message of the last 24 hours (food, health rows, thoughts).
-    v1's 'last' undid only food, found by v1's own extractor version, which in v2 would hit the imported history."""
-    cur.execute("""SELECT r.id, r.content FROM raw_inbox r WHERE r.channel <> 'catalogue' AND r.received_at > %s - interval '24 hours'
+def _undo(cur, now: datetime, dry: bool = False) -> str:
+    """v2's undo: everything saved from the newest message of the last 24 hours (food, health rows, thoughts, its
+    Todoist actions), or the newest tick-off, whichever came later. v1's 'last' undid only food, found by v1's own
+    extractor version, which in v2 would hit the imported history. dry: say what would happen, touch no Todoist."""
+    cur.execute("""SELECT r.id, r.content, r.received_at FROM raw_inbox r WHERE r.channel <> 'catalogue' AND r.received_at > %s - interval '24 hours'
                    AND (EXISTS (SELECT 1 FROM food_entries x WHERE x.raw_id = r.id) OR EXISTS (SELECT 1 FROM measurements x WHERE x.raw_id = r.id)
-                        OR EXISTS (SELECT 1 FROM events x WHERE x.raw_id = r.id) OR EXISTS (SELECT 1 FROM thoughts x WHERE x.raw_id = r.id))
+                        OR EXISTS (SELECT 1 FROM events x WHERE x.raw_id = r.id) OR EXISTS (SELECT 1 FROM thoughts x WHERE x.raw_id = r.id)
+                        OR EXISTS (SELECT 1 FROM todo_actions x WHERE x.raw_id = r.id AND x.undone_at IS NULL AND x.op <> 'exists'))
                    ORDER BY r.received_at DESC, r.id DESC LIMIT 1""", (now,))
     raw = cur.fetchone()
+    cur.execute("""SELECT batch, max(at) AS at FROM todo_actions WHERE raw_id IS NULL AND undone_at IS NULL
+                   AND at > %s - interval '24 hours' GROUP BY batch ORDER BY max(at) DESC LIMIT 1""", (now,))
+    tick = cur.fetchone()
+    if tick and (not raw or tick["at"] > raw["received_at"]):
+        try:
+            return "OK undid the tick-off: " + "; ".join(todos.undo(cur, tick["batch"], dry)) + "."
+        except TodoistError as e:
+            raise Reject(f"{e}; nothing changed") from e
     if not raw:
         raise Reject("there is no message of the last 24 hours to undo")
     gone = []
@@ -128,6 +142,10 @@ def _undo(cur, now: datetime) -> str:
     for t in cur.fetchall():
         _delete_thought(cur, _thought_row(cur, t["id"]))
         gone.append(f"#{t['id']}")
+    try:
+        gone += todos.undo(cur, f"r{raw['id']}", dry)
+    except TodoistError as e:
+        raise Reject(f"{e}; nothing changed") from e
     days = sorted({x["day"] for x in food})
     for d in days:
         cur.execute("SELECT assign_meals(%s)", (d,))
@@ -135,12 +153,12 @@ def _undo(cur, now: datetime) -> str:
             + "".join("\n" + _day_line(cur, d) for d in days))
 
 
-def _run_changes(cur, steps: list[dict], now: datetime, past=None) -> list[str]:
+def _run_changes(cur, steps: list[dict], now: datetime, past=None, dry: bool = False) -> list[str]:
     out = []
     for s in steps:
         a = s["args"]
         if s["action"] == "undo":
-            out.append(_undo(cur, now))
+            out.append(_undo(cur, now, dry))
         else:
             out.append(_change(cur, str(a["id"]), a.get("fields") or {}, [], [], [], bool(a.get("delete")), past or a.get("past")))
     return out
@@ -149,7 +167,7 @@ def _run_changes(cur, steps: list[dict], now: datetime, past=None) -> list[str]:
 def _preview(cur, steps: list[dict], now: datetime) -> list[str]:
     cur.execute("SAVEPOINT command_preview")
     try:
-        return _run_changes(cur, steps, now)
+        return _run_changes(cur, steps, now, dry=True)  # dry: the preview never touches Todoist
     finally:
         cur.execute("ROLLBACK TO SAVEPOINT command_preview")
 
@@ -174,13 +192,16 @@ def handle(cur, provider: Provider, text: str, now: datetime, previous=()) -> tu
             return {"outcome": "not_logged", "intent": "command", "questions": []}, [u]
         pid = _pending(cur, "command", {"text": text}, cmd["unclear"], now)
         return {"outcome": "needs_choice", "questions": [{"pending_id": pid, "question": cmd["unclear"]}], "steps": audit}, [u]
-    found, changes = [], [s for s in steps if s["action"] != "find"]
+    found, changes = [], [s for s in steps if s["action"] in ("change", "undo")]
     try:
         for s in steps:
             if s["action"] == "find":
                 found.append(_run_find(cur, s["args"]))
+            elif s["action"] == "todo":  # ticking off happens straight away (decided 25.10.); undo puts it back
+                found.append("\n".join(todos.tick(cur, [str(x) for x in s["args"].get("done") or []], now)))
         if not changes:
-            return {"outcome": "answered", "result": "\n\n".join(found), "questions": [], "steps": audit}, [u]
+            done = any(s["action"] == "todo" for s in steps)
+            return {"outcome": "changed" if done else "answered", "result": "\n\n".join(found), "questions": [], "steps": audit}, [u]
         preview = _preview(cur, changes, now)
     except Ask as e:  # a food correction that past entries use: v1 asks whether those change too
         pid = _pending(cur, "command_confirm", {"steps": changes, "ask_past": True}, str(e), now)
@@ -189,6 +210,8 @@ def handle(cur, provider: Provider, text: str, now: datetime, previous=()) -> tu
                 "steps": audit}, [u]
     except Reject as e:
         return {"outcome": "rejected", "reason": str(e), "questions": [], "steps": audit}, [u]
+    except TodoistError as e:
+        return {"outcome": "rejected", "reason": f"{e}; nothing changed in Todoist", "questions": [], "steps": audit}, [u]
     pid = _pending(cur, "command_confirm", {"steps": changes}, "\n".join(preview), now)
     return {"outcome": "needs_confirmation", "result": "\n\n".join(found) or None,
             "read_back": "Preview, nothing changed yet:\n" + "\n".join(preview),
@@ -199,7 +222,7 @@ def apply(cur, payload: dict, now: datetime, past=None) -> dict:
     """The user's yes to a previewed change: the same steps, for real."""
     try:
         done = _run_changes(cur, payload["steps"], now, past)
-    except Reject as e:
+    except (Reject, TodoistError) as e:
         return {"outcome": "rejected", "reason": str(e)}
     return {"outcome": "changed", "receipt": done,
             "steps": [{"action": s["action"], "id": s["args"].get("id")} for s in payload["steps"]]}

@@ -25,10 +25,11 @@ sys.path.insert(0, str(ROOT / "core"))
 sys.path.insert(0, str(ROOT / "tools" / "golden"))
 
 import psycopg  # noqa: E402
+import todos_check  # noqa: E402
 from psycopg.rows import dict_row  # noqa: E402
 from starlette.testclient import TestClient  # noqa: E402
 
-from app import logbook  # noqa: E402
+from app import logbook, todos  # noqa: E402
 from app.ai import parser  # noqa: E402
 from app.ai.provider import AnthropicProvider, Usage  # noqa: E402
 from app.mcp_app import build_app  # noqa: E402
@@ -68,6 +69,7 @@ def main():
     disputed = json.loads((GOLDEN / "disputed.json").read_text())
     prov = CachedProvider(cache, AnthropicProvider(env_value("ANTHROPIC_API_KEY")))
     logbook.PROVIDER = prov
+    todos.CLIENT = todos_check.snapshot()  # a copy of the user's Todoist: the replay never writes to the real one
 
     admin = psycopg.connect(ADMIN, row_factory=dict_row, autocommit=True)
 

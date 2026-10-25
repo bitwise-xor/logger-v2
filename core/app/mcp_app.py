@@ -35,7 +35,8 @@ def _pilot(f):
 @mcp.tool()
 def log(text: str, idempotency_key: Optional[str] = None) -> dict[str, Any]:
     """Log one user message (food, drinks, health values, habits, thoughts, private or gratitude lines) in the user's
-    exact words; also look-ups and changes of logged entries ("what did I eat yesterday", "the apple was 150 g", "undo").
+    exact words, to-dos and shopping (they go to Todoist); also look-ups and changes ("what did I eat yesterday", "the apple
+    was 150 g", "got the milk", "undo").
     Not for other questions to you. idempotency_key: a new unique string per message, the same on a retry."""
     return logbook.log(text, idempotency_key)
 

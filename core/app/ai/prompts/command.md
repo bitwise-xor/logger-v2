@@ -13,9 +13,10 @@ args (all optional, combine them):
 - `health`: "left" (today's habit checklist), "sleep" (nights), "day" (everything logged on a day, with `since`), "review" (flagged rows), or a type ("weight", "bp", "sugar", "shoonya", ...: stats and the newest rows). Labs: "lab ldl" (one test over time), "reports", "R24" (one report), "lab flags", "lab tests", "med list".
 - thoughts (when neither food nor health is set): `query` (words), `tag`, `area` (health, projects, finance, immigration, learning, personal), `thought_type` (idea, question, task, project, note, journal, reading, progress), `stage` (inbox, active, someday, done, dropped, or "open"), `project`, `thought_id` ("57": full detail), `needs_review` (true).
 - `since`, `until`: the person's time words ("yesterday", "7 days ago", "24.10."). `limit`: how many rows (default 20).
+- `todoist`: the person's Todoist: "shopping" (the shopping list by section), "shopping aldi" or "shopping indian" (one store or section), "tasks" (open tasks), "today" (due today or overdue).
 - `private`: true searches ONLY private and gratitude entries ("list my gratitudes for today" = private true, query "gratitude", since "today"). Use it only when the person asks for private or gratitude entries.
 
-Examples: "what did I eat today" = {"food": "today"}; "what did I eat yesterday" = {"food": "day", "since": "yesterday"}; "my last meal" = {"food": "today"}; "how is my weight going" = {"health": "weight"}; "how did I sleep this week" = {"health": "sleep", "since": "7 days ago"}; "list my last 10 ideas" = {"thought_type": "idea", "limit": 10}; "open tasks for the logger app" = {"thought_type": "task", "stage": "open", "project": "logger app"}.
+Examples: "what is on my shopping list" = {"todoist": "shopping"}; "what do I need from the Indian store" = {"todoist": "shopping indian"}; "what did I eat today" = {"food": "today"}; "what did I eat yesterday" = {"food": "day", "since": "yesterday"}; "my last meal" = {"food": "today"}; "how is my weight going" = {"health": "weight"}; "how did I sleep this week" = {"health": "sleep", "since": "7 days ago"}; "list my last 10 ideas" = {"thought_type": "idea", "limit": 10}; "open tasks for the logger app" = {"thought_type": "task", "stage": "open", "project": "logger app"}.
 
 Summaries and coaching ("summary of today", "coach me on my last meal", "how was my day") are a find of the data they need ({"food": "today"}, or {"health": "day", "since": "today"} too): the assistant writes the summary from the result.
 
@@ -30,9 +31,13 @@ args: `id` (from the lists), `fields` (an object), `delete` (true removes it), `
 
 Examples (with f925 = Apple 182 g at 22:33 in the list): "the apple was 150 g" = {"id": "f925", "fields": {"amount": 150, "unit": "g"}}; "make that 150 g" right after the apple was logged = the same; "delete the apple" = {"id": "f925", "delete": true}; "the apple was at 21:00" = {"id": "f925", "fields": {"when": "21:00"}}; "weight was 127.8 not 128.1" (m88 = weight 128.1) = {"id": "m88", "fields": {"value": 127.8}}; "task 57 is done" = {"id": "57", "fields": {"stage": "done"}}.
 
+### todo: tick items off in Todoist
+
+args: {"done": ["milk", "cola"]}: the items in English, as the person named them. "got the milk", "bought cola and eggs", "milk is done", "remove cola from the shopping list", "I renewed the passport" (a task) = todo. Adding items is never a command (it is logged).
+
 ### undo: take back the newest logged message
 
-args: {}. Everything saved from the newest message of the last 24 hours goes: its food, health rows and thoughts. "undo", "undo that", "that was wrong, remove it" (when no single entry is meant) = undo.
+args: {}. Everything saved from the newest message of the last 24 hours goes: its food, health rows, thoughts and what it did in Todoist; or the newest tick-off, when that came later. "undo", "undo that", "that was wrong, remove it" (when no single entry is meant) = undo.
 
 ## Which entry
 
