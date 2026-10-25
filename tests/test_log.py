@@ -20,8 +20,9 @@ def P(**kw):
     return {**base, **kw}
 
 
-def F(food, amount, unit="g", when=None, drink=None):
-    return dict(food=food, amount=amount, unit=unit, grams_per_unit=None, cooked=False, drink=drink, when=when, note=None)
+def F(food, amount, unit="g", when=None, drink=None, en=None):
+    return dict(food=food, food_en=en or food, amount=amount, unit=unit, grams_per_unit=None, cooked=False, drink=drink,
+                when=when, note=None)
 
 
 def H(type_, value=None, value2=None, when=None):
@@ -39,7 +40,10 @@ ANSWERS = {
     "why is that?": P(intent="question"),
     "idea: a weekly food chart": P(thoughts=[T("A weekly food chart")]),
     "weight 90": P(health=[H("weight", 90)]),
+    "50 g frischkaese": P(food=[F("frischkaese", 50, en="cream cheese")]),
 }
+
+LABEL = dict(kcal=60, protein=1.2, fat=0.3, carbs=13, sugar_total=11, source="label")
 
 
 class FakeProvider:
@@ -69,9 +73,9 @@ def skyr():
 @pytest.fixture
 def call(bearer):
     with TestClient(build_app(), base_url="http://log.example.test") as c:
-        def _call(name, **args):
+        def _call(tool, **args):
             r = c.post("/mcp-testpath", headers={**HDR, **bearer}, content=json.dumps(
-                {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": name, "arguments": args}}))
+                {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": tool, "arguments": args}}))
             assert r.status_code == 200, r.text
             res = r.json()["result"]
             assert not res.get("isError"), res
@@ -140,6 +144,42 @@ def test_an_odd_value_waits_for_yes(call, fake):
     assert n("SELECT count(*) AS n FROM measurements") == 1
     done = call("answer", question_id=second["questions"][0]["question_id"], reply="yes")
     assert done["outcome"] == "saved" and n("SELECT count(*) AS n FROM measurements") == 2
+
+
+def test_a_german_word_finds_the_english_food(call, fake):
+    owner_sql("INSERT INTO foods (name, basis, kcal, protein, fat, carbs, source) VALUES ('Cream cheese', 'g', 250, 6, 24, 3, 'database')")
+    body = call("log", text="50 g frischkaese")
+    assert body["outcome"] == "saved" and "English name" in body["message"]
+    assert n("SELECT count(*) AS n FROM food_entries WHERE amount = 50") == 1
+
+
+def test_a_new_food_from_a_label_answers_the_open_question(call, fake, skyr):
+    asked = call("log", text="150 g skyr and 20 g dragonfruit")
+    qid = asked["questions"][0]["question_id"]
+    check = call("add_food", name="Dragon fruit (Aldi)", question_id=qid, **LABEL)
+    assert check["outcome"] == "needs_confirmation" and len(check["questions"]) == 1  # a label is always read back first
+    assert n("SELECT count(*) AS n FROM foods WHERE name = 'Dragon fruit (Aldi)'") == 0
+    done = call("answer", question_id=check["questions"][0]["question_id"], reply="yes")
+    assert done["outcome"] == "saved"
+    f = owner_sql("SELECT id, source, aliases FROM foods WHERE name = 'Dragon fruit (Aldi)'")[0]
+    assert f["source"] == "label" and "dragonfruit" in f["aliases"]  # the user's word now finds it
+    assert n("SELECT count(*) AS n FROM food_entries WHERE food_id = %s AND amount = 20", f["id"]) == 1
+    assert n("SELECT count(DISTINCT raw_id) AS n FROM food_entries") == 1  # same message as the skyr
+    assert call("answer", question_id=qid, reply="N1")["outcome"] == "rejected"  # the question is closed
+
+
+def test_an_estimate_added_to_the_catalogue_only_is_flagged(call, fake):
+    body = call("add_food", name="Masala chai (homemade)", kcal=45, protein=1.5, fat=1.6, carbs=6, source="estimate",
+                basis="ml", drink=True)
+    assert body["outcome"] == "saved"
+    f = owner_sql("SELECT id, needs_review, is_drink, basis FROM foods WHERE name = 'Masala chai (homemade)'")[0]
+    assert f["needs_review"] and f["is_drink"] and f["basis"] == "ml"
+    assert n("SELECT count(*) AS n FROM food_entries") == 0  # nothing eaten
+
+
+def test_impossible_values_are_rejected(call, fake):
+    body = call("add_food", name="Odd food", kcal=100, protein=1, fat=2, carbs=10, sat_fat=5, source="estimate")
+    assert body["outcome"] == "rejected" and n("SELECT count(*) AS n FROM foods") == 0
 
 
 def test_audit_log_has_no_health_values(call, fake, skyr):

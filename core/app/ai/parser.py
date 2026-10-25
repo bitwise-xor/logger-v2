@@ -25,7 +25,7 @@ SCHEMA = _obj({
     "private": _null({"type": "string", "enum": ["private", "gratitude"]}),
     "private_unsure": BOOL,
     "food": {"type": "array", "items": _obj({
-        "food": STR, "amount": _null(NUM), "unit": _null(STR), "grams_per_unit": _null(NUM),
+        "food": STR, "food_en": STR, "amount": _null(NUM), "unit": _null(STR), "grams_per_unit": _null(NUM),
         "cooked": BOOL, "drink": _null(BOOL), "when": WHEN, "note": _null(STR),
     })},
     "usual_meals": {"type": "array", "items": _obj({

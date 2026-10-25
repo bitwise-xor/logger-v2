@@ -14,14 +14,15 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 from psycopg.types.json import Jsonb
+from pydantic import ValidationError
 
 from . import v1_log, v1_thoughts
 from .ai import parser
 from .ai.provider import Provider, Usage
 from .clock import read_when
 from .foods import amount, pick
-from .v1_food import _food_cat, _resolve_type, _types
-from .v1_log import Entry, FoodItem, MealUse, ReadBack, Reject
+from .v1_food import _fkey, _food_cat, _resolve_type, _types
+from .v1_log import Entry, FoodItem, MealUse, NewFood, ReadBack, Reject
 from .v1_thoughts import Thought
 
 ESCALATION_MODEL = "claude-sonnet-5-5"
@@ -49,9 +50,17 @@ def _iso(ts: datetime, date_only: bool) -> str:
 
 def _food_item(cur, cat: dict, it: dict, now: datetime, f: Optional[dict] = None, how: str = "id",
                cands: list = ()) -> tuple[Optional[FoodItem], Optional[dict], Optional[str]]:
-    """One parsed food item -> (v1 FoodItem, question, note). f is given when the user already chose the food."""
+    """One parsed food item -> (v1 FoodItem, question, note). f is given when the user already chose the food.
+    The user's word is tried first, then the parser's English name ("frischkäse" -> "cream cheese")."""
     if f is None:
         f, how, cands = pick(cur, cat, it["food"], it["cooked"], before=now)
+        en = (it.get("food_en") or "").strip()
+        if not f and en and en.lower() != it["food"].strip().lower():
+            f2, how2, cands2 = pick(cur, cat, en, it["cooked"], before=now)
+            if f2:
+                f, how = f2, "english"
+            elif cands2 and not cands:
+                cands = cands2
     if not f:
         text = f"Which food is '{it['food']}'? " + ("; ".join(f"N{c['id']} {c['name']}" for c in cands[:6])
                                                     if cands else "Nothing in the catalogue fits.")
@@ -65,8 +74,8 @@ def _food_item(cur, cat: dict, it: dict, now: datetime, f: Optional[dict] = None
     if tprob:
         return None, dict(kind="time", text=tprob, item=it, food_id=f["id"]), None
     note = None
-    if how in ("close", "usual", "state"):
-        note = f"'{it['food']}' -> N{f['id']} {f['name']}" + (" (your usual)" if how == "usual" else "")
+    if how in ("close", "usual", "state", "english"):
+        note = f"'{it['food']}' -> N{f['id']} {f['name']}" + {"usual": " (your usual)", "english": " (by its English name)"}.get(how, "")
     return FoodItem(food=f"N{f['id']}", amount=grams, when=_iso(ts, date_only), note=it["note"], estimated=bool(est),
                     drink=it["drink"]), None, note
 
@@ -219,6 +228,7 @@ def answer(cur, pending_id: str, reply: str, now: datetime) -> dict:
     cat = _food_cat(cur)
     asked_at = datetime.fromisoformat(q["now"])
     it = dict(q["item"])
+    alias_note = None
     if q["kind"] == "food":
         m = re.fullmatch(r"\s*[nN]?#?(\d+)\s*", reply)
         if m:
@@ -229,7 +239,9 @@ def answer(cur, pending_id: str, reply: str, now: datetime) -> dict:
             f, how, cands = pick(cur, cat, reply, it["cooked"])
             if not f:
                 return {"outcome": "needs_choice", "question": f"'{reply}' fits several or no foods: "
-                        + "; ".join(f"N{c['id']} {c['name']}" for c in cands[:6])}
+                        + "; ".join(f"N{c['id']} {c['name']}" for c in cands[:6])
+                        + ". If it is a new food, add it with add_food and this question id."}
+        alias_note = _alias(cur, cat, f, it["food"])
     else:
         f = cat["by_id"][q["food_id"]]
         num = re.fullmatch(r"\s*(\d+(?:[.,]\d+)?)\s*(g|ml)?\s*", reply)
@@ -244,7 +256,72 @@ def answer(cur, pending_id: str, reply: str, now: datetime) -> dict:
     except ReadBack as e:
         return {"outcome": "needs_confirmation", "read_back": str(e)}
     out: list[str] = []
-    notes: list[str] = []
+    notes: list[str] = [alias_note] if alias_note else []
     v1_log._insert_food(cur, q["raw_id"], prep, out, notes)
     cur.execute("UPDATE pending SET resolved_at = now(), resolution = 'confirmed' WHERE id = %s", (pending_id,))
     return {"outcome": "saved", "raw_id": q["raw_id"], "receipt": out, "notes": notes}
+
+
+def _alias(cur, cat: dict, f: dict, word: str) -> Optional[str]:
+    """v1's rule: after a pick for a word the catalogue did not know, save the word as an alias of that food."""
+    k = _fkey(word)
+    if not k or k in cat["names"] or k in cat["aliases"] or k in cat["defaults"]:
+        return None
+    cur.execute("UPDATE foods SET aliases = array_append(aliases, %s) WHERE id = %s", (word.strip().lower(), f["id"]))
+    return f"'{word.strip()}' saved as a word for N{f['id']} {f['name']}"
+
+
+def add_food(cur, name: str, values: dict, channel: str, now: datetime, question_id: Optional[str] = None,
+             food_code: Optional[str] = None, confirmed: bool = False) -> dict:
+    """A food missing from the catalogue, with values per 100 g (or 100 ml), through v1's own new-food code and checks:
+    impossible values are rejected; odd values, and every label, need the user's yes (v1 showed a label read-back table
+    with a code). With question_id the waiting item of that message is saved with the new food and the user's word
+    becomes an alias; without it the food is only added to the catalogue (v1's rule: log 1 g, then remove the entry)."""
+    values = dict(values)
+    drink = bool(values.pop("drink", False))
+    try:
+        nf = NewFood(**values)
+    except ValidationError as e:
+        return {"outcome": "rejected", "reason": "; ".join(err["msg"] for err in e.errors())}
+    q = None
+    when = now
+    if question_id:
+        cur.execute("SELECT * FROM pending WHERE id = %s AND tool = 'log' FOR UPDATE", (question_id,))
+        p = cur.fetchone()
+        if not p or p["resolved_at"] is not None or p["expires_at"] < now or p["payload"]["kind"] != "food":
+            return {"outcome": "rejected", "reason": "that food question does not exist, was already answered, or has expired"}
+        q = p["payload"]
+        it = q["item"]
+        if it["amount"] is None:
+            return {"outcome": "rejected", "reason": "the waiting item has no amount: log it again with the amount"}
+        when = datetime.fromisoformat(q["now"])
+        ts, date_only, tprob = read_when(it["when"], when)
+        item = FoodItem(food=name, amount=it["amount"], unit=it["unit"], unit_g=it["grams_per_unit"], when=_iso(ts, date_only),
+                        note=it["note"], drink=it["drink"] if it["drink"] is not None else drink, new=nf, confirmed=confirmed)
+    else:
+        item = FoodItem(food=name, amount=1, when=_iso(now, False), drink=drink, new=nf, confirmed=confirmed)
+    try:
+        prep = v1_log._prepare_food(cur, [item], [], [], None, True, food_code, when, [])
+    except ReadBack as e:
+        code = re.search(r'food_code="([0-9A-F]{6})"', str(e))
+        return {"outcome": "needs_confirmation", "read_back": str(e), "code": code[1] if code else None}
+    except Reject as e:
+        return {"outcome": "rejected", "reason": str(e)}
+    if q:
+        raw_id = q["raw_id"]
+    else:
+        cur.execute("INSERT INTO raw_inbox (channel, content) VALUES (%s, %s) RETURNING id", (channel, f"add food: {name}"))
+        raw_id = cur.fetchone()["id"]
+    out: list[str] = []
+    notes: list[str] = []
+    v1_log._insert_food(cur, raw_id, prep, out, notes)
+    fid = next(iter(prep["new"].values()))["id"]
+    if q:
+        cat = _food_cat(cur)
+        a = _alias(cur, cat, cat["by_id"][fid], q["item"]["food"])
+        notes += [a] if a else []
+        cur.execute("UPDATE pending SET resolved_at = now(), resolution = 'confirmed' WHERE id = %s", (question_id,))
+    else:  # catalogue only: nothing was eaten
+        cur.execute("DELETE FROM food_entries WHERE raw_id = %s", (raw_id,))
+        out = [line for line in out if "NEW food" in line]
+    return {"outcome": "saved", "raw_id": raw_id, "food_id": fid, "receipt": out, "notes": notes}

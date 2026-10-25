@@ -115,21 +115,49 @@ def log(text: str, idempotency_key: Optional[str] = None) -> dict[str, Any]:
         return resp
 
 
+def _confirm_food(cur, out: dict, args: dict, now: datetime) -> dict:
+    """A new food waiting for the user's yes (a label, or odd values): keep the call, the yes repeats it."""
+    pid = "p" + secrets.token_hex(4)
+    cur.execute("INSERT INTO pending (id, tool, payload, reason, expires_at) VALUES (%s, 'add_food_confirm', %s, %s, %s)",
+                (pid, Jsonb({**args, "code": out.get("code"), "now": now.isoformat()}), out["read_back"][:500],
+                 now + timedelta(hours=record.QUESTION_HOURS)))
+    out["questions"] = [{"pending_id": pid, "question": "Show the user these values; if they match the pack (or are right), "
+                                                        "answer yes, otherwise call add_food again with the corrected values."}]
+    return out
+
+
+def add_food(name: str, values: dict, question_id: Optional[str] = None) -> dict[str, Any]:
+    now = clock()
+    with connect() as conn, conn.cursor() as cur:
+        out = record.add_food(cur, name, values, CHANNEL, now, question_id)
+        if out["outcome"] == "needs_confirmation":
+            out = _confirm_food(cur, out, {"name": name, "values": values, "question_id": question_id}, now)
+        resp = _public(out)
+        _audit(cur, "add_food", out["outcome"], {"food_id": out.get("food_id"), "question_id": question_id})
+        return resp
+
+
 def answer(question_id: str, reply: str) -> dict[str, Any]:
     now = clock()
     with connect() as conn, conn.cursor() as cur:
         cur.execute("SELECT * FROM pending WHERE id = %s FOR UPDATE", (question_id,))
         p = cur.fetchone()
-        if not p or p["tool"] not in ("log", "log_confirm"):
+        if not p or p["tool"] not in ("log", "log_confirm", "add_food_confirm"):
             _audit(cur, "answer", "rejected", {"why": "unknown question"})
             return {"outcome": "rejected", "message": "There is no such open question."}
+        yes = reply.strip().lower() in ("yes", "y", "ok", "confirm", "correct", "ja")
         if p["tool"] == "log":
             out = record.answer(cur, question_id, reply, now)
         elif p["resolved_at"] is not None or p["expires_at"] < now:
             out = {"outcome": "rejected", "reason": "that question was already answered or has expired"}
-        elif reply.strip().lower() not in ("yes", "y", "ok", "confirm", "ja"):
+        elif not yes:
             cur.execute("UPDATE pending SET resolved_at = now(), resolution = 'cancelled' WHERE id = %s", (question_id,))
             out = {"outcome": "cancelled"}
+        elif p["tool"] == "add_food_confirm":
+            d = p["payload"]
+            out = record.add_food(cur, d["name"], d["values"], CHANNEL, now, d["question_id"], food_code=d["code"], confirmed=True)
+            if out["outcome"] == "saved":
+                cur.execute("UPDATE pending SET resolved_at = now(), resolution = 'confirmed' WHERE id = %s", (question_id,))
         else:
             d = p["payload"]
             asked = datetime.fromisoformat(d["now"])

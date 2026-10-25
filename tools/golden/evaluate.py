@@ -69,6 +69,9 @@ def score_case(cur, cat, types, case: dict, pred: dict) -> dict:
     items = []
     for it in pred.get("food", []):
         f, how, cands = pick(cur, cat, it["food"], it["cooked"], before=now)
+        if not f and it.get("food_en") and it["food_en"].lower() != it["food"].lower():  # as record.py does
+            f2, how2, cands2 = pick(cur, cat, it["food_en"], it["cooked"], before=now)
+            f, how, cands = (f2, "english", cands2) if f2 else (f, how, cands)
         grams = est = prob = None
         if f and it["amount"] is not None:
             grams, est, prob = amount(cur, f, it["amount"], it["unit"], it["grams_per_unit"])

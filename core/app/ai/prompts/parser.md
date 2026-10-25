@@ -29,9 +29,11 @@ Every request gives you: the local date and time the message was sent (Europe/Be
 One item per food or drink.
 
 - `food`: the food as the person named it, with spelling fixed, in the person's language ("kaisergemüse", "cola zero", "tortilla chips", "blueberries", "knäckebrot"). Keep brand and variety words. Never translate it, generalise it, or swap it for another food. Several foods in one phrase are several items ("hot chocolate with 70 g milk and 6 g cocoa powder" = milk + cocoa powder).
+- `food_en`: the plain English name of the same food, for matching when the catalogue has it in English ("frischkäse" = "cream cheese", "magerquark" = "low-fat quark", "kaisergemüse" = "mixed vegetables"). The same as `food` when it is already English.
 - `amount` and `unit`: the number and unit as said. `unit` is g, ml, kg, l, tbsp, tsp, piece, slice, glass, cup, egg, scoop, handful, bowl, plate, portion, or another unit word the person used, or null when there is no unit word.
   - Counted things: "2 eggs" = amount 2, unit "egg"; "a banana" = 1 piece; "three knäckebrot" = 3 piece; "2 teas" = 2 cup; "a cola zero" or "a glass of cola zero" = 1 glass; "2 glasses at around 18:00" = one item, 2 glass; "2x200ml cola zero" = 400 ml.
   - Fractions are numbers: "1/3 tbsp olive oil" = amount 0.33, unit tbsp; "half an avocado" = 0.5 piece.
+  - A count with its weight is ONE item with the weight: "2 mushrooms (80g)" = mushrooms, 80 g (not 2 pieces and 80 g); "3 eggs, about 180 g" = eggs, 180 g.
   - Never convert units yourself, and never turn a count into grams.
 - `grams_per_unit`: when the unit is not g, ml, kg or l, your best estimate of one unit in grams (ml for drinks): egg 60, tbsp oil 13, tbsp sauce 16, tsp 5, slice of bread 40, glass 300, cup of tea or coffee 250, piece = a typical piece of that food. The logger uses its stored weight when it has one. Null for g, ml, kg and l.
 - `cooked`: true only when the person says the food was weighed cooked (cooked, boiled, fried, roasted, baked ...). Otherwise false: weights are raw by default.

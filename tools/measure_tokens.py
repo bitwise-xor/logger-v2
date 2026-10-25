@@ -45,10 +45,9 @@ def main():
     ap.add_argument("--v1-prompt", default=str(pathlib.Path.home() / "migration" / "logger-app" / "docs" / "chat-instructions.md"))
     a = ap.parse_args()
 
-    os.environ.update(MCP_PATH="/mcp", PUBLIC_URL="https://log.example.test", ALLOWED_HOSTS="log.example.test")
+    os.environ.update(MCP_PATH="/mcp", PUBLIC_URL="https://log.example.test", ALLOWED_HOSTS="log.example.test", PILOT_TOOLS="0")
     from app.mcp_app import mcp as v2  # noqa: E402
-    v2_all = tools_of(v2)
-    v2_new = [t for t in v2_all if t["name"] in ("log", "answer")]
+    v2_new = tools_of(v2)  # what a v2 chat sees (the pilot tools are hidden)
     v1 = v1_tools(a.v1_server)
     v1_prompt = pathlib.Path(a.v1_prompt).read_text()
 
@@ -63,7 +62,7 @@ def main():
             kw["tools"] = tools
         return client.messages.count_tokens(**kw).input_tokens
 
-    print(f"v1 tools: {[t['name'] for t in v1]}; v2 new tools: {[t['name'] for t in v2_new]}; pilot tools: {len(v2_all) - len(v2_new)}")
+    print(f"v1 tools: {[t['name'] for t in v1]}; v2 tools: {[t['name'] for t in v2_new]}")
     print(f"v1 prompt: {len(v1_prompt.split())} words; v2 prompt: {len(V2_PROMPT.split())} words\n")
     print("| Per chat, before the first message | " + " | ".join(m for m in ("claude-sonnet-5-5", "claude-opus-5-5")) + " |")
     print("| --- | --- | --- |")
@@ -71,10 +70,9 @@ def main():
         ("v1 tool definitions (find, log, change)", dict(tools=v1)),
         ("v1 project instructions", dict(system=v1_prompt)),
         ("**v1 total**", dict(system=v1_prompt, tools=v1)),
-        ("v2 tool definitions (log, answer)", dict(tools=v2_new)),
+        (f"v2 tool definitions ({', '.join(t['name'] for t in v2_new)})", dict(tools=v2_new)),
         ("v2 project prompt", dict(system=V2_PROMPT)),
         ("**v2 total**", dict(system=V2_PROMPT, tools=v2_new)),
-        ("pilot tools v2 can retire (9)", dict(tools=[t for t in v2_all if t not in v2_new])),
     ]
     base = {m: count(m) for m in ("claude-sonnet-5-5", "claude-opus-5-5")}
     for label, kw in rows:
