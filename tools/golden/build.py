@@ -75,16 +75,22 @@ def main() -> None:
             exp = {"intent": "log", "private": None, "food": [], "health": [], "thoughts": [], "todos": [], "updates": 0}
             # new = the food was created by this very message (v1 added it from a database or an estimate)
             exp["food"] = [dict(food_id=e["food_id"], name=e["name"], amount=float(e["amount"]), drink=e["is_drink"] and e["name"] not in NOT_DRINKS,
-                                at=local(e["eaten_at"]), time_known=e["time_known"], note=e["note"], new=e["new"])
+                                at=local(e["eaten_at"]), time_known=e["time_known"], note=e["note"], new=e["new"],
+                                day=str(e["day"]), meal=e["meal"])
                            for e in q("""SELECT e.*, f.name, f.created_at BETWEEN %s - interval '2 minutes' AND %s + interval '30 minutes' AS new
                                          FROM food_entries e JOIN foods f ON f.id = e.food_id
                                          WHERE e.raw_id = %s ORDER BY e.id""", ts, ts, rid)]
+            names = " ".join(f["name"].lower() for f in exp["food"])
+            if "milk" in names and "cocoa powder" in names:  # decided 25.10.: milk with cocoa powder is a hot chocolate
+                for f in exp["food"]:
+                    if f["name"].lower().startswith(("milk", "cocoa powder")):
+                        f["drink"] = True
             exp["health"] = [dict(type=m["type"], value=float(m["value1"]), value2=None if m["value2"] is None else float(m["value2"]),
-                                  period=m["period"], at=local(m["event_at"]), time_known=m["time_known"])
+                                  period=m["period"], at=local(m["event_at"]), time_known=m["time_known"], day=str(m["day"]))
                              for m in q("""SELECT m.*, t.name AS type FROM measurements m JOIN log_types t ON t.id = m.type_id
                                            WHERE m.raw_id = %s ORDER BY m.id""", rid)]
             exp["health"] += [dict(type=e["type"], value=None, value2=None, period=None, at=local(e["event_at"]),
-                                   time_known=e["time_known"], session=(e["details"] or {}).get("session"))
+                                   time_known=e["time_known"], session=(e["details"] or {}).get("session"), day=str(e["day"]))
                               for e in q("""SELECT e.*, t.name AS type FROM events e JOIN log_types t ON t.id = e.type_id
                                             WHERE e.raw_id = %s ORDER BY e.id""", rid)]
             exp["thoughts"] = [dict(thought_type=t["thought_type"], area=t["area"], summary=t["summary"])

@@ -6,7 +6,7 @@ BEGIN;
 -- Words that mean one of the owner's products. These lived in v1's chat rules or are new choices.
 INSERT INTO food_defaults (term, food_id) VALUES
   ('tea', 230), ('potato chips', 235), ('kettle chips', 235), ('kettle potato chips', 235),
-  ('waffle', 216), ('skyr', 232), ('seed mix', 234), ('cashew peanut mix', 249)
+  ('waffle', 216), ('skyr', 232), ('seed mix', 234), ('omega mix', 234), ('cashew peanut mix', 249)
 ON CONFLICT (term) DO UPDATE SET food_id = EXCLUDED.food_id;
 
 -- Whey eaten in a bowl is food, not a drink (v1 saved it as a drink).

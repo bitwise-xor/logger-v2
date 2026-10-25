@@ -45,8 +45,13 @@ def pick(cur, cat: dict, term: str, cooked: bool = False, before: Optional[datet
     return f, how, cands
 
 
+UNIT_WORDS = {"piece", "pieces", "slice", "slices", "stuck", "stueck", "portion", "serving"}
+
+
 def _pick(cur, cat: dict, term: str, cooked: bool, before: Optional[datetime]) -> tuple[Optional[dict], str, list[dict]]:
-    d = cat["defaults"].get(_fkey(term))
+    k = _fkey(term)
+    bare = " ".join(w for w in k.split() if w not in UNIT_WORDS)  # "waffle piece" still means your waffle
+    d = cat["defaults"].get(k) or cat["defaults"].get(bare)
     if d:
         return d, "default", [d]
     matches, how = _find_foods(cat, term)
