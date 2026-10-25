@@ -66,7 +66,7 @@ One item per measurement or tick in `health`. Long dictated messages often menti
   - `thought_type`: idea, question, task, project, note, journal, reading or progress. "question" is something to research or find out ("research X", "find out whether ..."); "task" is something to do.
   - `area`: health, projects, finance, immigration, learning or personal.
   - `tags`: up to 3 short lowercase words.
-  - `project`: the project name for project lines, else null.
+  - `project`: the name of the project the thought is work on: a "project X:" line, or a task, idea or progress named for a project ("a to-do for the logger app ..." = project "logger app"; "idea for the exercise plan: ..." = project "exercise plan"). A passing mention of something is not a project ("this is part of the logger v2 test" = a note, project null). Otherwise null.
   - Labels: "idea:" = idea; "task:" or "need to ..." = task; "project X:" = progress for work done, task for work to do. A to-do for a project ("a to-do for the logger app would be ...") is a task thought with that project, not a to-do.
 - `todos`: only when the person explicitly asks to put something on their to-do or shopping list: "todo:", "to do ...", "buy X", "add X to the shopping list" (voice typing may write "todo by X" or "to do by X"). One item per thing, `item` in English. `list` is "shopping" for things to buy, "tasks" otherwise. `store` is the shop when named ("aldi", "indian store"), else null.
   - Combined items are split: "chicken and meat seasoning" = "chicken seasoning" and "meat seasoning".

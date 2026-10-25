@@ -195,6 +195,11 @@ def save(cur, r: Reading, text: str, channel: str, now: datetime, confirmed: boo
     out: list[str] = []
     notes = list(r.notes)
     thoughts = r.thoughts
+    for th in thoughts:  # v1 creates a project for any unknown name; v2 only for an explicit "project X: ..." line
+        if th.project and not v1_thoughts._match_project(cur, th.project) and not re.match(r"\s*project\b", text, re.I):
+            notes.append(f"no project '{th.project}' yet, so this is not linked to one; "
+                         f"start a message with 'project {th.project}:' to create it")
+            th.project = None
     if not (prepared or food or thoughts or r.questions or r.pred.get("todos")):
         # v1: a log message with nothing extracted is kept as one unsorted thought, flagged for review
         thoughts = [Thought(summary=v1_thoughts._short(text, 140), needs_review=True,

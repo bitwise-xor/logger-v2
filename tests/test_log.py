@@ -40,6 +40,8 @@ ANSWERS = {
     "grateful for a quiet morning": P(private="gratitude", thoughts=[T("Grateful for a quiet morning", "journal", "personal")]),
     "why is that?": P(intent="question"),
     "idea: a weekly food chart": P(thoughts=[T("A weekly food chart")]),
+    "this is part of the garden test": P(thoughts=[dict(T("Part of the garden test", "note"), project="garden")]),
+    "project garden: planted tomatoes": P(thoughts=[dict(T("Planted tomatoes", "progress"), project="garden")]),
     "weight 90": P(health=[H("weight", 90)]),
     "weight 90 kg": P(health=[H("weight", 90)]),
     "apple was 150 g": P(intent="command", command_text="apple was 150 g"),
@@ -354,3 +356,12 @@ def test_an_unclear_change_asks_which_entry_first(call, fake, skyr):
     assert preview["outcome"] == "needs_confirmation" and n("SELECT count(*) AS n FROM food_entries") == 1
     done = call("answer", question_id=preview["questions"][0]["question_id"], reply="yes")
     assert done["outcome"] == "changed" and n("SELECT count(*) AS n FROM food_entries") == 0
+
+
+def test_a_project_is_created_only_from_a_project_line(call, fake):
+    body = call("log", text="this is part of the garden test")
+    assert body["outcome"] == "saved" and "project garden:" in body["message"]
+    assert n("SELECT count(*) AS n FROM thoughts WHERE thought_type = 'project'") == 0
+    body = call("log", text="project garden: planted tomatoes")
+    assert n("SELECT count(*) AS n FROM thoughts WHERE thought_type = 'project'") == 1
+    assert n("SELECT count(*) AS n FROM thought_links WHERE link_type = 'part_of'") == 1
