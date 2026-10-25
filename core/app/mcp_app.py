@@ -44,15 +44,22 @@ def add_food(name: str, kcal: float, protein: float, fat: float, carbs: float, s
              fibre: Optional[float] = None, sugar_total: Optional[float] = None, sugar_added: Optional[float] = None,
              sodium_mg: Optional[float] = None, caffeine_mg: Optional[float] = None, basis: str = "g",
              source_note: Optional[str] = None, state: Optional[str] = None, drink: bool = False,
-             question_id: Optional[str] = None) -> dict[str, Any]:
+             question_id: Optional[str] = None, aliases: Optional[list[str]] = None) -> dict[str, Any]:
     """Add a food missing from the catalogue, values per 100 g (basis ml: per 100 ml). source: label (read from the
     user's photo), database (name it in source_note) or estimate. Name in English, brand in brackets. A label's
     "sugar" is sugar_total; sodium_mg = salt g x 400; leave out what is not printed. question_id: the open food
-    question, so the waiting item is saved with it."""
+    question, so the waiting item is saved with it. aliases: other words the user uses for it."""
     values = dict(kcal=kcal, protein=protein, fat=fat, carbs=carbs, source=source, sat_fat=sat_fat, fibre=fibre,
                   sugar_total=sugar_total, sugar_added=sugar_added, sodium_mg=sodium_mg, caffeine_mg=caffeine_mg,
                   basis=basis, source_note=source_note, state=state, drink=drink)
-    return logbook.add_food(name, values, question_id)
+    return logbook.add_food(name, values, question_id, aliases)
+
+
+@mcp.tool()
+def food_words(food_id: int, words: list[str], means: bool = False) -> dict[str, Any]:
+    """Teach the logger words for a food it knows (N id): each word then finds that food. means=true when the user says
+    a word now means this product ("waffle now means N250")."""
+    return logbook.food_words(food_id, words, means)
 
 
 @mcp.tool()

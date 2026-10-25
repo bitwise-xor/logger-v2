@@ -4,6 +4,7 @@ the idempotency key, the audit log (ids, outcomes and AI usage only, never healt
 import hashlib
 import json
 import os
+import re
 import secrets
 from datetime import datetime, timedelta
 from typing import Any, Optional
@@ -18,6 +19,9 @@ from .when import BERLIN
 
 CHANNEL = "mcp"
 PROVIDER: Optional[Provider] = None  # created on first use; tests put a fake here
+# A confirmation counts when the reply starts with a yes ("yes, it is correct ..."); only a clear no cancels.
+YES = re.compile(r"^\s*(yes|y|ok|okay|confirm(ed)?|correct|right|ja|jawohl|stimmt|richtig)\b", re.I)
+NO = re.compile(r"^\s*(no|nope|nein|skip|cancel|stop|drop)\b", re.I)
 
 
 def clock() -> datetime:
@@ -39,7 +43,8 @@ def _audit(cur, tool: str, outcome: str, detail: dict) -> None:
 def _context(cur, now: datetime) -> tuple[list, list]:
     """The parser's context: the last few messages of the last 6 hours, and what was eaten and drunk today."""
     cur.execute("""SELECT received_at, content FROM raw_inbox WHERE received_at > %s - interval '6 hours'
-                   ORDER BY received_at DESC LIMIT 4""", (now,))
+                   AND channel <> 'catalogue' AND content NOT LIKE 'add food: %%'
+                   ORDER BY received_at DESC LIMIT 4""", (now,))  # the logger's own catalogue rows are not messages
     prev = [(r["received_at"].astimezone(BERLIN).replace(tzinfo=None), r["content"]) for r in reversed(cur.fetchall())]
     cur.execute("""SELECT e.day, e.meal, e.is_drink, e.eaten_at, f.name FROM food_entries e JOIN foods f ON f.id = e.food_id
                    WHERE e.time_known AND e.eaten_at <= %s AND e.eaten_at > %s - interval '18 hours' ORDER BY e.eaten_at, e.id""",
@@ -95,24 +100,44 @@ def log(text: str, idempotency_key: Optional[str] = None) -> dict[str, Any]:
                     return {"outcome": "rejected", "message": "This idempotency key was already used for a different message."}
                 _audit(cur, "log", "replayed", {})
                 return {**row["response"], "replayed": True}
-        prev, meals = _context(cur, now)
-        r, usages, escalated = record.read(cur, provider(), text, now, prev, meals)
-        out = record.save(cur, r, text, CHANNEL, now)
-        if out["outcome"] == "needs_confirmation":  # v1's read-back: keep the reading, the user's yes saves it
+        cur.execute("""SELECT received_at FROM raw_inbox WHERE channel = %s AND lower(content) = lower(%s)
+                       AND received_at > %s - interval '30 minutes' AND NOT (metadata ? 'unprocessed')
+                       ORDER BY received_at DESC LIMIT 1""", (CHANNEL, text, now))
+        same = cur.fetchone()
+        if same:  # the same words again within 30 minutes: ask before saving twice
             pid = "p" + secrets.token_hex(4)
-            cur.execute("INSERT INTO pending (id, tool, payload, reason, expires_at) VALUES (%s, 'log_confirm', %s, %s, %s)",
-                        (pid, Jsonb({"text": text, "pred": r.pred, "now": now.isoformat()}), out["read_back"][:500],
+            at = same["received_at"].astimezone(BERLIN).strftime("%H:%M")
+            cur.execute("INSERT INTO pending (id, tool, payload, reason, expires_at) VALUES (%s, 'log_repeat', %s, %s, %s)",
+                        (pid, Jsonb({"text": text, "now": now.isoformat()}), f"same message already logged at {at}",
                          now + timedelta(hours=record.QUESTION_HOURS)))
-            out["questions"] = [{"pending_id": pid, "question": "Confirm this (yes), or correct it by logging again."}]
+            resp = _public({"outcome": "needs_confirmation", "reason": f"This exact message was already logged at {at}.",
+                            "questions": [{"pending_id": pid, "question": "Log it again (yes) or not (no)?"}]})
+            _audit(cur, "log", "needs_confirmation", {"why": "repeat", "questions": [pid]})
+            return resp
+        out = _process(cur, text, now)
         resp = _public(out)
         if idempotency_key:
             cur.execute("INSERT INTO idempotency_keys (key, tool, request_hash, response) VALUES (%s, 'log', %s, %s)",
                         (idempotency_key, req_hash, Jsonb(resp)))
-        _audit(cur, "log", out["outcome"], {"raw_id": out.get("raw_id"), "private_id": out.get("private_id"),
-                                            "questions": [q["question_id"] for q in resp["questions"]], "escalated": escalated,
-                                            "ai": [{"model": u.model, "in": u.input_tokens + u.cache_read_tokens + u.cache_write_tokens,
-                                                    "out": u.output_tokens, "usd": round(u.usd, 6)} for u in usages]})
         return resp
+
+
+def _process(cur, text: str, now: datetime) -> dict:
+    """Read, save and audit one message; the caller makes it public."""
+    prev, meals = _context(cur, now)
+    r, usages, escalated = record.read(cur, provider(), text, now, prev, meals)
+    out = record.save(cur, r, text, CHANNEL, now)
+    if out["outcome"] == "needs_confirmation":  # v1's read-back: keep the reading, the user's yes saves it
+        pid = "p" + secrets.token_hex(4)
+        cur.execute("INSERT INTO pending (id, tool, payload, reason, expires_at) VALUES (%s, 'log_confirm', %s, %s, %s)",
+                    (pid, Jsonb({"text": text, "pred": r.pred, "now": now.isoformat()}), out["read_back"][:500],
+                     now + timedelta(hours=record.QUESTION_HOURS)))
+        out["questions"] = [{"pending_id": pid, "question": "Confirm this (yes), or correct it by logging again."}]
+    _audit(cur, "log", out["outcome"], {"raw_id": out.get("raw_id"), "private_id": out.get("private_id"),
+                                        "questions": [q["pending_id"] for q in out.get("questions", [])], "escalated": escalated,
+                                        "ai": [{"model": u.model, "in": u.input_tokens + u.cache_read_tokens + u.cache_write_tokens,
+                                                "out": u.output_tokens, "usd": round(u.usd, 6)} for u in usages]})
+    return out
 
 
 def _confirm_food(cur, out: dict, args: dict, now: datetime) -> dict:
@@ -126,14 +151,23 @@ def _confirm_food(cur, out: dict, args: dict, now: datetime) -> dict:
     return out
 
 
-def add_food(name: str, values: dict, question_id: Optional[str] = None) -> dict[str, Any]:
+def add_food(name: str, values: dict, question_id: Optional[str] = None, aliases=()) -> dict[str, Any]:
     now = clock()
     with connect() as conn, conn.cursor() as cur:
-        out = record.add_food(cur, name, values, CHANNEL, now, question_id)
+        out = record.add_food(cur, name, values, "catalogue", now, question_id, aliases=list(aliases or []))
         if out["outcome"] == "needs_confirmation":
-            out = _confirm_food(cur, out, {"name": name, "values": values, "question_id": question_id}, now)
+            out = _confirm_food(cur, out, {"name": name, "values": values, "question_id": question_id,
+                                           "aliases": list(aliases or [])}, now)
         resp = _public(out)
         _audit(cur, "add_food", out["outcome"], {"food_id": out.get("food_id"), "question_id": question_id})
+        return resp
+
+
+def food_words(food_id: int, words: list, means: bool = False) -> dict[str, Any]:
+    with connect() as conn, conn.cursor() as cur:
+        out = record.add_words(cur, food_id, words, means)
+        resp = _public(out)
+        _audit(cur, "food_words", out["outcome"], {"food_id": food_id, "means": means})
         return resp
 
 
@@ -142,20 +176,27 @@ def answer(question_id: str, reply: str) -> dict[str, Any]:
     with connect() as conn, conn.cursor() as cur:
         cur.execute("SELECT * FROM pending WHERE id = %s FOR UPDATE", (question_id,))
         p = cur.fetchone()
-        if not p or p["tool"] not in ("log", "log_confirm", "add_food_confirm"):
+        if not p or p["tool"] not in ("log", "log_confirm", "log_repeat", "add_food_confirm"):
             _audit(cur, "answer", "rejected", {"why": "unknown question"})
             return {"outcome": "rejected", "message": "There is no such open question."}
-        yes = reply.strip().lower() in ("yes", "y", "ok", "confirm", "correct", "ja")
+        yes = bool(YES.match(reply))
         if p["tool"] == "log":
             out = record.answer(cur, question_id, reply, now)
         elif p["resolved_at"] is not None or p["expires_at"] < now:
             out = {"outcome": "rejected", "reason": "that question was already answered or has expired"}
-        elif not yes:
+        elif NO.match(reply):
             cur.execute("UPDATE pending SET resolved_at = now(), resolution = 'cancelled' WHERE id = %s", (question_id,))
             out = {"outcome": "cancelled"}
+        elif not yes:  # unclear: keep the question open
+            out = {"outcome": "needs_confirmation", "reason": "answer yes to save it, or no to drop it",
+                   "questions": [{"pending_id": question_id, "question": "Yes or no?"}]}
+        elif p["tool"] == "log_repeat":
+            out = _process(cur, p["payload"]["text"], now)
+            cur.execute("UPDATE pending SET resolved_at = now(), resolution = 'confirmed' WHERE id = %s", (question_id,))
         elif p["tool"] == "add_food_confirm":
             d = p["payload"]
-            out = record.add_food(cur, d["name"], d["values"], CHANNEL, now, d["question_id"], food_code=d["code"], confirmed=True)
+            out = record.add_food(cur, d["name"], d["values"], CHANNEL, now, d["question_id"], food_code=d["code"],
+                                  confirmed=True, aliases=d.get("aliases") or [])
             if out["outcome"] == "saved":
                 cur.execute("UPDATE pending SET resolved_at = now(), resolution = 'confirmed' WHERE id = %s", (question_id,))
         else:

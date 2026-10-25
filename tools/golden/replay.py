@@ -107,8 +107,9 @@ def main():
             raw_id = out.get("raw_id")
             for qn in out.get("questions", []):  # answer the way the user would
                 p = q("SELECT tool, payload FROM pending WHERE id = %s", qn["question_id"])[0]
-                if p["tool"] == "log_confirm":
+                if p["tool"] in ("log_confirm", "log_repeat"):  # v1 saved these repeats, so the user would say yes
                     res["confirmed"] = True
+                    res["repeat"] = p["tool"] == "log_repeat"
                     out2 = call("answer", question_id=qn["question_id"], reply="yes")
                     raw_id = out2.get("raw_id") or raw_id
                     res["outcome"] = out2["outcome"]

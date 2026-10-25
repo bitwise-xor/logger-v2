@@ -42,6 +42,8 @@ One item per food or drink.
 - Follow-ups: only when the message explicitly ties an item to a meal already logged ("with that", "with my first meal", "with my previous meal", "in the bowl", "I forgot the 25 g whey of my breakfast"), the item takes that meal's time from the "Logged so far today" list as `when` ("12:26"). "My first meal" is meal 1; "my previous meal" or "that" is the latest meal. "I also had ..." alone is not a follow-up: it is now.
 - `note`: a comment about this item or this meal in the person's words ("too salty", "this was a binge", "I regret eating this", "very good, should repeat"). Otherwise null.
 - A repeated food is a new item, also when the same food was logged earlier.
+- An amount of a food ("add 50g of salad greens to the list", "50g cashews") is food, even with the words "add" or "list": it is a to-do only with "buy", "todo" or "shopping list" ("add milk to the shopping list" has no amount and is a to-do).
+- "it", "that" and "this" ("i ate it", "had that") mean the food of the person's previous message in the conversation, never a food that only appears in the logger's own lines ("add food:", "new food:").
 - `usual_meals`: "usual breakfast", "my usual bowl but 150 g skyr, no walnuts" = one entry with `name` ("breakfast", "bowl"), `skip` (foods left out) and `changes` (foods with a new amount in grams). Extra foods go to `food`.
 
 ## 4. Health and habits

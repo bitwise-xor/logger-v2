@@ -40,6 +40,7 @@ ANSWERS = {
     "why is that?": P(intent="question"),
     "idea: a weekly food chart": P(thoughts=[T("A weekly food chart")]),
     "weight 90": P(health=[H("weight", 90)]),
+    "weight 90 kg": P(health=[H("weight", 90)]),
     "50 g frischkaese": P(food=[F("frischkaese", 50, en="cream cheese")]),
 }
 
@@ -139,7 +140,7 @@ def test_an_odd_value_waits_for_yes(call, fake):
     owner_sql("SELECT 1")
     first = call("log", text="weight 90")
     assert first["outcome"] == "saved"
-    second = call("log", text="weight 90")  # a second weight on the same day is read back first (v1 rule)
+    second = call("log", text="weight 90 kg")  # a second weight on the same day is read back first (v1 rule)
     assert second["outcome"] == "needs_confirmation" and len(second["questions"]) == 1
     assert n("SELECT count(*) AS n FROM measurements") == 1
     done = call("answer", question_id=second["questions"][0]["question_id"], reply="yes")
@@ -166,7 +167,8 @@ def test_a_new_food_from_a_label_answers_the_open_question(call, fake, skyr):
     done = call("answer", question_id=check["questions"][0]["question_id"], reply="yes")
     assert done["outcome"] == "saved"
     f = owner_sql("SELECT id, source, aliases FROM foods WHERE name = 'Dragon fruit (Aldi)'")[0]
-    assert f["source"] == "label" and "dragonfruit" in f["aliases"]  # the user's word now finds it
+    assert f["source"] == "label" and f["aliases"] == []  # the new food may answer a different question: no silent alias
+    assert "food_words" in done["message"]  # the receipt suggests saving the word
     assert n("SELECT count(*) AS n FROM food_entries WHERE food_id = %s AND amount = 20", f["id"]) == 1
     assert n("SELECT count(DISTINCT raw_id) AS n FROM food_entries") == 1  # same message as the skyr
     assert call("answer", question_id=qid, reply="N1")["outcome"] == "rejected"  # the question is closed
@@ -186,7 +188,55 @@ def test_impossible_values_are_rejected(call, fake):
     assert body["outcome"] == "rejected" and n("SELECT count(*) AS n FROM foods") == 0
 
 
+def test_a_yes_with_more_words_confirms_and_an_unclear_reply_keeps_the_question(call, fake):
+    first = call("add_food", name="Cottage cheese, semi-fat (ja!)", aliases=["frischkäse", "fresh cheese"], **LABEL)
+    qid = first["questions"][0]["question_id"]
+    unclear = call("answer", question_id=qid, reply="hmm, let me look again")
+    assert unclear["outcome"] == "needs_confirmation" and n("SELECT count(*) AS n FROM foods") == 0  # still open
+    done = call("answer", question_id=qid, reply="yes, it is correct, this is also called frischkäse")
+    assert done["outcome"] == "saved"
+    aliases = owner_sql("SELECT aliases FROM foods WHERE name = 'Cottage cheese, semi-fat (ja!)'")[0]["aliases"]
+    assert {"frischkäse", "fresh cheese"} <= set(aliases)
+
+
+def test_food_words_adds_aliases_refuses_clashes_and_sets_what_a_word_means(call, fake, skyr):
+    other = owner_sql("""INSERT INTO foods (name, basis, kcal, protein, fat, carbs, source)
+                         VALUES ('Skyr vanilla', 'g', 80, 9, 0.2, 10, 'label') RETURNING id""")[0]["id"]
+    added = call("food_words", food_id=skyr, words=["isländischer joghurt"])
+    assert added["outcome"] == "saved" and "now finds" in added["message"]
+    clash = call("food_words", food_id=other, words=["Isländischer Joghurt"])
+    assert "already used by" in clash["message"]
+    assert "isländischer joghurt" not in owner_sql("SELECT aliases FROM foods WHERE id = %s", other)[0]["aliases"]
+    means = call("food_words", food_id=other, words=["skyr"], means=True)
+    assert "now means" in means["message"]
+    assert owner_sql("SELECT food_id FROM food_defaults WHERE term = 'skyr'")[0]["food_id"] == other
+
+
 def test_audit_log_has_no_health_values(call, fake, skyr):
     call("log", text="150 g skyr, weight 82.4")
     detail = owner_sql("SELECT detail FROM audit_log WHERE tool = 'log'")[0]["detail"]
     assert set(detail) >= {"raw_id", "ai"} and "82.4" not in json.dumps(detail) and "skyr" not in json.dumps(detail)
+
+
+def test_the_same_message_twice_within_30_minutes_asks_first(call, fake):
+    first = call("log", text="idea: a weekly food chart")
+    assert first["outcome"] == "saved" and n("SELECT count(*) AS n FROM thoughts") == 1
+    again = call("log", text="idea: a weekly food chart")
+    assert again["outcome"] == "needs_confirmation" and "already logged" in again["message"]
+    assert n("SELECT count(*) AS n FROM thoughts") == 1 and len(fake.calls) == 1  # nothing saved, no AI call
+    no = call("answer", question_id=again["questions"][0]["question_id"], reply="no")
+    assert no["outcome"] == "cancelled" and n("SELECT count(*) AS n FROM thoughts") == 1
+    again = call("log", text="idea: a weekly food chart")
+    yes = call("answer", question_id=again["questions"][0]["question_id"], reply="yes, log it again")
+    assert yes["outcome"] == "saved" and n("SELECT count(*) AS n FROM thoughts") == 2
+    assert call("answer", question_id=again["questions"][0]["question_id"], reply="yes")["outcome"] == "rejected"  # closed
+
+
+def test_a_new_food_that_looks_like_an_existing_one_asks_first(call, fake):
+    old = owner_sql("""INSERT INTO foods (name, basis, kcal, protein, fat, carbs, source)
+                       VALUES ('Salad greens, mixed, raw', 'g', 17, 1.5, 0.2, 2, 'database') RETURNING id""")[0]["id"]
+    body = call("add_food", name="Salad greens, mixed", kcal=17, protein=1.5, fat=0.2, carbs=2, source="estimate")
+    assert body["outcome"] == "needs_confirmation" and f"N{old}" in body["message"]
+    assert n("SELECT count(*) AS n FROM foods WHERE name = 'Salad greens, mixed'") == 0
+    done = call("answer", question_id=body["questions"][0]["question_id"], reply="yes")  # create it anyway
+    assert done["outcome"] == "saved" and n("SELECT count(*) AS n FROM foods WHERE name = 'Salad greens, mixed'") == 1

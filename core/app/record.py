@@ -21,7 +21,7 @@ from .ai import parser
 from .ai.provider import Provider, Usage
 from .clock import read_when
 from .foods import amount, pick
-from .v1_food import _fkey, _food_cat, _resolve_type, _types
+from .v1_food import _find_foods, _fkey, _food_cat, _resolve_type, _types
 from .v1_log import Entry, FoodItem, MealUse, NewFood, ReadBack, Reject
 from .v1_thoughts import Thought
 
@@ -243,7 +243,10 @@ def answer(cur, pending_id: str, reply: str, now: datetime) -> dict:
                 return {"outcome": "needs_choice", "question": f"'{reply}' fits several or no foods: "
                         + "; ".join(f"N{c['id']} {c['name']}" for c in cands[:6])
                         + ". If it is a new food, add it with add_food and this question id."}
-        alias_note = _alias(cur, cat, f, it["food"])
+        if f["id"] in (q.get("candidates") or []):  # the user picked one of the foods suggested for this word
+            alias_note = _alias(cur, cat, f, it["food"])
+        else:
+            alias_note = _word_hint(f, it["food"])
     else:
         f = cat["by_id"][q["food_id"]]
         num = re.fullmatch(r"\s*(\d+(?:[.,]\d+)?)\s*(g|ml)?\s*", reply)
@@ -264,8 +267,25 @@ def answer(cur, pending_id: str, reply: str, now: datetime) -> dict:
     return {"outcome": "saved", "raw_id": q["raw_id"], "receipt": out, "notes": notes}
 
 
+def _word_hint(f: dict, word: str) -> str:
+    return f"to let '{word.strip()}' find N{f['id']} {f['name']} next time, save it with food_words"
+
+
+def _similar(cat: dict, name: str) -> list[dict]:
+    """Foods that look like the one about to be created ("Salad greens, mixed" vs N176 "Salad greens, mixed, raw")."""
+    seen, out = set(), []
+    for term in (name, re.sub(r"\(.*?\)", " ", name)):
+        matches, how = _find_foods(cat, term)
+        for m in matches:
+            if how != "fuzzy" and m["id"] not in seen and m["active"]:
+                seen.add(m["id"])
+                out.append(m)
+    return out[:6]
+
+
 def _alias(cur, cat: dict, f: dict, word: str) -> Optional[str]:
-    """v1's rule: after a pick for a word the catalogue did not know, save the word as an alias of that food."""
+    """v1's rule: after a pick for a word the catalogue did not know, save the word as an alias of that food.
+    v2 applies it only when the user picked one of the foods the question suggested for that very word."""
     k = _fkey(word)
     if not k or k in cat["names"] or k in cat["aliases"] or k in cat["defaults"]:
         return None
@@ -273,8 +293,41 @@ def _alias(cur, cat: dict, f: dict, word: str) -> Optional[str]:
     return f"'{word.strip()}' saved as a word for N{f['id']} {f['name']}"
 
 
+def add_words(cur, food_id: int, words, means: bool = False) -> dict:
+    """Words for a food in the catalogue. Each word becomes an alias, so it finds this food; a word another food
+    already uses is refused (v1's rule). means=True makes the word the user's default for this product instead
+    ("waffle now means N250"): it then wins over other foods with that name or alias."""
+    cat = _food_cat(cur)
+    f = cat["by_id"].get(food_id)
+    if not f:
+        return {"outcome": "rejected", "reason": f"there is no food N{food_id}"}
+    out, notes = [], []
+    for w in words or []:
+        word = " ".join(str(w).split()).lower()
+        k = _fkey(word)
+        if not k:
+            continue
+        if means:
+            cur.execute("""INSERT INTO food_defaults (term, food_id) VALUES (%s, %s)
+                           ON CONFLICT (term) DO UPDATE SET food_id = EXCLUDED.food_id""", (word, food_id))
+            out.append(f"'{word}' now means N{food_id} {f['name']}")
+            continue
+        users = {x["id"] for x in cat["names"].get(k, []) + cat["aliases"].get(k, [])}
+        if food_id in users:
+            notes.append(f"'{word}' already finds N{food_id}")
+        elif users:
+            other = cat["by_id"][min(users)]
+            notes.append(f"'{word}' is already used by N{other['id']} {other['name']}; not added. "
+                         f"To make it mean this food anyway, use it with means")
+        else:
+            cur.execute("UPDATE foods SET aliases = array_append(aliases, %s) WHERE id = %s", (word, food_id))
+            cat["aliases"][k].append(f)
+            out.append(f"'{word}' now finds N{food_id} {f['name']}")
+    return {"outcome": "saved", "food_id": food_id, "receipt": out, "notes": notes}
+
+
 def add_food(cur, name: str, values: dict, channel: str, now: datetime, question_id: Optional[str] = None,
-             food_code: Optional[str] = None, confirmed: bool = False) -> dict:
+             food_code: Optional[str] = None, confirmed: bool = False, aliases=()) -> dict:
     """A food missing from the catalogue, with values per 100 g (or 100 ml), through v1's own new-food code and checks:
     impossible values are rejected; odd values, and every label, need the user's yes (v1 showed a label read-back table
     with a code). With question_id the waiting item of that message is saved with the new food and the user's word
@@ -302,13 +355,21 @@ def add_food(cur, name: str, values: dict, channel: str, now: datetime, question
                         note=it["note"], drink=it["drink"] if it["drink"] is not None else drink, new=nf, confirmed=confirmed)
     else:
         item = FoodItem(food=name, amount=1, when=_iso(now, False), drink=drink, new=nf, confirmed=confirmed)
+    similar = [] if confirmed else _similar(_food_cat(cur), name)
+    read_back, code = None, None
     try:
         prep = v1_log._prepare_food(cur, [item], [], [], None, True, food_code, when, [])
     except ReadBack as e:
-        code = re.search(r'food_code="([0-9A-F]{6})"', str(e))
-        return {"outcome": "needs_confirmation", "read_back": str(e), "code": code[1] if code else None}
+        read_back = str(e)
+        m = re.search(r'food_code="([0-9A-F]{6})"', read_back)
+        code = m[1] if m else None
     except Reject as e:
         return {"outcome": "rejected", "reason": str(e)}
+    if similar or read_back:  # one read-back for both: similar foods, and v1's label table or odd values
+        text = ("Similar foods already exist: " + "; ".join(f"N{s['id']} {s['name']}" for s in similar)
+                + ". If it is one of them, use that N number instead (answer the food question with it); "
+                  "answer yes only to create the new food anyway.") if similar else ""
+        return {"outcome": "needs_confirmation", "read_back": "\n".join(x for x in (text, read_back) if x), "code": code}
     if q:
         raw_id = q["raw_id"]
     else:
@@ -318,12 +379,15 @@ def add_food(cur, name: str, values: dict, channel: str, now: datetime, question
     notes: list[str] = []
     v1_log._insert_food(cur, raw_id, prep, out, notes)
     fid = next(iter(prep["new"].values()))["id"]
-    if q:
-        cat = _food_cat(cur)
-        a = _alias(cur, cat, cat["by_id"][fid], q["item"]["food"])
-        notes += [a] if a else []
+    if q:  # the question's word is not saved as an alias here: the new food may answer a different question
+        cur.execute("SELECT id, name FROM foods WHERE id = %s", (fid,))
+        notes.append(_word_hint(cur.fetchone(), q["item"]["food"]))
         cur.execute("UPDATE pending SET resolved_at = now(), resolution = 'confirmed' WHERE id = %s", (question_id,))
     else:  # catalogue only: nothing was eaten
         cur.execute("DELETE FROM food_entries WHERE raw_id = %s", (raw_id,))
         out = [line for line in out if "NEW food" in line]
+    if aliases:
+        w = add_words(cur, fid, aliases)
+        out += w["receipt"]
+        notes += w["notes"]
     return {"outcome": "saved", "raw_id": raw_id, "food_id": fid, "receipt": out, "notes": notes}
