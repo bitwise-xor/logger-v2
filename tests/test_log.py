@@ -146,11 +146,15 @@ def test_an_odd_value_waits_for_yes(call, fake):
     assert done["outcome"] == "saved" and n("SELECT count(*) AS n FROM measurements") == 2
 
 
-def test_a_german_word_finds_the_english_food(call, fake):
-    owner_sql("INSERT INTO foods (name, basis, kcal, protein, fat, carbs, source) VALUES ('Cream cheese', 'g', 250, 6, 24, 3, 'database')")
+def test_a_german_word_gets_the_english_food_suggested_not_taken(call, fake):
+    cc = owner_sql("""INSERT INTO foods (name, basis, kcal, protein, fat, carbs, source)
+                      VALUES ('Cream cheese', 'g', 250, 6, 24, 3, 'database') RETURNING id""")[0]["id"]
     body = call("log", text="50 g frischkaese")
-    assert body["outcome"] == "saved" and "English name" in body["message"]
-    assert n("SELECT count(*) AS n FROM food_entries WHERE amount = 50") == 1
+    assert body["outcome"] == "needs_choice" and f"N{cc} Cream cheese" in body["message"]  # a translation may be another product
+    assert n("SELECT count(*) AS n FROM food_entries") == 0
+    done = call("answer", question_id=body["questions"][0]["question_id"], reply=f"N{cc}")
+    assert done["outcome"] == "saved" and n("SELECT count(*) AS n FROM food_entries WHERE amount = 50") == 1
+    assert "frischkaese" in owner_sql("SELECT aliases FROM foods WHERE id = %s", cc)[0]["aliases"]  # found directly next time
 
 
 def test_a_new_food_from_a_label_answers_the_open_question(call, fake, skyr):

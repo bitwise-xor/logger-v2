@@ -51,16 +51,18 @@ def _iso(ts: datetime, date_only: bool) -> str:
 def _food_item(cur, cat: dict, it: dict, now: datetime, f: Optional[dict] = None, how: str = "id",
                cands: list = ()) -> tuple[Optional[FoodItem], Optional[dict], Optional[str]]:
     """One parsed food item -> (v1 FoodItem, question, note). f is given when the user already chose the food.
-    The user's word is tried first, then the parser's English name ("frischkäse" -> "cream cheese")."""
+    The user's word is tried first. The parser's English name ("frischkäse" -> "cream cheese") is only suggested,
+    never taken silently: a translation can land on a different product (körniger Frischkäse is not cream cheese)."""
     if f is None:
         f, how, cands = pick(cur, cat, it["food"], it["cooked"], before=now)
         en = (it.get("food_en") or "").strip()
         if not f and en and en.lower() != it["food"].strip().lower():
             f2, how2, cands2 = pick(cur, cat, en, it["cooked"], before=now)
-            if f2:
-                f, how = f2, "english"
-            elif cands2 and not cands:
-                cands = cands2
+            sugg = [f2] if f2 else cands2[:6]
+            if sugg:
+                text = (f"Which food is '{it['food']}'? By its English name: "
+                        + "; ".join(f"N{c['id']} {c['name']}" for c in sugg) + ". Or add it as a new food.")
+                return None, dict(kind="food", text=text, item=it, candidates=[c["id"] for c in sugg]), None
     if not f:
         text = f"Which food is '{it['food']}'? " + ("; ".join(f"N{c['id']} {c['name']}" for c in cands[:6])
                                                     if cands else "Nothing in the catalogue fits.")
@@ -74,8 +76,8 @@ def _food_item(cur, cat: dict, it: dict, now: datetime, f: Optional[dict] = None
     if tprob:
         return None, dict(kind="time", text=tprob, item=it, food_id=f["id"]), None
     note = None
-    if how in ("close", "usual", "state", "english"):
-        note = f"'{it['food']}' -> N{f['id']} {f['name']}" + {"usual": " (your usual)", "english": " (by its English name)"}.get(how, "")
+    if how in ("close", "usual", "state"):
+        note = f"'{it['food']}' -> N{f['id']} {f['name']}" + (" (your usual)" if how == "usual" else "")
     return FoodItem(food=f"N{f['id']}", amount=grams, when=_iso(ts, date_only), note=it["note"], estimated=bool(est),
                     drink=it["drink"]), None, note
 
