@@ -123,7 +123,8 @@ def test_tool_schemas_are_stable(bearer):
         r = c.post("/mcp-testpath", headers={**HDR, **bearer}, content=json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}}))
         tools = {t["name"]: t["inputSchema"] for t in r.json()["result"]["tools"]}
     required = {"record_weight": ["kg"], "record_bp": ["systolic", "diastolic"], "record_wakeup": [], "amend": ["receipt_id"],
-                "resolve": ["pending_id", "confirm"], "undo": ["receipt_id"], "recent_weights": [], "recent_blood_pressure": [], "recent_wakeups": []}
+                "resolve": ["pending_id", "confirm"], "undo": ["receipt_id"], "recent_weights": [], "recent_blood_pressure": [], "recent_wakeups": [],
+                "log": ["text"], "answer": ["question_id", "reply"]}
     assert {k: sorted(v.get("required", [])) for k, v in tools.items()} == {k: sorted(v) for k, v in required.items()}
     for name in ("record_weight", "record_bp", "record_wakeup"):
         assert "idempotency_key" in tools[name]["properties"] and "at" in tools[name]["properties"]

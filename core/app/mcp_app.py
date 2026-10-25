@@ -6,7 +6,7 @@ from mcp.server.transport_security import TransportSecuritySettings
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
-from . import service
+from . import logbook, service
 from mcp.server.auth.settings import AuthSettings, ClientRegistrationOptions
 
 from . import auth, today
@@ -22,9 +22,22 @@ mcp = MCPServer(
         client_registration_options=ClientRegistrationOptions(enabled=True, valid_scopes=[auth.SCOPE], default_scopes=[auth.SCOPE]),
         required_scopes=[auth.SCOPE],
     ),
-    instructions=("Personal logger (pilot). Send only real log messages to these tools. Never invent values; when a reply says "
-                  "needs_confirmation, ask the user and then call resolve. Send ISO local times (Europe/Berlin) in `at`."),
+    instructions=("Personal logger. Pass each message the user wants logged to `log`, word for word; the logger reads it. "
+                  "Show its reply briefly. When it asks a question, ask the user and pass the reply to `answer`."),
 )
+
+
+@mcp.tool()
+def log(text: str, idempotency_key: Optional[str] = None) -> dict[str, Any]:
+    """Log one user message (food, drinks, health values, habits, thoughts, private or gratitude lines) in the user's
+    exact words. Not for questions to you. idempotency_key: a new unique string per message, the same on a retry."""
+    return logbook.log(text, idempotency_key)
+
+
+@mcp.tool()
+def answer(question_id: str, reply: str) -> dict[str, Any]:
+    """Answer a question from `log` with the user's reply: a food name or N number, an amount, yes, or skip."""
+    return logbook.answer(question_id, reply)
 
 
 @mcp.tool()

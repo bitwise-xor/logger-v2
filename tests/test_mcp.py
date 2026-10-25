@@ -32,7 +32,7 @@ def test_wrong_host_is_refused(bearer):
 def test_tools_list_and_a_call(bearer):
     with client() as c:
         tools = rpc(c, "tools/list", headers={**HDR, **bearer}).json()["result"]["tools"]
-        assert {t["name"] for t in tools} == {"record_weight", "recent_weights", "record_bp", "recent_blood_pressure", "record_wakeup", "recent_wakeups", "amend", "resolve", "undo"}
+        assert {t["name"] for t in tools} == {"record_weight", "recent_weights", "record_bp", "recent_blood_pressure", "record_wakeup", "recent_wakeups", "amend", "resolve", "undo", "log", "answer"}
         r = rpc(c, "tools/call", {"name": "record_weight", "arguments": {"kg": 82.4, "at": "2026-10-12T08:30", "idempotency_key": "mcp1"}}, headers={**HDR, **bearer})
         res = r.json()["result"]
         assert res.get("isError") in (False, None)
