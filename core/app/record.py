@@ -192,6 +192,7 @@ def save(cur, r: Reading, text: str, channel: str, now: datetime, confirmed: boo
     cur.execute("INSERT INTO raw_inbox (channel, content, metadata) VALUES (%s, %s, %s::jsonb) RETURNING id",
                 (channel, text, json.dumps(meta)))
     raw_id = cur.fetchone()["id"]
+    cur.execute("SELECT set_config('app.raw_id', %s, true)", (str(raw_id),))  # change_log ties this message's rows to it
     out: list[str] = []
     notes = list(r.notes)
     thoughts = r.thoughts
