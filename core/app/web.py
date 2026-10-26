@@ -14,7 +14,7 @@ from starlette.concurrency import run_in_threadpool
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, RedirectResponse, Response
 
-from . import auth, logbook, todaypage, webactions, webentry, webquestions
+from . import auth, healthpage, logbook, todaypage, webactions, webentry, webquestions
 from .ai.provider import ProviderError
 from .config import APP_HOST
 from .db import connect
@@ -96,7 +96,7 @@ def _login_page(msg: str = "", status: int = 200) -> HTMLResponse:
 def shell(session, body: str, status: int = 200, active: str = "") -> HTMLResponse:
     """A signed-in page: the top bar (with the number of open questions), the entry box, the last reply, then the body."""
     open_q = webquestions.count()
-    links = [("today", "/web/", "Today"), ("questions", "/web/questions", "Questions")]
+    links = [("today", "/web/", "Today"), ("health", "/web/health", "Health"), ("questions", "/web/questions", "Questions")]
     current = ' aria-current="page"'
     items = "".join(f'<a href="{href}"{current if k == active else ""}>{label}'
                     + (f'<span class="badge">{open_q}</span>' if k == "questions" and open_q else "") + "</a>"
@@ -164,6 +164,17 @@ def add_routes(mcp) -> None:
         if not session:
             return RedirectResponse("/web/login", status_code=302, headers={"Cache-Control": "no-store"})
         return shell(session, webquestions.render(session["csrf"]), active="questions")
+
+    @mcp.custom_route("/web/health", methods=["GET"])
+    async def health_page(request: Request) -> Response:
+        if (r := hidden(request)) is not None:
+            return r
+        session = current_session(request)
+        if not session:
+            return RedirectResponse("/web/login", status_code=302, headers={"Cache-Control": "no-store"})
+        r = request.query_params.get("r", "")
+        days = int(r) if r in {str(x) for x in healthpage.RANGES} else healthpage.DEFAULT_RANGE
+        return shell(session, healthpage.render(session["csrf"], days, request.query_params.get("all") == "1"), active="health")
 
     @mcp.custom_route("/web/login", methods=["GET"])
     async def login_form(request: Request) -> Response:
@@ -279,6 +290,16 @@ def add_routes(mcp) -> None:
             return session
         row, ref = str(form.get("row", "")), str(form.get("id", ""))[:20]
         return done(session, await _run(lambda: webactions.health(row, ref, form, form_key(form))))
+
+    @mcp.custom_route("/web/healthday", methods=["POST"])
+    async def health_day(request: Request) -> Response:
+        session, form = await post_form(request)
+        if form is None:
+            return session
+        r = str(form.get("r", ""))
+        r = r if r in {str(x) for x in healthpage.RANGES} else str(healthpage.DEFAULT_RANGE)
+        day = str(form.get("day", ""))[:10]
+        return done(session, await _run(lambda: webactions.health_day(day, r, form, form_key(form))), f"/web/health?r={r}")
 
     @mcp.custom_route("/web/review", methods=["POST"])
     async def review(request: Request) -> Response:

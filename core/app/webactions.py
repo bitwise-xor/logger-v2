@@ -3,10 +3,10 @@ read it) and go through logbook.log like a typed message. Corrections, unticks a
 logger's own change function (commands._run_changes, v1's checks and read-backs); pressing Save is the user's yes
 (decided 26.10.2026), so nothing is previewed first. Each returns the reply shown under the entry box."""
 import re
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from typing import Optional
 
-from . import commands, logbook
+from . import commands, healthpage, logbook
 from .db import connect
 from .todaypage import AREAS, HEALTH_ROWS, THOUGHT_TYPES
 from .v1_log import Reject, _words_in
@@ -147,6 +147,96 @@ def health(row: str, ref: str, form, key: Optional[str]) -> dict:
             "period": period, "session": None, "when": fields.get("when")}
     words = {"weight": f"weight {said}", "bp": f"bp {said} {period}", "blood_sugar": f"sugar {said} fasted", "wake": f"woke up {said}"}[ltype]
     return logbook.log(words, key, _pred(health=[item]), channel=logbook.WEB)
+
+
+# ---- health page: one day's row --------------------------------------------------------------------
+
+_FIELDS = ("w", "bm1", "bm2", "be1", "be2", "s", "bed", "wake")
+
+
+def _when(day: date, col: str, t: str) -> str:
+    """The date and time for the change function or the parser answer; a bed time from noon on is the evening before."""
+    on = day - timedelta(days=1) if col == "bed" and int(t[:2]) >= 12 else day
+    return f"{on:%d.%m.%Y} {t}"
+
+
+def health_day(day_s: str, r: str, form, key: Optional[str]) -> dict:
+    """Save one row of the Health page: changed values are corrected, cleared ones deleted (after one yes), empty cells
+    that got a value are logged for that day. Pressing Save is the yes for corrections; odd values still ask."""
+    try:
+        day = date.fromisoformat(day_s)
+    except ValueError:
+        return _rejected("Unknown day.")
+    with connect() as conn, conn.cursor() as cur:
+        cur.execute("SELECT log_day(now()) AS d")
+        today = cur.fetchone()["d"]
+        if not today - timedelta(days=365) <= day <= today:
+            return _rejected("Pick a day of the last 12 months.")
+        now_vals = healthpage.day_values(cur, day, day).get(day, {})
+    dm = f"{day:%a %d.%m.}"
+    steps, items, words, said, deletes = [], [], [], [], []
+    for col, _h, _s, ltype, period, kind in healthpage.COLS:
+        name, cur_v = healthpage.NAMES[col], now_vals.get(col)
+        sent = [form.get(f"{col}1"), form.get(f"{col}2")] if kind == 2 else [form.get(col)]
+        if any(x is None for x in sent):
+            continue  # not part of this form
+        sent = [str(x).strip() for x in sent]
+        if kind == "t":
+            m = TIME.match(sent[0]) if sent[0] else None
+            if sent[0] and not m:
+                return _rejected(f"{name}: give the time as hh:mm.")
+            new, nums = [f"{int(m[1]):02d}:{m[2]}" if m else ""], None
+        else:
+            nums = [_num(x) if x else None for x in sent]
+            if any(x and v is None for x, v in zip(sent, nums)):
+                return _rejected(f"{name}: give a number.")
+            new = [healthpage.plain(v) if v is not None else "" for v in nums]
+        old = cur_v["v"] if cur_v else [""] * len(new)
+        if new == old:
+            continue
+        if all(x == "" for x in new):
+            if cur_v:
+                steps.append({"action": "change", "args": {"id": cur_v["id"], "delete": True}})
+                deletes.append(f"{name} {'/'.join(old)}")
+                said.append(f"{name} {'/'.join(old)} deleted")
+            continue
+        if any(x == "" for x in new):
+            return _rejected(f"{name}: give both numbers.")
+        shown = "/".join(new)
+        if cur_v:
+            fields = {"when": _when(day, col, new[0])} if kind == "t" else {"value": nums[0], **({"value2": nums[1]} if kind == 2 else {})}
+            if form.get("confirmed") == "1":
+                fields["confirmed"] = True
+            steps.append({"action": "change", "args": {"id": cur_v["id"], "fields": fields}})
+            said.append(f"{name} {'/'.join(old)} → {shown}")
+        else:
+            when = _when(day, col, new[0]) if kind == "t" else (None if day == today else f"{day:%d.%m.%Y}")
+            items.append({"type": ltype, "value": nums[0] if nums else None, "value2": nums[1] if kind == 2 else None,
+                          "period": period, "session": None, "when": when})
+            words.append({"weight": f"weight {shown}", "bp": f"bp {shown} {period}", "blood_sugar": f"sugar {shown} fasted",
+                          "wake": f"woke up {new[0]}", "bed": f"went to bed {new[0]}"}[ltype]
+                         + ("" if kind == "t" or day == today else f" on {day:%d.%m.%Y}"))
+            said.append(f"{name} {shown} added")
+    if not steps and not items:
+        return {"outcome": "unchanged", "reason": "Nothing changed."}
+    again = {k: str(form.get(k)) for k in _FIELDS if form.get(k) is not None} | {"day": day.isoformat(), "r": r}
+    back = f"/web/health?r={r}"
+    if deletes and form.get("confirm_del") != "1":
+        return {"outcome": "needs_confirmation", "read_back": f"Delete on {dm}: {', '.join(deletes)}?",
+                "confirm": {"action": "/web/healthday", "label": "Yes, delete", "no": back,
+                            "fields": again | {"confirm_del": "1", **({"confirmed": "1"} if form.get("confirmed") == "1" else {})}}}
+    head = f"Saved for {dm}: {', '.join(said)}."
+    if steps:
+        out = _change(steps, "health day", head)
+        if out["outcome"] == "needs_confirmation":
+            out["confirm"] = {"action": "/web/healthday", "label": "Yes, save it", "no": back,
+                              "fields": again | {"confirmed": "1", **({"confirm_del": "1"} if deletes else {})}}
+        if out["outcome"] != "changed" or not items:
+            return out
+    out = logbook.log(", ".join(words), key, _pred(health=items), channel=logbook.WEB)
+    if out["outcome"] == "saved" and not out.get("questions"):
+        out["head"] = head
+    return out
 
 
 # ---- review ----------------------------------------------------------------------------------------
