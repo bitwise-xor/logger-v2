@@ -3,11 +3,12 @@ returns fixed parser answers, so these tests need no API key and show that the p
 import copy
 import json
 import re
+from types import SimpleNamespace
 
 import pytest
 from starlette.testclient import TestClient
 
-from app import logbook, todos
+from app import foodfacts, logbook, todos
 from app.ai.provider import Usage
 from app.mcp_app import build_app
 from app.todoist import FakeTodoist
@@ -54,6 +55,9 @@ ANSWERS = {
     "the skyr was 120 g": P(intent="command", command_text="the skyr was 120 g"),
     "weight was 80 not 82.4": P(intent="command", command_text="weight was 80 not 82.4"),
     "undo that": P(intent="command", command_text="undo that"),
+    "50 g coconut": P(food=[F("coconut", 50, en="coconut meat")]),
+    "100 g haferdrink": P(food=[F("haferdrink", 100, en="oat drink", drink=True)]),
+    "30 g zzqfood": P(food=[F("zzqfood", 30)]),
     "todo: buy milk, cola, potatoes": P(todos=[D("Milk"), D("Cola"), D("Potatoes")]),
     "todo: buy chips": P(todos=[D("Chips")]),
     "todo: buy meat": P(todos=[D("meat")]),
@@ -95,6 +99,12 @@ COMMANDS = {
     "delete the skyr\n(Asked:": lambda u: C(("change", {"id": "f" + _id(u, r"f(\d+) [^\n]*Skyr natural"), "delete": True})),
 }
 
+PICKS = {  # the food pick call: the word -> (label of the entry to pick, catalogue name)
+    "coconut": ("Nuts, coconut meat, raw", "Coconut meat, raw"),
+    "haferdrink": ("Haferdrink (BioPrimo)", "Oat drink (BioPrimo)"),
+    "Haferdrink": ("Haferdrink (BioPrimo)", "Oat drink (BioPrimo)"),
+}
+
 PLACES = {  # the placement call for new Todoist items
     "Potatoes": {"section": "Produce", "label": "aldi", "generic": False},
     "meat": {"section": "Meat & Seafood", "label": "aldi", "generic": False},
@@ -110,6 +120,13 @@ class FakeProvider:
         self.calls = []
 
     def json(self, system, user, schema, model, max_tokens=4000):
+        if user.startswith("Word: "):  # picking a USDA or Open Food Facts entry
+            word = user.split("\n", 1)[0][len("Word: "):]
+            self.calls.append((word, model))
+            label, name = PICKS.get(word, (None, None))
+            line = next((l for l in user.splitlines() if label and re.match(r"[UO]\d+ ", l) and l.split(" ", 1)[1].startswith(label)), None)
+            return {"pick": line.split(" ", 1)[0] if line else None, "name": name if line else None, "state": None,
+                    "drink": word.lower() == "haferdrink"}, Usage(model, 600, 30)
         if user.startswith("Item: "):  # placing a new Todoist item
             item = user.split("\n", 1)[0][len("Item: "):]
             self.calls.append((item, model))
@@ -130,6 +147,20 @@ def fake():
     logbook.PROVIDER = f
     yield f
     logbook.PROVIDER = None
+
+
+OAT = {"code": "2200263020656", "product_name": "Haferdrink", "brands": ["BioPrimo"], "countries_tags": ["en:germany"],
+       "nutriments": {"energy-kcal_100g": 61, "proteins_100g": 1, "fat_100g": 2.3, "saturated-fat_100g": 0.3,
+                      "carbohydrates_100g": 9, "sugars_100g": 4, "fiber_100g": 0.8}}
+
+
+@pytest.fixture(autouse=True)
+def off(monkeypatch):
+    """A fake Open Food Facts: nothing found unless a test puts hits or products in."""
+    f = SimpleNamespace(hits=[], products={})
+    monkeypatch.setattr(foodfacts, "search", lambda q, n=8: list(f.hits))
+    monkeypatch.setattr(foodfacts, "product", lambda code: f.products.get(code))
+    return f
 
 
 @pytest.fixture
@@ -200,7 +231,7 @@ def test_same_key_is_saved_once(call, fake, skyr):
 def test_unknown_food_is_asked_and_answer_saves_it_into_the_same_message(call, fake, skyr):
     body = call("log", text="150 g skyr and 20 g dragonfruit")
     assert body["outcome"] == "partly_saved" and len(body["questions"]) == 1
-    assert [m for _, m in fake.calls] == ["claude-haiku-5-5", "claude-sonnet-5-5"]  # read once more before asking
+    assert [m for _, m in fake.calls][:2] == ["claude-haiku-5-5", "claude-sonnet-5-5"]  # read once more before asking
     dragon = owner_sql("""INSERT INTO foods (name, basis, kcal, protein, fat, carbs, source)
                           VALUES ('Dragon fruit', 'g', 60, 1.2, 0, 13, 'database') RETURNING id""")[0]["id"]
     done = call("answer", question_id=body["questions"][0]["question_id"], reply=f"N{dragon}")
@@ -507,3 +538,41 @@ def test_a_tick_off_that_matches_nothing_says_so(call, fake, todo):
     assert body["outcome"] == "rejected" and "not found" in body["message"] and body["message"].startswith("Nothing changed")
     steps = owner_sql("SELECT detail FROM audit_log WHERE tool = 'log' ORDER BY id DESC LIMIT 1")[0]["detail"]["steps"]
     assert steps[0]["items"] == {"done": ["bananas"]}  # the to-do names are kept, so a miss can be traced
+
+
+def test_a_new_plain_food_is_offered_from_usda_and_yes_adds_it(call, fake, off):
+    body = call("log", text="50 g coconut")
+    assert body["outcome"] == "needs_choice" and "USDA has Nuts, coconut meat, raw: 354 kcal" in body["message"]
+    done = call("answer", question_id=body["questions"][0]["question_id"], reply="yes")
+    assert done["outcome"] == "saved", done["message"]
+    f = owner_sql("SELECT id, source, source_note, carbs_include_fibre, aliases FROM foods WHERE name = 'Coconut meat, raw'")[0]
+    assert f["source"] == "database" and "fdc 170169" in f["source_note"] and f["carbs_include_fibre"]
+    assert "coconut" in f["aliases"]  # the user's word now finds it
+    units = {r["unit"]: float(r["grams"]) for r in owner_sql("SELECT unit, grams FROM food_units WHERE food_id = %s", f["id"])}
+    assert units["medium"] == 397 and units["piece"] == 45 and units["cup"] == 80  # USDA's own piece: 2" x 2" x 1/2"
+    assert n("SELECT count(*) AS n FROM food_entries WHERE food_id = %s AND amount = 50", f["id"]) == 1
+
+
+def test_a_german_product_comes_from_open_food_facts_with_its_barcode(call, fake, off):
+    off.hits.append(OAT)
+    off.products[OAT["code"]] = {**OAT, "nutriments": {**OAT["nutriments"], "salt_100g": 0.1}}
+    body = call("log", text="100 g haferdrink")
+    assert "Open Food Facts has Haferdrink (BioPrimo)" in body["message"]
+    call("answer", question_id=body["questions"][0]["question_id"], reply="yes, add it")
+    f = owner_sql("SELECT barcode, brand, sodium_mg, carbs_include_fibre FROM foods WHERE name = 'Oat drink (BioPrimo)'")[0]
+    assert f["barcode"] == OAT["code"] and f["brand"] == "BioPrimo" and float(f["sodium_mg"]) == 40 and f["carbs_include_fibre"] is False
+
+
+def test_a_barcode_is_looked_up_shown_and_then_known(call, fake, off):
+    off.products[OAT["code"]] = OAT
+    body = call("food_lookup", barcode="2200 2630 20656")
+    assert body["outcome"] == "needs_confirmation" and "61 kcal" in body["message"]
+    assert n("SELECT count(*) AS n FROM foods") == 0  # only after the yes
+    call("answer", question_id=body["questions"][0]["question_id"], reply="yes")
+    again = call("food_lookup", barcode=OAT["code"])
+    assert "already has N" in again["message"]
+
+
+def test_a_food_found_nowhere_keeps_the_plain_question(call, fake, off):
+    body = call("log", text="30 g zzqfood")
+    assert body["outcome"] == "needs_choice" and "Nothing in the catalogue fits" in body["message"]

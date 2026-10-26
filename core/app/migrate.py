@@ -1,6 +1,7 @@
 """Apply core/migrations/*.sql once each, in file-name order, as app_owner."""
 import pathlib
 
+from . import usda
 from .db import connect
 
 DIR = pathlib.Path(__file__).resolve().parent.parent / "migrations"
@@ -20,4 +21,8 @@ def run() -> list[str]:
             conn.execute(f.read_text())
             conn.execute("INSERT INTO schema_migrations (name) VALUES (%s)", (f.name,))
             done.append(f.name)
+        conn.autocommit = False
+        if usda.load_if_empty(conn):  # the local USDA copy (migration 009), once
+            done.append("usda data")
+        conn.commit()
     return done

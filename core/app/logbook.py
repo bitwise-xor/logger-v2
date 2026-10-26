@@ -11,7 +11,7 @@ from typing import Any, Optional
 
 from psycopg.types.json import Jsonb
 
-from . import commands, record, todos
+from . import commands, lookup, record, todos
 from .ai.provider import AnthropicProvider, Provider
 from .db import connect
 from .v1_food import _food_cat, _types
@@ -147,6 +147,7 @@ def _process(cur, text: str, now: datetime) -> dict:
         out["questions"] = out.get("questions", []) + asked
         if out["outcome"] in ("kept", "needs_choice"):
             out["outcome"] = "partly_saved" if t["receipt"] and asked else "saved" if t["receipt"] else "needs_choice" if asked else out["outcome"]
+    usages += lookup.offer(cur, provider(), out, text)  # a food nothing in the catalogue fits: USDA or Open Food Facts
     if sent["receipt"] or sent["notes"]:
         out["notes"] = out.get("notes", []) + sent["receipt"] + sent["notes"]
     if out["outcome"] == "needs_confirmation":  # v1's read-back: keep the reading, the user's yes saves it
@@ -194,6 +195,44 @@ def add_food(name: str, values: dict, question_id: Optional[str] = None, aliases
         return resp
 
 
+def food_lookup(barcode: Optional[str] = None, name: Optional[str] = None, question_id: Optional[str] = None) -> dict[str, Any]:
+    """A food looked up by barcode (Open Food Facts) or name (USDA and Open Food Facts); shown for the user's yes."""
+    now = clock()
+    with connect() as conn, conn.cursor() as cur:
+        word = None
+        if question_id:
+            cur.execute("SELECT payload FROM pending WHERE id = %s AND tool = 'log' AND resolved_at IS NULL", (question_id,))
+            q = cur.fetchone()
+            if not q or q["payload"].get("kind") != "food":
+                return _public({"outcome": "rejected", "reason": "there is no open food question with that id"})
+            word = q["payload"]["item"]["food"]
+        try:
+            if barcode:
+                cand, usages, why = lookup.by_barcode(cur, provider(), barcode)
+            elif name:
+                cand, usages, notes = lookup.by_name(cur, provider(), name, name, name)
+                why = "nothing fitting found in USDA or Open Food Facts: send a label photo, or add it as an estimate"
+            else:
+                cand, usages, why = None, [], "give a barcode or a name"
+        except lookup.FoodFactsError as e:
+            cand, usages, why = None, [], f"{e}; try again later or send a label photo"
+        if not cand:
+            out = {"outcome": "rejected", "reason": why}
+        elif cand.get("existing"):
+            out = lookup.accept(cur, cand, now, question_id, word)
+        else:
+            pid = "p" + secrets.token_hex(4)
+            cur.execute("INSERT INTO pending (id, tool, payload, reason, expires_at) VALUES (%s, 'lookup_confirm', %s, %s, %s)",
+                        (pid, Jsonb({"cand": cand, "question_id": question_id, "word": word, "now": now.isoformat()}),
+                         cand["offer"][:500], now + timedelta(hours=record.QUESTION_HOURS)))
+            out = {"outcome": "needs_confirmation", "read_back": cand["offer"] + ".",
+                   "questions": [{"pending_id": pid, "question": "Show the user these values; add it (yes) or not (no)?"}]}
+        resp = _public(out)
+        _audit(cur, "food_lookup", out["outcome"], {"question_id": question_id, "barcode": bool(barcode),
+                                                    "ai": [{"model": u.model, "usd": round(u.usd, 6)} for u in usages]})
+        return resp
+
+
 def food_words(food_id: int, words: list, means: bool = False) -> dict[str, Any]:
     with connect() as conn, conn.cursor() as cur:
         out = record.add_words(cur, food_id, words, means)
@@ -207,14 +246,17 @@ def answer(question_id: str, reply: str) -> dict[str, Any]:
     with connect() as conn, conn.cursor() as cur:
         cur.execute("SELECT * FROM pending WHERE id = %s FOR UPDATE", (question_id,))
         p = cur.fetchone()
-        if not p or p["tool"] not in ("log", "log_confirm", "log_repeat", "add_food_confirm", "command", "command_confirm"):
+        if not p or p["tool"] not in ("log", "log_confirm", "log_repeat", "add_food_confirm", "command", "command_confirm",
+                                      "lookup_confirm"):
             _audit(cur, "answer", "rejected", {"why": "unknown question"})
             return {"outcome": "rejected", "message": "There is no such open question."}
         yes = bool(YES.match(reply))
-        if p["tool"] == "log" and p["payload"].get("kind") != "todo":
+        if p["tool"] == "log" and p["payload"].get("kind") != "todo" and not (p["payload"].get("lookup") and yes):
             out = record.answer(cur, question_id, reply, now)
         elif p["resolved_at"] is not None or p["expires_at"] < now:
             out = {"outcome": "rejected", "reason": "that question was already answered or has expired"}
+        elif p["tool"] == "log" and p["payload"].get("lookup"):  # yes to a food found in USDA or Open Food Facts
+            out = lookup.accept(cur, p["payload"]["lookup"], now, question_id, p["payload"]["item"]["food"])
         elif p["tool"] == "log":  # which shopping item was meant
             out = todos.answer(cur, provider(), p, reply, now)
         elif p["tool"] == "command":  # which entry was meant: read the request again with the answer
@@ -231,6 +273,11 @@ def answer(question_id: str, reply: str) -> dict[str, Any]:
         elif not yes:  # unclear: keep the question open
             out = {"outcome": "needs_confirmation", "reason": "answer yes to save it, or no to drop it",
                    "questions": [{"pending_id": question_id, "question": "Yes or no?"}]}
+        elif p["tool"] == "lookup_confirm":
+            d = p["payload"]
+            out = lookup.accept(cur, d["cand"], now, d.get("question_id"), d.get("word"))
+            if out["outcome"] in ("saved", "partly_saved"):
+                cur.execute("UPDATE pending SET resolved_at = now(), resolution = 'confirmed' WHERE id = %s", (question_id,))
         elif p["tool"] == "command_confirm":
             out = commands.apply(cur, p["payload"], now)
             if out["outcome"] == "changed":

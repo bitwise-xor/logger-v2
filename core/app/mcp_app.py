@@ -65,6 +65,14 @@ def food_words(food_id: int, words: list[str], means: bool = False) -> dict[str,
 
 
 @mcp.tool()
+def food_lookup(barcode: Optional[str] = None, name: Optional[str] = None, question_id: Optional[str] = None) -> dict[str, Any]:
+    """Look up a food the catalogue does not know: by barcode (the digits under the bars, from the user's photo or words)
+    in Open Food Facts, or by name in USDA and Open Food Facts. question_id: the open food question it answers.
+    Show the user the values it returns; the food is added only after their yes (answer)."""
+    return logbook.food_lookup(barcode, name, question_id)
+
+
+@mcp.tool()
 def answer(question_id: str, reply: str) -> dict[str, Any]:
     """Answer a question from `log` with the user's reply: a food name or N number, an amount, yes, or skip."""
     return logbook.answer(question_id, reply)
