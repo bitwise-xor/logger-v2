@@ -15,7 +15,7 @@ from starlette.requests import Request
 from starlette.responses import HTMLResponse, RedirectResponse, Response
 
 from . import (auth, foodpage, healthpage, ideaspage, logbook, privatepage, todaypage, webactions, webentry, webfood, webideas,
-               webprivate, webquestions)
+               usagepage, webprivate, webquestions)
 from .ai.provider import ProviderError
 from .config import APP_HOST
 from .db import connect
@@ -98,7 +98,7 @@ def shell(session, body: str, status: int = 200, active: str = "") -> HTMLRespon
     """A signed-in page: the top bar (with the number of open questions), the entry box, the last reply, then the body."""
     open_q = webquestions.count()
     links = [("today", "/web/", "Today"), ("food", "/web/food", "Food"), ("ideas", "/web/ideas", "Ideas and tasks"), ("health", "/web/health", "Health"), ("questions", "/web/questions", "Questions"),
-             ("private", "/web/private", "Private")]
+             ("private", "/web/private", "Private"), ("usage", "/web/usage", "Usage")]
     current = ' aria-current="page"'
     items = "".join(f'<a href="{href}"{current if k == active else ""}>{label}'
                     + (f'<span class="badge">{open_q}</span>' if k == "questions" and open_q else "") + "</a>"
@@ -221,6 +221,15 @@ def add_routes(mcp) -> None:
         if not session:
             return RedirectResponse("/web/login", status_code=302, headers={"Cache-Control": "no-store"})
         return shell(session, privatepage.render(session["csrf"], request.query_params), active="private")
+
+    @mcp.custom_route("/web/usage", methods=["GET"])
+    async def usage_page(request: Request) -> Response:
+        if (r := hidden(request)) is not None:
+            return r
+        session = current_session(request)
+        if not session:
+            return RedirectResponse("/web/login", status_code=302, headers={"Cache-Control": "no-store"})
+        return shell(session, usagepage.render(request.query_params.get("r", "7")), active="usage")
 
     @mcp.custom_route("/web/health", methods=["GET"])
     async def health_page(request: Request) -> Response:
