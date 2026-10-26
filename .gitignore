@@ -6,6 +6,7 @@ secrets/
 *.key
 pgdata/
 backups/
+data/
 *.dump
 *.age
 
