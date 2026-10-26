@@ -1,10 +1,11 @@
 """Choosing one food for the user's word, and its amount. v1 split this between the server (matching) and the
 chat rules (defaults, picking among candidates, estimating unit weights); in v2 the core does all of it, so every
 client behaves the same."""
+import re
 from datetime import datetime
 from typing import Optional
 
-from .v1_food import _UNIT_GENERIC, _find_foods, _fkey, _silent_close, _to_amount, _unit_rows
+from .v1_food import _UNIT_GENERIC, _find_foods, _fkey, _silent_close, _sing, _to_amount, _unit_rows
 
 EXACT = ("id", "name", "alias", "default")
 
@@ -59,6 +60,21 @@ def _singulars(term: str) -> list[str]:
     return [f"{head} {f}".strip() for f in forms]
 
 
+# A close name whose main noun is another product is a different food: "coconut" is not "Coconut oil", "peanut" not
+# "Peanut butter", "potato" not "Potato chips"; but "chocolate" is "Milk chocolate (Aldi)" (v2 rule, 26.10.2026).
+PRODUCT_WORDS = {"oil", "milk", "water", "cream", "flour", "powder", "juice", "butter", "sauce", "paste", "syrup", "chips",
+                 "cookie", "biscuit", "bar", "drink", "sugar", "vinegar", "seasoning", "spread", "jam", "flake", "shaving",
+                 "crisp", "candy", "dessert", "soup", "bread", "cake", "pudding", "extract", "concentrate", "puree", "dip",
+                 "dressing", "ketchup", "mustard", "noodle", "pasta", "cracker", "wafer", "waffle"}
+
+
+def _other_product(term: str, f: dict) -> bool:
+    main = re.split(r"[,(]", f["name"])[0]
+    words = {_sing(w) for w in _fkey(term).split()}
+    toks = [_sing(t) for t in _fkey(main).split()]
+    return bool(toks) and words <= set(toks) and toks[-1] not in words and toks[-1] in PRODUCT_WORDS
+
+
 UNIT_WORDS = {"piece", "pieces", "slice", "slices", "stuck", "stueck", "portion", "serving"}
 
 
@@ -84,6 +100,10 @@ def _pick(cur, cat: dict, term: str, cooked: bool, before: Optional[datetime]) -
             return (d, "usual", act) if d else (None, "ask", act)
         return None, "none", []
     if how == "close":
+        other = [f for f in act if _other_product(term, f)]
+        if other and len(other) == len(act):  # "coconut" and only "Coconut oil": ask (the lookup offers coconut meat)
+            return None, "ask", act[:4]
+        act = [f for f in act if f not in other]
         f = _silent_close(cat, term, act, how)
         if f:
             return f, "close", act

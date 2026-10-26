@@ -576,3 +576,13 @@ def test_a_barcode_is_looked_up_shown_and_then_known(call, fake, off):
 def test_a_food_found_nowhere_keeps_the_plain_question(call, fake, off):
     body = call("log", text="30 g zzqfood")
     assert body["outcome"] == "needs_choice" and "Nothing in the catalogue fits" in body["message"]
+
+
+def test_coconut_is_not_taken_for_coconut_oil_and_the_lookup_is_offered(call, fake, off):
+    oil = owner_sql("""INSERT INTO foods (name, basis, kcal, protein, fat, carbs, source)
+                       VALUES ('Coconut oil', 'g', 862, 0, 100, 0, 'database') RETURNING id""")[0]["id"]
+    body = call("log", text="50 g coconut")
+    assert body["outcome"] == "needs_choice" and n("SELECT count(*) AS n FROM food_entries") == 0
+    assert f"N{oil} Coconut oil" in body["message"] and "USDA has Nuts, coconut meat, raw" in body["message"]
+    call("answer", question_id=body["questions"][0]["question_id"], reply="yes")
+    assert owner_sql("SELECT f.name FROM food_entries e JOIN foods f ON f.id = e.food_id")[0]["name"] == "Coconut meat, raw"

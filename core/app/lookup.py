@@ -9,7 +9,7 @@ from typing import Optional
 
 from psycopg.types.json import Jsonb
 
-from . import foodfacts, record, usda
+from . import foodfacts, foods, record, usda
 from .ai.parser import BOOL, STR, _null, _obj
 from .ai.provider import Provider, ProviderError, Usage
 from .foodfacts import FoodFactsError
@@ -165,9 +165,13 @@ def offer(cur, provider: Provider, out: dict, text: str) -> list[Usage]:
         cur.execute("SELECT * FROM pending WHERE id = %s", (q["pending_id"],))
         p = cur.fetchone()
         pl = p["payload"] if p else {}
-        if not p or p["tool"] != "log" or pl.get("kind") != "food" or pl.get("candidates"):
+        if not p or p["tool"] != "log" or pl.get("kind") != "food":
             continue
         it = pl["item"]
+        cat = _food_cat(cur)
+        have = [cat["by_id"][i] for i in pl.get("candidates") or [] if i in cat["by_id"]]
+        if have and not all(foods._other_product(it["food"], f) for f in have):
+            continue  # real candidates: the user picks one of them
         try:
             cand, used, notes = by_name(cur, provider, it["food"], it.get("food_en") or it["food"], text)
         except (ProviderError, FoodFactsError):  # a failed lookup never stops the message: the plain question stays
@@ -175,7 +179,9 @@ def offer(cur, provider: Provider, out: dict, text: str) -> list[Usage]:
         usages += used
         if not cand:
             continue
-        ask = f"'{it['food']}' is not in your catalogue. {cand['offer']}. Add it (yes), send a label photo or barcode, or skip."
+        ask = (f"'{it['food']}' is not in your catalogue" + (" (only " + "; ".join(f"N{f['id']} {f['name']}" for f in have)
+                                                             + ", answer with its N number if you meant it)" if have else "")
+               + f". {cand['offer']}. Add it (yes), send a label photo or barcode, or skip.")
         cur.execute("UPDATE pending SET payload = payload || jsonb_build_object('lookup', %s::jsonb), reason = %s WHERE id = %s",
                     (Jsonb(cand), ask[:500], p["id"]))
         q["question"] = ask
