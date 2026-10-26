@@ -77,6 +77,6 @@ def reply_html(resp: dict, csrf: str) -> str:
         fields = "".join(hidden(k, v) for k, v in c["fields"].items())
         extra += (f'<form method="post" action="{esc(c["action"])}">{hidden("csrf", csrf)}{fields}'
                   f'<button class="primary" type="submit">{esc(c["label"])}</button>'
-                  f'<a class="ghost dim" href="{esc(c.get("no", "/web/"))}">No</a></form>')
+                  f'<a class="ghost dim" href="{esc(c.get("no", "/web/"))}">{esc(c.get("no_label", "No"))}</a></form>')
     warn = " warn" if resp["outcome"] in ("rejected", "needs_confirmation", "needs_choice", "not_logged") else ""
     return f'<section class="reply{warn}" aria-live="polite"><b>{esc(head)}</b>{_body(resp)}{extra}</section>'

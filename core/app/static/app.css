@@ -253,3 +253,33 @@ form.word{display:inline-flex;align-items:center;gap:.2rem;border:1px solid var(
 .ft tfoot tr.tg td.good{color:var(--accent);font-weight:600}
 .ft tfoot tr.tg td.warn{color:var(--warn);font-weight:600}
 .ft tfoot tr.tg td.bad{color:var(--bad);font-weight:600}
+/* Ideas and tasks: thoughts and Todoist */
+.th{border-top:1px solid var(--line);padding:.5rem 0}
+.th:first-of-type{border-top:0}
+.th .top{display:flex;gap:.6rem;align-items:baseline;color:inherit;text-decoration:none}
+.th .top:hover .sum{text-decoration:underline}
+.th .sum{flex:1;min-width:0}
+.th .meta{display:block;font-size:.82rem;color:var(--dim)}
+.th.sel>.top{font-weight:600}
+.pill.ok{background:var(--accent-soft);color:var(--accent)}
+.quote{border-left:3px solid var(--line);padding-left:.6rem;color:var(--dim)}
+.updates{margin:0;padding-left:1.2rem;font-size:.9rem}
+.fields.wide{grid-template-columns:1fr}
+.fields.wide2{grid-template-columns:minmax(0,2fr) minmax(0,1fr)}
+@media (max-width:520px){.fields.wide2{grid-template-columns:1fr}}
+.sect+.sect{margin-top:1rem}
+.sect h3{font-size:.88rem;margin:0 0 .2rem}
+.task{display:flex;gap:.6rem;align-items:flex-start;padding:.4rem 0;border-top:1px solid var(--line)}
+.sect h3+.task{border-top:0}
+.task form{margin:0}
+.task .txt{flex:1;min-width:0}
+.task.closed .txt{color:var(--dim);text-decoration:line-through}
+.task .acts{display:flex;gap:.1rem;align-items:center}
+.tick{width:1.1rem;height:1.1rem;margin-top:.15rem;border:2px solid var(--dim);border-radius:.25rem;background:none;padding:0;cursor:pointer}
+.tick:hover{border-color:var(--accent)}
+.tick.on{background:var(--accent);border-color:var(--accent)}
+.due{font-size:.78rem;padding:0 .45rem;border-radius:1rem;background:var(--bar);color:var(--dim);white-space:nowrap}
+.due.late{background:var(--warn-soft);color:var(--warn)}
+.due.today{background:var(--accent-soft);color:var(--accent)}
+/* five tabs: on the phone they get their own row under the name and Sign out */
+@media (max-width:620px){.bar{flex-wrap:wrap;row-gap:.4rem}.bar .brand{flex:1}.bar nav{order:3;flex-basis:100%;flex-wrap:wrap;gap:.2rem .9rem}}

@@ -24,6 +24,8 @@ class Todoist(Protocol):
     def close(self, task_id: str) -> None: ...
     def reopen(self, task_id: str) -> None: ...
     def delete(self, task_id: str) -> None: ...
+    def update(self, task_id: str, content: str) -> None: ...
+    def move(self, task_id: str, section_id: Optional[str] = None, project_id: Optional[str] = None) -> None: ...
 
 
 class TodoistAPI:
@@ -89,6 +91,12 @@ class TodoistAPI:
     def delete(self, task_id: str) -> None:
         self._call("DELETE", f"/tasks/{task_id}")
 
+    def update(self, task_id: str, content: str) -> None:
+        self._call("POST", f"/tasks/{task_id}", body={"content": content})
+
+    def move(self, task_id: str, section_id: Optional[str] = None, project_id: Optional[str] = None) -> None:
+        self._call("POST", f"/tasks/{task_id}/move", body={"section_id": section_id} if section_id else {"project_id": project_id})
+
 
 class FakeTodoist:
     """In memory: tasks are dicts with id, content, project_id, section_id, labels, checked, due."""
@@ -142,3 +150,18 @@ class FakeTodoist:
         self._up()
         self.tasks.pop(task_id)
         self.log.append(("delete", task_id))
+
+    def update(self, task_id, content):
+        self._up()
+        self.tasks[task_id]["content"] = content
+        self.log.append(("update", task_id, content))
+
+    def move(self, task_id, section_id=None, project_id=None):
+        self._up()
+        t = self.tasks[task_id]
+        if section_id:
+            t["section_id"] = section_id
+            t["project_id"] = next(p for p, secs in self.secs.items() if any(i == section_id for i, _ in secs))
+        else:
+            t["section_id"], t["project_id"] = None, project_id
+        self.log.append(("move", task_id, section_id or project_id))
