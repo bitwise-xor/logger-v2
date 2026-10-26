@@ -86,15 +86,16 @@ function drawChart(el, o) {
   if (!pts.length) { el.innerHTML = '<p class="empty">No values in this range.</p>'; return; }
   const esc = s => String(s).replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
   const W = Math.max(260, el.clientWidth), H = 190, L = 42, R = 8, T = 8, B = 22;
-  const ys = pts.map(p => p[1] + (p[3] || 0));
+  const ys = pts.map(p => p[1] + (p[3] || 0)).concat((o.band || []).filter(v => v != null));
   const ticks = niceTicks(o.min ?? Math.min(...ys), Math.max(...ys), 4), y0 = ticks[0], y1 = ticks[ticks.length - 1];
   const bars = o.series.some(s => s.mark === "bar"), inset = bars ? 8 : 0;
   const x = i => L + inset + (o.days === 1 ? 0.5 : i / (o.days - 1)) * (W - L - R - 2 * inset);
   const y = v => T + (1 - (v - y0) / (y1 - y0)) * (H - T - B);
   const start = new Date(o.start + "T12:00:00");
-  const dm = i => { const d = new Date(start); d.setDate(d.getDate() + i); return String(d.getDate()).padStart(2, "0") + "." + String(d.getMonth() + 1).padStart(2, "0") + "."; };
+  const dm = i => { const d = new Date(start); d.setDate(d.getDate() + i); return String(d.getDate()).padStart(2, "0") + "." + String(d.getMonth() + 1).padStart(2, "0") + "." + (o.years ? String(d.getFullYear()).slice(2) : ""); };
   const f = v => v.toFixed(1);
   let s = `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="${esc(o.label)}">`;
+  if (o.band) { const lo = o.band[0] ?? y0, hi = o.band[1] ?? y1; s += `<rect class="band" x="${L}" y="${f(y(hi))}" width="${W - L - R}" height="${f(Math.max(0, y(lo) - y(hi)))}"/>`; }
   for (const t of ticks) {
     s += `<line class="grid-line" x1="${L}" x2="${W - R}" y1="${f(y(t))}" y2="${f(y(t))}"/>`
        + `<text x="${L - 6}" y="${f(y(t) + 4)}" text-anchor="end">${o.prefix || ""}${o.decimals ? t.toFixed(o.decimals) : t}${o.unit || ""}</text>`;

@@ -14,8 +14,8 @@ from starlette.concurrency import run_in_threadpool
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, RedirectResponse, Response
 
-from . import (auth, foodpage, healthpage, ideaspage, logbook, privatepage, todaypage, webactions, webentry, webfood, webideas,
-               usagepage, webprivate, webquestions)
+from . import (auth, foodpage, healthpage, ideaspage, labspage, logbook, privatepage, todaypage, usagepage, webactions, webentry,
+               webfood, webideas, weblabs, webprivate, webquestions)
 from .ai.provider import ProviderError
 from .config import APP_HOST
 from .db import connect
@@ -98,7 +98,8 @@ def shell(session, body: str, status: int = 200, active: str = "") -> HTMLRespon
     """A signed-in page: the top bar (with the number of open questions), the entry box, the last reply, then the body."""
     open_q = webquestions.count()
     links = [("today", "/web/", "Today"), ("food", "/web/food", "Food"), ("ideas", "/web/ideas", "Ideas and tasks"), ("health", "/web/health", "Health"), ("questions", "/web/questions", "Questions"),
-             ("private", "/web/private", "Private"), ("usage", "/web/usage", "Usage")]
+             ("private", "/web/private", "Private"), ("usage", "/web/usage", "Usage"),
+             ("labs", "/web/labs", "Labs and medication")]
     current = ' aria-current="page"'
     items = "".join(f'<a href="{href}"{current if k == active else ""}>{label}'
                     + (f'<span class="badge">{open_q}</span>' if k == "questions" and open_q else "") + "</a>"
@@ -230,6 +231,21 @@ def add_routes(mcp) -> None:
         if not session:
             return RedirectResponse("/web/login", status_code=302, headers={"Cache-Control": "no-store"})
         return shell(session, usagepage.render(request.query_params.get("r", "7")), active="usage")
+
+    def labs_tab(render):
+        """One tab of the Labs and medication page."""
+        async def handler(request: Request) -> Response:
+            if (r := hidden(request)) is not None:
+                return r
+            session = current_session(request)
+            if not session:
+                return RedirectResponse("/web/login", status_code=302, headers={"Cache-Control": "no-store"})
+            return shell(session, render(session["csrf"], request.query_params), active="labs")
+        return handler
+
+    for _path, _render in (("/web/labs", labspage.render_reports), ("/web/labs/tests", labspage.render_tests),
+                           ("/web/labs/meds", labspage.render_meds)):
+        mcp.custom_route(_path, methods=["GET"])(labs_tab(_render))
 
     @mcp.custom_route("/web/health", methods=["GET"])
     async def health_page(request: Request) -> Response:
@@ -405,6 +421,19 @@ def add_routes(mcp) -> None:
 
     for _name, _fn in webprivate.ACTIONS.items():
         mcp.custom_route(f"/web/private/{_name}", methods=["POST"])(private_form(_fn))
+
+    def labs_form(fn):
+        """One form of the Labs and medication page (weblabs.ACTIONS), back to the page it came from."""
+        async def handler(request: Request) -> Response:
+            session, form = await post_form(request)
+            if form is None:
+                return session
+            k = form_key(form)
+            return done(session, await _run(lambda: fn(form, k)), labspage.safe_back(form.get("back")))
+        return handler
+
+    for _name, _fn in weblabs.ACTIONS.items():
+        mcp.custom_route(f"/web/labs/{_name}", methods=["POST"])(labs_form(_fn))
 
     @mcp.custom_route("/web/review", methods=["POST"])
     async def review(request: Request) -> Response:
