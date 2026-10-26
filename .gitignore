@@ -19,3 +19,6 @@ __pycache__/
 .venv/
 .idea/
 .vscode/
+
+# Google Sheets sync runtime (key, password, state, venv); the scripts are in tools/sheets/
+/sheets/
