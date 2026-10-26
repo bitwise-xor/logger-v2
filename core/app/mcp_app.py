@@ -73,6 +73,14 @@ def food_lookup(barcode: Optional[str] = None, name: Optional[str] = None, quest
 
 
 @mcp.tool()
+def lab_report(text: str, corrections: Optional[str] = None, source: str = "image") -> dict[str, Any]:
+    """A lab or imaging report from the user's photo or PDF: text = everything on all pages written out exactly as printed
+    (values, units, ranges, names, dates; never converted or translated). source: image or document. Returns a read-back
+    table: show it whole; the user's yes goes to answer; for a correction call again with the same text and corrections."""
+    return logbook.lab_report(text, corrections, source)
+
+
+@mcp.tool()
 def answer(question_id: str, reply: str) -> dict[str, Any]:
     """Answer a question from `log` with the user's reply: a food name or N number, an amount, yes, or skip."""
     return logbook.answer(question_id, reply)

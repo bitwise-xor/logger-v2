@@ -126,7 +126,7 @@ def test_tool_schemas_are_stable(bearer):
                 "resolve": ["pending_id", "confirm"], "undo": ["receipt_id"], "recent_weights": [], "recent_blood_pressure": [], "recent_wakeups": [],
                 "log": ["text"], "answer": ["question_id", "reply"],
                 "add_food": ["carbs", "fat", "kcal", "name", "protein", "source"],
-                "food_words": ["food_id", "words"], "food_lookup": []}
+                "food_words": ["food_id", "words"], "food_lookup": [], "lab_report": ["text"]}
     assert {k: sorted(v.get("required", [])) for k, v in tools.items()} == {k: sorted(v) for k, v in required.items()}
     for name in ("record_weight", "record_bp", "record_wakeup"):
         assert "idempotency_key" in tools[name]["properties"] and "at" in tools[name]["properties"]

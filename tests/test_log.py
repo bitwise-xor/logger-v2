@@ -58,6 +58,8 @@ ANSWERS = {
     "50 g coconut": P(food=[F("coconut", 50, en="coconut meat")]),
     "100 g haferdrink": P(food=[F("haferdrink", 100, en="oat drink", drink=True)]),
     "30 g zzqfood": P(food=[F("zzqfood", 30)]),
+    "started Atorvastatin 10 mg": P(intent="command", command_text="started Atorvastatin 10 mg"),
+    "Atorvastatin now 20 mg": P(intent="command", command_text="Atorvastatin now 20 mg"),
     "todo: buy milk, cola, potatoes": P(todos=[D("Milk"), D("Cola"), D("Potatoes")]),
     "todo: buy chips": P(todos=[D("Chips")]),
     "todo: buy meat": P(todos=[D("meat")]),
@@ -89,6 +91,9 @@ COMMANDS = {
     "the skyr was 120 g": lambda u: C(("change", {"id": "f" + _id(u, r"f(\d+) [^\n]*Skyr natural"), "fields": {"amount": 120, "unit": "g"}})),
     "weight was 80 not 82.4": lambda u: C(("change", {"id": "m" + _id(u, r"m(\d+) [^\n]*weight"), "fields": {"value": 80}})),
     "undo that": lambda u: C(("undo", {})),
+    "started Atorvastatin 10 mg": lambda u: C(("med", {"action": "start", "name": "Atorvastatin", "dose": "10 mg"})),
+    "Atorvastatin now 20 mg": lambda u: C(("med", {"action": "stop", "name": "Atorvastatin"}),
+                                          ("med", {"action": "start", "name": "Atorvastatin", "dose": "20 mg"})),
     "got the milk": lambda u: C(("todo", {"done": ["milk"]})),
     "remove potatoes from the list": lambda u: C(("todo", {"remove": ["potatoes from the list"]})),
     "remove milk": lambda u: C(("todo", {"remove": ["milk"]})),
@@ -98,6 +103,28 @@ COMMANDS = {
     "delete the skyr": lambda u: C(unclear="Which skyr: the first or the second?"),
     "delete the skyr\n(Asked:": lambda u: C(("change", {"id": "f" + _id(u, r"f(\d+) [^\n]*Skyr natural"), "delete": True})),
 }
+
+REPORT_TEXT = """Labor Dr. Muster, Berlin, Deutschland
+Entnahme: 20.10.2026 08:15  Auftragsnr. 4711
+Fettstoffwechsel: Cholesterin LDL 162 mg/dl (< 116)
+Blutbild: Hämoglobin 13,8 g/dl (13,5 - 17,5)
+Niere: Kreatinin 1,02 mg/dl (0,70 - 1,20)
+Urin: Nitrit Negativ (Negativ)"""
+
+
+def RV(test, value, unit="", ref="", panel="", printed=""):
+    return dict(test=test, value=value, unit=unit, ref=ref, printed_name=printed, panel=panel, ref_low="", ref_high="", site="",
+                side="", specimen="", method="", calculated="", abnormal="", note="")
+
+
+def REPORT(hb="13,8"):
+    return dict(type="lab", title="Blood test", provider="Labor Dr. Muster", city="Berlin", country="Germany",
+                collected="20.10.2026 08:15", reported="", accession="4711", ordered_by="", signed_by="", fasting="", status="",
+                notes="", tz="", values=[RV("LDL cholesterol", "162", "mg/dl", "< 116", "Fettstoffwechsel", "Cholesterin LDL"),
+                                         RV("Hemoglobin", hb, "g/dl", "13,5 - 17,5", "Blutbild", "Hämoglobin"),
+                                         RV("Creatinine", "1,02", "mg/dl", "0,70 - 1,20", "Niere", "Kreatinin"),
+                                         RV("Nitrite (urine)", "Negativ", "", "Negativ", "Urin", "Nitrit")])
+
 
 PICKS = {  # the food pick call: the word -> (label of the entry to pick, catalogue name)
     "coconut": ("Nuts, coconut meat, raw", "Coconut meat, raw"),
@@ -120,6 +147,9 @@ class FakeProvider:
         self.calls = []
 
     def json(self, system, user, schema, model, max_tokens=4000):
+        if user.startswith("Known tests: "):  # structuring a lab report
+            self.calls.append(("report", model))
+            return REPORT("12,6" if "hemoglobin is 12,6" in user else "13,8"), Usage(model, 3000, 800)
         if user.startswith("Word: "):  # picking a USDA or Open Food Facts entry
             word = user.split("\n", 1)[0][len("Word: "):]
             self.calls.append((word, model))
@@ -595,3 +625,35 @@ def test_the_same_brand_with_nearly_the_same_values_is_flagged(call, fake):
     assert body["outcome"] == "needs_confirmation" and f"N{old}" in body["message"]
     other = call("add_food", name="Cashews, salted (Farmer Naturals)", kcal=600, protein=18, fat=48, carbs=26, source="database")
     assert f"N{old}" not in other["message"]  # same brand, other values: a different product
+
+
+def test_a_lab_report_is_read_back_and_saved_only_after_yes(call, fake):
+    body = call("lab_report", text=REPORT_TEXT, source="document")
+    assert body["outcome"] == "needs_confirmation" and "LDL cholesterol" in body["message"] and "4 value(s)" in body["message"]
+    assert ("report", "claude-sonnet-5-5") in fake.calls and n("SELECT count(*) AS n FROM lab_reports") == 0  # nothing yet
+    fixed = call("lab_report", text=REPORT_TEXT, source="document", corrections="the hemoglobin is 12,6")
+    assert "12.6" in fixed["message"] or "12,6" in fixed["message"]
+    done = call("answer", question_id=fixed["questions"][0]["question_id"], reply="yes, all correct")
+    assert done["outcome"] == "saved", done["message"]
+    assert n("SELECT count(*) AS n FROM lab_results") == 4 and n("SELECT count(*) AS n FROM lab_results WHERE flag = 'H'") >= 1
+    details = json.dumps([r["detail"] for r in owner_sql("SELECT detail FROM audit_log")])
+    assert "162" not in details and "Hemoglobin" not in details  # no lab values in the audit log
+    asked = call("log", text="undo that")
+    call("answer", question_id=asked["questions"][0]["question_id"], reply="yes")
+    assert n("SELECT count(*) AS n FROM lab_reports") == 0 and n("SELECT count(*) AS n FROM lab_results") == 0
+
+
+def test_medication_is_read_back_a_dose_change_is_stop_and_start_and_undo_restores(call, fake):
+    asked = call("log", text="started Atorvastatin 10 mg")
+    assert asked["outcome"] == "needs_confirmation" and "start Atorvastatin 10 mg" in asked["message"]
+    assert n("SELECT count(*) AS n FROM medications") == 0
+    call("answer", question_id=asked["questions"][0]["question_id"], reply="yes")
+    assert n("SELECT count(*) AS n FROM medications WHERE dose = '10 mg' AND stop_date IS NULL") == 1
+    asked = call("log", text="Atorvastatin now 20 mg")
+    assert "stop" in asked["message"] and "start Atorvastatin 20 mg" in asked["message"]
+    call("answer", question_id=asked["questions"][0]["question_id"], reply="yes")
+    assert n("SELECT count(*) AS n FROM medications WHERE stop_date IS NULL") == 1
+    assert n("SELECT count(*) AS n FROM medications WHERE dose = '10 mg' AND stop_date IS NOT NULL") == 1
+    asked = call("log", text="undo that")
+    call("answer", question_id=asked["questions"][0]["question_id"], reply="yes")
+    assert n("SELECT count(*) AS n FROM medications") == 1 and n("SELECT count(*) AS n FROM medications WHERE stop_date IS NULL") == 1

@@ -147,6 +147,21 @@ def _find_health(cur, what: str, since, until, limit) -> str:
 
 
 _UNIT_SPELL = {}
+for _canon, _keys in {
+    "mg/dL": "mg/dl mg% mg/100ml", "g/dL": "g/dl g% gm/dl gm% g/100ml", "mg/L": "mg/l", "g/L": "g/l",
+    "mmol/L": "mmol/l", "µmol/L": "umol/l", "nmol/L": "nmol/l", "pmol/L": "pmol/l", "mmol/mol": "mmol/mol",
+    "mEq/L": "meq/l mval/l", "U/L": "u/l iu/l ie/l units/l", "mU/L": "mu/l miu/l uiu/ml uu/ml mie/l uie/ml",
+    "ng/mL": "ng/ml ug/l", "pg/mL": "pg/ml ng/l", "µg/dL": "ug/dl", "ng/dL": "ng/dl", "µg/mL": "ug/ml",
+    "10^3/µL": "10^3/ul 10^9/l thou/ul thou/mm^3 k/ul tsd/ul tsd./ul /nl 10^3/mm^3 1000/ul",
+    "10^6/µL": "10^6/ul 10^12/l mio/ul mio./ul mill/ul mill/mm^3 million/ul million/mm^3 m/ul /pl 10^6/mm^3",
+    "/µL": "/ul /mm^3 /cumm", "lakh/µL": "lakh/ul lakhs/ul lakh/cumm lakhs/cumm lakh/mm^3",
+    "%": "%", "fL": "fl um^3", "pg": "pg", "fmol": "fmol", "mm/h": "mm/h mm/hr mm/1h mm/1sthr mm/1sthour",
+    "mL/min/1.73m²": "ml/min/1.73m^2 ml/min/1,73m^2 ml/min/1.73qm", "kg": "kg", "g": "g", "lb": "lb lbs",
+    "mm": "mm", "cm": "cm", "cm/s": "cm/s", "kg/m²": "kg/m^2", "g/cm²": "g/cm^2", "SD": "sd", "ratio": "ratio",
+    "score": "score", "kcal/day": "kcal/day", "mL": "ml", "/hpf": "/hpf", "L/L": "l/l",
+}.items():
+    for _k in _keys.split():
+        _UNIT_SPELL[_k] = _canon
 
 
 def _ukey(u: Optional[str]) -> str:

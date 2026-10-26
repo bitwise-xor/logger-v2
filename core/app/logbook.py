@@ -11,10 +11,11 @@ from typing import Any, Optional
 
 from psycopg.types.json import Jsonb
 
-from . import commands, lookup, record, todos
-from .ai.provider import AnthropicProvider, Provider
+from . import commands, labs, lookup, record, todos
+from .ai.provider import AnthropicProvider, Provider, ProviderError
 from .db import connect
 from .v1_food import _food_cat, _types
+from .v1_log import Reject
 from .when import BERLIN
 
 CHANNEL = "mcp"
@@ -43,7 +44,7 @@ def _audit(cur, tool: str, outcome: str, detail: dict) -> None:
 def _context(cur, now: datetime) -> tuple[list, list]:
     """The parser's context: the last few messages of the last 6 hours, and what was eaten and drunk today."""
     cur.execute("""SELECT received_at, content FROM raw_inbox WHERE received_at > %s - interval '6 hours'
-                   AND channel <> 'catalogue' AND content NOT LIKE 'add food: %%'
+                   AND channel <> 'catalogue' AND content NOT LIKE 'add food: %%' AND NOT (metadata ? 'lab_report')
                    ORDER BY received_at DESC LIMIT 4""", (now,))  # the logger's own catalogue rows are not messages
     prev = [(r["received_at"].astimezone(BERLIN).replace(tzinfo=None), r["content"]) for r in reversed(cur.fetchall())]
     cur.execute("""SELECT e.day, e.meal, e.is_drink, e.eaten_at, f.name FROM food_entries e JOIN foods f ON f.id = e.food_id
@@ -233,6 +234,29 @@ def food_lookup(barcode: Optional[str] = None, name: Optional[str] = None, quest
         return resp
 
 
+def lab_report(text: str, corrections: Optional[str] = None, source: str = "image") -> dict[str, Any]:
+    """A report's text, structured and read back (labs.py); saved only after the user's yes."""
+    now = clock()
+    with connect() as conn, conn.cursor() as cur:
+        usages = []
+        try:
+            rb, usages = labs.read_back(cur, provider(), text, now, source, corrections or "")
+        except Reject as e:
+            out = {"outcome": "rejected", "reason": str(e)}
+        except ProviderError as e:
+            out = {"outcome": "rejected", "reason": f"the report could not be read ({e}); try again"}
+        else:
+            pid = "p" + secrets.token_hex(4)
+            cur.execute("INSERT INTO pending (id, tool, payload, reason, expires_at) VALUES (%s, 'report_confirm', %s, %s, %s)",
+                        (pid, Jsonb({"report": rb["report"], "code": rb["code"], "text": text, "now": now.isoformat()}),
+                         "lab report read-back", now + timedelta(hours=record.QUESTION_HOURS)))
+            out = {"outcome": "needs_confirmation", "read_back": rb["read_back"],
+                   "questions": [{"pending_id": pid, "question": "Is the whole table right (yes), or what is wrong?"}]}
+        resp = _public(out)
+        _audit(cur, "lab_report", out["outcome"], {"ai": [{"model": u.model, "usd": round(u.usd, 6)} for u in usages]})  # no values
+        return resp
+
+
 def food_words(food_id: int, words: list, means: bool = False) -> dict[str, Any]:
     with connect() as conn, conn.cursor() as cur:
         out = record.add_words(cur, food_id, words, means)
@@ -247,7 +271,7 @@ def answer(question_id: str, reply: str) -> dict[str, Any]:
         cur.execute("SELECT * FROM pending WHERE id = %s FOR UPDATE", (question_id,))
         p = cur.fetchone()
         if not p or p["tool"] not in ("log", "log_confirm", "log_repeat", "add_food_confirm", "command", "command_confirm",
-                                      "lookup_confirm"):
+                                      "lookup_confirm", "report_confirm"):
             _audit(cur, "answer", "rejected", {"why": "unknown question"})
             return {"outcome": "rejected", "message": "There is no such open question."}
         yes = bool(YES.match(reply))
@@ -273,6 +297,10 @@ def answer(question_id: str, reply: str) -> dict[str, Any]:
         elif not yes:  # unclear: keep the question open
             out = {"outcome": "needs_confirmation", "reason": "answer yes to save it, or no to drop it",
                    "questions": [{"pending_id": question_id, "question": "Yes or no?"}]}
+        elif p["tool"] == "report_confirm":
+            out = labs.save_report(cur, p["payload"], now)
+            if out["outcome"] == "saved":
+                cur.execute("UPDATE pending SET resolved_at = now(), resolution = 'confirmed' WHERE id = %s", (question_id,))
         elif p["tool"] == "lookup_confirm":
             d = p["payload"]
             out = lookup.accept(cur, d["cand"], now, d.get("question_id"), d.get("word"))

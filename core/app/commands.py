@@ -3,13 +3,14 @@ The command reader (ai/command.py) turns the words into v1's find and change arg
 entries; v1's own code (v1_commands.py) does the work. A change first runs as a preview inside a savepoint that is
 rolled back, so the user sees v1's own receipt; their yes runs the same steps for real (apply)."""
 import json
+import re
 import secrets
 from datetime import datetime, timedelta
 
 from psycopg.types.json import Jsonb
 
 from .ai import command as reader
-from . import todos
+from . import labs, todos
 from .ai.provider import Provider, Usage
 from .todoist import TodoistError
 from .v1_commands import Ask, _bound, _food_today, _change, _delete_thought, _find, _find_food, _find_health, _find_private
@@ -41,6 +42,17 @@ def context(cur, now: datetime) -> str:
         lines.append(f"m{r['id']} {_dm(r['day'])} {_hm(r)}: {r['type']} {v} {r['unit'] or ''}".rstrip())
     cur.execute("SELECT id, day, type, event_at, time_known FROM v_events WHERE day >= %s ORDER BY event_at, id", (since,))
     lines += [f"e{r['id']} {_dm(r['day'])} {_hm(r)}: {r['type']}" for r in cur.fetchall()]
+    cur.execute("SELECT id, collected_date FROM lab_reports ORDER BY collected_date DESC, id DESC LIMIT 1")
+    rep = cur.fetchone()  # the newest report's value ids and test names (never the values), for corrections
+    if rep:
+        cur.execute("""SELECT v.id, t.name FROM lab_results v JOIN lab_tests t ON t.id = v.test_id
+                       WHERE v.report_id = %s ORDER BY v.id""", (rep["id"],))
+        lines.append(f"Newest lab report R{rep['id']} ({_dm(rep['collected_date'])}): "
+                     + ", ".join(f"V{r['id']} {r['name']}" for r in cur.fetchall()))
+    cur.execute("SELECT id, name, dose FROM medications WHERE stop_date IS NULL OR stop_date > current_date ORDER BY id")
+    meds = cur.fetchall()
+    if meds:
+        lines.append("Active medication: " + ", ".join(f"D{r['id']} {r['name']}" + (f" {r['dose']}" if r["dose"] else "") for r in meds))
     cur.execute("SELECT id, thought_type, stage, summary FROM thoughts ORDER BY id DESC LIMIT 8")
     lines += [f"#{r['id']} {r['thought_type'] or 'unsorted'} ({r['stage']}): {_short(r['summary'], 80)}" for r in cur.fetchall()]
     return "\n".join(lines)
@@ -60,7 +72,8 @@ def _steps(raw: list[dict]) -> list[dict]:
             raise Reject(f"could not read the request ({e.msg})") from e
         if not isinstance(args, dict):
             raise Reject("could not read the request")
-        allowed = {"find": FIND_ARGS, "change": CHANGE_ARGS, "undo": set(), "todo": {"done", "remove", "back"}}[s["action"]]
+        allowed = {"find": FIND_ARGS, "change": CHANGE_ARGS, "undo": set(), "todo": {"done", "remove", "back"},
+                   "med": labs.MED_ARGS}[s["action"]]
         bad = sorted(set(args) - allowed)
         if bad:
             raise Reject(f"unknown argument(s) {', '.join(bad)} for {s['action']}")
@@ -131,7 +144,10 @@ def _undo(cur, now: datetime, dry: bool = False) -> str:
     cur.execute("""SELECT r.id, r.content, r.received_at FROM raw_inbox r WHERE r.channel <> 'catalogue' AND r.received_at > %s - interval '24 hours'
                    AND (EXISTS (SELECT 1 FROM food_entries x WHERE x.raw_id = r.id) OR EXISTS (SELECT 1 FROM measurements x WHERE x.raw_id = r.id)
                         OR EXISTS (SELECT 1 FROM events x WHERE x.raw_id = r.id) OR EXISTS (SELECT 1 FROM thoughts x WHERE x.raw_id = r.id)
-                        OR EXISTS (SELECT 1 FROM todo_actions x WHERE x.raw_id = r.id AND x.undone_at IS NULL AND x.op <> 'exists'))
+                        OR EXISTS (SELECT 1 FROM todo_actions x WHERE x.raw_id = r.id AND x.undone_at IS NULL AND x.op <> 'exists')
+                        OR EXISTS (SELECT 1 FROM lab_reports x WHERE x.raw_id = r.id) OR EXISTS (SELECT 1 FROM medications x WHERE x.raw_id = r.id)
+                        OR EXISTS (SELECT 1 FROM medications m WHERE m.stop_date IS NOT NULL
+                                   AND m.id IN (SELECT jsonb_array_elements_text(r.metadata->'med_stops')::int)))
                    ORDER BY r.received_at DESC, r.id DESC LIMIT 1""", (now,))
     raw = cur.fetchone()
     cur.execute("""SELECT batch, max(at) AS at FROM todo_actions WHERE raw_id IS NULL AND undone_at IS NULL
@@ -156,6 +172,7 @@ def _undo(cur, now: datetime, dry: bool = False) -> str:
     for t in cur.fetchall():
         _delete_thought(cur, _thought_row(cur, t["id"]))
         gone.append(f"#{t['id']}")
+    gone += labs.undo(cur, raw["id"], now, dry)
     try:
         in_todoist = todos.undo(cur, f"r{raw['id']}", dry)
     except TodoistError as e:
@@ -169,10 +186,15 @@ def _undo(cur, now: datetime, dry: bool = False) -> str:
             + "".join("\n" + _day_line(cur, d) for d in days))
 
 
-def _run_changes(cur, steps: list[dict], now: datetime, past=None, dry: bool = False) -> list[str]:
+def _run_changes(cur, steps: list[dict], now: datetime, past=None, dry: bool = False, text: str = "") -> list[str]:
     out = []
+    meds = [s["args"] for s in steps if s["action"] == "med"]
+    if meds:  # all medication steps at once: a dose change is a stop and a start (v1's order)
+        out += labs.meds(cur, meds, now, text, dry)
     for s in steps:
         a = s["args"]
+        if s["action"] == "med":
+            continue
         if s["action"] == "undo":
             out.append(_undo(cur, now, dry))
         else:
@@ -195,6 +217,20 @@ def _pending(cur, tool: str, payload: dict, reason: str, now: datetime) -> str:
     return pid
 
 
+def _report_day(cur, steps: list[dict], text: str) -> None:
+    """A report's collection time changed in words without a date ("collected at 08:15") keeps the report's own day."""
+    tm = re.search(r"\b(\d{1,2})[:.](\d{2})\b", text)  # the time in the person's own words
+    if re.search(r"\d{1,2}\.\d{1,2}\.", text) or not tm:
+        return
+    for s in steps:
+        rid, fields = re.fullmatch(r"[rR](\d+)", str(s["args"].get("id", ""))), s["args"].get("fields") or {}
+        if s["action"] == "change" and rid and "collected" in fields:
+            cur.execute("SELECT collected_date FROM lab_reports WHERE id = %s", (int(rid[1]),))
+            r = cur.fetchone()
+            if r:
+                fields["collected"] = f"{r['collected_date']:%d.%m.%Y} {int(tm[1]):02d}:{tm[2]}"
+
+
 def handle(cur, provider: Provider, text: str, now: datetime, previous=()) -> tuple[dict, list[Usage]]:
     """One command. Look-ups answer at once; changes are read back and wait for the user's yes."""
     cmd, u = reader.read(provider, text, now.astimezone(BERLIN).replace(tzinfo=None), previous, context(cur, now))
@@ -202,6 +238,7 @@ def handle(cur, provider: Provider, text: str, now: datetime, previous=()) -> tu
         steps = _steps(cmd["steps"])
     except Reject as e:
         return {"outcome": "rejected", "reason": str(e), "questions": []}, [u]
+    _report_day(cur, steps, text)
     audit = [{"action": s["action"], "id": s["args"].get("id"),  # to-do names help trace a miss; never health values
               **({"items": {k: v for k, v in s["args"].items()}} if s["action"] == "todo" else {})} for s in steps]
     if not steps:
@@ -209,7 +246,7 @@ def handle(cur, provider: Provider, text: str, now: datetime, previous=()) -> tu
             return {"outcome": "not_logged", "intent": "command", "questions": []}, [u]
         pid = _pending(cur, "command", {"text": text}, cmd["unclear"], now)
         return {"outcome": "needs_choice", "questions": [{"pending_id": pid, "question": cmd["unclear"]}], "steps": audit}, [u]
-    found, changes, done, did = [], [s for s in steps if s["action"] in ("change", "undo")], [], False
+    found, changes, done, did = [], [s for s in steps if s["action"] in ("change", "undo", "med")], [], False
     try:
         for s in steps:
             if s["action"] == "find":
@@ -234,7 +271,7 @@ def handle(cur, provider: Provider, text: str, now: datetime, previous=()) -> tu
         return {"outcome": "rejected", "reason": str(e), "questions": [], "steps": audit}, [u]
     except TodoistError as e:
         return {"outcome": "rejected", "reason": f"{e}; nothing changed in Todoist", "questions": [], "steps": audit}, [u]
-    pid = _pending(cur, "command_confirm", {"steps": changes}, "\n".join(preview), now)
+    pid = _pending(cur, "command_confirm", {"steps": changes, "text": text}, "\n".join(preview), now)
     return {"outcome": "needs_confirmation", "result": "\n\n".join(found) or None,
             "read_back": "Preview, nothing changed yet:\n" + "\n".join(preview),
             "questions": [{"pending_id": pid, "question": "Make this change (yes) or not (no)?"}], "steps": audit}, [u]
@@ -243,7 +280,7 @@ def handle(cur, provider: Provider, text: str, now: datetime, previous=()) -> tu
 def apply(cur, payload: dict, now: datetime, past=None) -> dict:
     """The user's yes to a previewed change: the same steps, for real."""
     try:
-        done = _run_changes(cur, payload["steps"], now, past)
+        done = _run_changes(cur, payload["steps"], now, past, text=payload.get("text", ""))
     except (Reject, TodoistError) as e:
         return {"outcome": "rejected", "reason": str(e)}
     return {"outcome": "changed", "receipt": done,

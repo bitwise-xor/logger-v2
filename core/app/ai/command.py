@@ -11,7 +11,7 @@ DEFAULT_MODEL = "claude-haiku-5-5"
 # args is JSON text: v1's find and change take many optional arguments, and the structured-output schema allows at
 # most 16 nullable fields, so the core checks the keys itself (commands.FIND_ARGS, CHANGE_ARGS).
 SCHEMA = _obj({
-    "steps": {"type": "array", "items": _obj({"action": {"type": "string", "enum": ["find", "change", "undo", "todo"]}, "args": STR})},
+    "steps": {"type": "array", "items": _obj({"action": {"type": "string", "enum": ["find", "change", "undo", "todo", "med"]}, "args": STR})},
     "unclear": _null(STR),
 })
 
