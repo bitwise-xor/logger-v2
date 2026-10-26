@@ -18,10 +18,15 @@ from .v1_food import _food_cat, _types
 from .v1_log import Reject
 from .when import BERLIN
 
-CHANNEL = "mcp"
+CHANNEL = "mcp"  # the chat apps (MCP connector)
+WEB = "web"  # the web app
+LIVE_CHANNELS = [CHANNEL, WEB]  # the repeat guard looks across these
 PROVIDER: Optional[Provider] = None  # created on first use; tests put a fake here
 # A confirmation counts when the reply starts with a yes ("yes, it is correct ..."); only a clear no cancels.
 YES = re.compile(r"^\s*(yes|y|ok|okay|confirm(ed)?|correct|right|ja|jawohl|stimmt|richtig)\b", re.I)
+# The questions `answer` takes (the web app's Questions page lists these).
+ANSWER_TOOLS = ("log", "log_confirm", "log_repeat", "add_food_confirm", "command", "command_confirm", "lookup_confirm",
+                "report_confirm")
 NO = re.compile(r"^\s*(no|nope|nein|skip|cancel|stop|drop)\b", re.I)
 
 
@@ -37,8 +42,8 @@ def provider() -> Provider:
     return PROVIDER
 
 
-def _audit(cur, tool: str, outcome: str, detail: dict) -> None:
-    cur.execute("INSERT INTO audit_log (tool, outcome, client, detail) VALUES (%s, %s, 'mcp', %s)", (tool, outcome, Jsonb(detail)))
+def _audit(cur, tool: str, outcome: str, detail: dict, client: str = CHANNEL) -> None:
+    cur.execute("INSERT INTO audit_log (tool, outcome, client, detail) VALUES (%s, %s, %s, %s)", (tool, outcome, client, Jsonb(detail)))
 
 
 def _context(cur, now: datetime) -> tuple[list, list]:
@@ -94,7 +99,9 @@ def _public(out: dict) -> dict:
     return out
 
 
-def log(text: str, idempotency_key: Optional[str] = None) -> dict[str, Any]:
+def log(text: str, idempotency_key: Optional[str] = None, pred: Optional[dict] = None, channel: str = CHANNEL) -> dict[str, Any]:
+    """pred: a ready parser answer (the web app's quick buttons); the AI then does not read the text.
+    channel: where the message came from (CHANNEL or WEB), stored with it and in the audit log."""
     now = clock()
     if not text or not text.strip():
         return {"outcome": "rejected", "message": "Nothing saved: the message is empty."}
@@ -106,13 +113,13 @@ def log(text: str, idempotency_key: Optional[str] = None) -> dict[str, Any]:
             row = cur.fetchone()
             if row:
                 if row["request_hash"] != req_hash:
-                    _audit(cur, "log", "rejected", {"why": "key reused"})
+                    _audit(cur, "log", "rejected", {"why": "key reused"}, channel)
                     return {"outcome": "rejected", "message": "This idempotency key was already used for a different message."}
-                _audit(cur, "log", "replayed", {})
+                _audit(cur, "log", "replayed", {}, channel)
                 return {**row["response"], "replayed": True}
-        cur.execute("""SELECT received_at FROM raw_inbox WHERE channel = %s AND lower(content) = lower(%s)
+        cur.execute("""SELECT received_at FROM raw_inbox WHERE channel = ANY(%s) AND lower(content) = lower(%s)
                        AND received_at > %s - interval '30 minutes' AND NOT (metadata ? 'unprocessed')
-                       ORDER BY received_at DESC LIMIT 1""", (CHANNEL, text, now))
+                       ORDER BY received_at DESC LIMIT 1""", (LIVE_CHANNELS, text, now))
         same = cur.fetchone()
         if same:  # the same words again within 30 minutes: ask before saving twice
             pid = "p" + secrets.token_hex(4)
@@ -122,9 +129,9 @@ def log(text: str, idempotency_key: Optional[str] = None) -> dict[str, Any]:
                          now + timedelta(hours=record.QUESTION_HOURS)))
             resp = _public({"outcome": "needs_confirmation", "reason": f"This exact message was already logged at {at}.",
                             "questions": [{"pending_id": pid, "question": "Log it again (yes) or not (no)?"}]})
-            _audit(cur, "log", "needs_confirmation", {"why": "repeat", "questions": [pid]})
+            _audit(cur, "log", "needs_confirmation", {"why": "repeat", "questions": [pid]}, channel)
             return resp
-        out = _process(cur, text, now)
+        out = _process(cur, text, now, pred, channel)
         resp = _public(out)
         if idempotency_key:
             cur.execute("INSERT INTO idempotency_keys (key, tool, request_hash, response) VALUES (%s, 'log', %s, %s)",
@@ -132,13 +139,13 @@ def log(text: str, idempotency_key: Optional[str] = None) -> dict[str, Any]:
         return resp
 
 
-def _process(cur, text: str, now: datetime) -> dict:
+def _process(cur, text: str, now: datetime, pred: Optional[dict] = None, channel: str = CHANNEL) -> dict:
     """Read, save and audit one message; the caller makes it public."""
     prev, meals = _context(cur, now)
     sent = todos.retry(cur, provider(), now)  # to-dos that waited because Todoist was down
-    r, usages, escalated = record.read(cur, provider(), text, now, prev, meals)
+    r, usages, escalated = record.read(cur, provider(), text, now, prev, meals, pred=pred)
     usages += sent["usages"]
-    out = record.save(cur, r, text, CHANNEL, now)
+    out = record.save(cur, r, text, channel, now)
     if r.pred.get("todos") and out.get("raw_id"):  # to-dos and shopping go to Todoist (v1's rules, in todos.py)
         t = todos.apply(cur, provider(), r.pred["todos"], out["raw_id"], now, text)
         usages += t["usages"]
@@ -169,7 +176,7 @@ def _process(cur, text: str, now: datetime) -> dict:
                                         "questions": [q["pending_id"] for q in out.get("questions", [])], "escalated": escalated,
                                         "steps": out.get("steps") or out.get("command", {}).get("steps"),
                                         "ai": [{"model": u.model, "in": u.input_tokens + u.cache_read_tokens + u.cache_write_tokens,
-                                                "out": u.output_tokens, "usd": round(u.usd, 6)} for u in usages]})
+                                                "out": u.output_tokens, "usd": round(u.usd, 6)} for u in usages]}, channel)
     return out
 
 
@@ -265,14 +272,13 @@ def food_words(food_id: int, words: list, means: bool = False) -> dict[str, Any]
         return resp
 
 
-def answer(question_id: str, reply: str) -> dict[str, Any]:
+def answer(question_id: str, reply: str, channel: str = CHANNEL) -> dict[str, Any]:
     now = clock()
     with connect() as conn, conn.cursor() as cur:
         cur.execute("SELECT * FROM pending WHERE id = %s FOR UPDATE", (question_id,))
         p = cur.fetchone()
-        if not p or p["tool"] not in ("log", "log_confirm", "log_repeat", "add_food_confirm", "command", "command_confirm",
-                                      "lookup_confirm", "report_confirm"):
-            _audit(cur, "answer", "rejected", {"why": "unknown question"})
+        if not p or p["tool"] not in ANSWER_TOOLS:
+            _audit(cur, "answer", "rejected", {"why": "unknown question"}, channel)
             return {"outcome": "rejected", "message": "There is no such open question."}
         yes = bool(YES.match(reply))
         if p["tool"] == "log" and p["payload"].get("kind") != "todo" and not (p["payload"].get("lookup") and yes):
@@ -311,11 +317,11 @@ def answer(question_id: str, reply: str) -> dict[str, Any]:
             if out["outcome"] == "changed":
                 cur.execute("UPDATE pending SET resolved_at = now(), resolution = 'confirmed' WHERE id = %s", (question_id,))
         elif p["tool"] == "log_repeat":
-            out = _process(cur, p["payload"]["text"], now)
+            out = _process(cur, p["payload"]["text"], now, None, channel)
             cur.execute("UPDATE pending SET resolved_at = now(), resolution = 'confirmed' WHERE id = %s", (question_id,))
         elif p["tool"] == "add_food_confirm":
             d = p["payload"]
-            out = record.add_food(cur, d["name"], d["values"], CHANNEL, now, d["question_id"], food_code=d["code"],
+            out = record.add_food(cur, d["name"], d["values"], channel, now, d["question_id"], food_code=d["code"],
                                   confirmed=True, aliases=d.get("aliases") or [])
             if out["outcome"] == "saved":
                 cur.execute("UPDATE pending SET resolved_at = now(), resolution = 'confirmed' WHERE id = %s", (question_id,))
@@ -323,11 +329,11 @@ def answer(question_id: str, reply: str) -> dict[str, Any]:
             d = p["payload"]
             asked = datetime.fromisoformat(d["now"])
             r = record.settle(cur, _food_cat(cur), _types(cur)[1], d["pred"], asked)
-            out = record.save(cur, r, d["text"], CHANNEL, asked, confirmed=True)
+            out = record.save(cur, r, d["text"], channel, asked, confirmed=True)
             if out["outcome"] in ("saved", "partly_saved"):
                 cur.execute("UPDATE pending SET resolved_at = now(), resolution = 'confirmed' WHERE id = %s", (question_id,))
         if "question" in out and "questions" not in out:  # a follow-up question about the same item
             out["questions"] = [{"pending_id": question_id, "question": out.pop("question")}]
         resp = _public(out)
-        _audit(cur, "answer", out["outcome"], {"question_id": question_id, "raw_id": out.get("raw_id"), "steps": out.get("steps")})
+        _audit(cur, "answer", out["outcome"], {"question_id": question_id, "raw_id": out.get("raw_id"), "steps": out.get("steps")}, channel)
         return resp

@@ -21,6 +21,7 @@ PUBLIC_URL = os.environ.get("PUBLIC_URL", "https://log.19hospitalroad.fyi").rstr
 ALLOWED_REDIRECTS = [u.strip() for u in os.environ.get(
     "ALLOWED_REDIRECTS", "https://claude.ai/api/mcp/auth_callback,https://claude.com/api/mcp/auth_callback").split(",") if u.strip()]
 TODAY_HOST = os.environ.get("TODAY_HOST", "today.19hospitalroad.fyi").lower()
+APP_HOST = os.environ.get("APP_HOST", "app.19hospitalroad.fyi").lower()
 
 # The pilot's typed tools (record_weight ...) are hidden unless PILOT_TOOLS=1; v2 chats use log and answer.
 PILOT_TOOLS = os.environ.get("PILOT_TOOLS", "0") == "1"

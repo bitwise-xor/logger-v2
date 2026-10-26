@@ -30,7 +30,8 @@ def main() -> int:
                      ON CONFLICT (id) DO UPDATE SET password_hash=EXCLUDED.password_hash, totp_secret=EXCLUDED.totp_secret,
                      last_totp_step=EXCLUDED.last_totp_step, updated_at=now()""", (auth.hash_password(pw), secret, step))
         c.execute("DELETE FROM oauth_tokens")
-    print("Saved. All existing sessions were signed out.")
+        c.execute("DELETE FROM web_sessions")
+    print("Saved. All connector and web sessions were signed out.")
     return 0
 
 
