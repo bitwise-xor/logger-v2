@@ -293,6 +293,14 @@ def _similar(cur, cat: dict, name: str, nf: NewFood) -> list[dict]:
             if how != "fuzzy" and m["id"] not in seen and m["active"]:
                 seen.add(m["id"])
                 out.append(m)
+    brand = re.search(r"\(([^()]+)\)\s*$", name)  # the same brand with kcal within 3%: the same product, named differently
+    if brand:
+        cur.execute("""SELECT id FROM foods WHERE active AND (name ILIKE %s OR brand ILIKE %s)
+                       AND abs(kcal - %s) <= 0.03 * %s ORDER BY id""", (f"%({brand[1]})%", brand[1], nf.kcal, nf.kcal))
+        for r in cur.fetchall():
+            if r["id"] not in seen and r["id"] in cat["by_id"]:
+                seen.add(r["id"])
+                out.append(cat["by_id"][r["id"]])
     cur.execute("""SELECT id FROM foods WHERE active AND basis = %s AND kcal = %s AND protein = %s AND fat = %s AND carbs = %s
                    ORDER BY id""", (nf.basis, nf.kcal, nf.protein, nf.fat, nf.carbs))
     for r in cur.fetchall():

@@ -53,7 +53,7 @@ def _candidates(cur, word: str, en: str, notes: list[str]) -> list[dict]:
     for h in hits:
         v = foodfacts.values(h.get("nutriments") or {})
         if v:
-            name = h.get("product_name_en") or h.get("product_name") or "?"
+            name = h.get("product_name") or h.get("product_name_en") or "?"  # the English field is sometimes misused
             out.append(dict(id=f"O{len(out) + 1}", src="off", label=f"{name} ({_brands(h.get('brands'))})", code=h.get("code"),
                             brand=_brands(h.get("brands")), values=v, germany="en:germany" in (h.get("countries_tags") or [])))
     return out
@@ -120,7 +120,7 @@ def by_barcode(cur, provider: Provider, code: str) -> tuple[Optional[dict], list
     if not prod or not (prod.get("product_name") or prod.get("product_name_en") or prod.get("nutriments")):  # empty entries
         return None, [], f"barcode {code} is not in Open Food Facts: send a photo of the label instead"
     v = foodfacts.values(prod.get("nutriments") or {})
-    label = f"{prod.get('product_name_en') or prod.get('product_name') or '?'} ({_brands(prod.get('brands'))})"
+    label = f"{prod.get('product_name') or prod.get('product_name_en') or '?'} ({_brands(prod.get('brands'))})"
     if not v:
         return None, [], f"Open Food Facts knows {label} but not all its values: send a photo of the label instead"
     c = dict(id="O1", src="off", label=label, code=code, brand=_brands(prod.get("brands")), values=v)

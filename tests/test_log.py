@@ -586,3 +586,12 @@ def test_coconut_is_not_taken_for_coconut_oil_and_the_lookup_is_offered(call, fa
     assert f"N{oil} Coconut oil" in body["message"] and "USDA has Nuts, coconut meat, raw" in body["message"]
     call("answer", question_id=body["questions"][0]["question_id"], reply="yes")
     assert owner_sql("SELECT f.name FROM food_entries e JOIN foods f ON f.id = e.food_id")[0]["name"] == "Coconut meat, raw"
+
+
+def test_the_same_brand_with_nearly_the_same_values_is_flagged(call, fake):
+    old = owner_sql("""INSERT INTO foods (name, basis, kcal, protein, fat, carbs, source)
+                       VALUES ('Mixed nuts, finest variation (Farmer Naturals)', 'g', 657, 19.3, 58.5, 10, 'label') RETURNING id""")[0]["id"]
+    body = call("add_food", name="Nut variation, natural (Farmer naturals)", kcal=649, protein=17.5, fat=58, carbs=10.1, source="database")
+    assert body["outcome"] == "needs_confirmation" and f"N{old}" in body["message"]
+    other = call("add_food", name="Cashews, salted (Farmer Naturals)", kcal=600, protein=18, fat=48, carbs=26, source="database")
+    assert f"N{old}" not in other["message"]  # same brand, other values: a different product
