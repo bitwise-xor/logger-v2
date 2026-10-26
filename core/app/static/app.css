@@ -209,3 +209,47 @@ nav.seg a[aria-current]{background:var(--ink);color:var(--card)}
 .primary.sm,.ghost.sm{padding:.15rem .55rem;font-size:.85rem}
 a.ghost{display:inline-block;text-decoration:none}
 h2 .small{text-transform:none;letter-spacing:0;font-weight:400}
+/* Food page: the food log (one day, a date range) and the catalogue */
+.head.sub{margin-bottom:.8rem}
+.row{display:flex;flex-wrap:wrap;gap:.45rem;align-items:center}
+p.row{margin:.5rem 0 0}
+.grow{flex:1;min-width:10rem}
+.fbox{border:1px solid var(--line);border-radius:.5rem;padding:.7rem .8rem;background:var(--field);margin:.3rem 0}
+.fbox.stack{display:grid;gap:.8rem}
+.fbox p{margin:0}
+.fields{display:grid;grid-template-columns:repeat(auto-fill,minmax(8.5rem,1fr));gap:.5rem .8rem}
+.fields label{display:flex;flex-direction:column;font-size:.8rem;color:var(--dim);gap:.15rem}
+.fields input,.fields select{width:100%}
+.chips{display:flex;flex-wrap:wrap;gap:.4rem;margin:0 0 .8rem}
+.chip{border:1px solid var(--line);background:var(--card);color:var(--dim);border-radius:2rem;padding:.2rem .7rem;font-size:.88rem;text-decoration:none}
+.chip.on{border-color:var(--ink);color:var(--ink)}
+.pill{display:inline-block;font-size:.75rem;padding:.05rem .5rem;border-radius:1rem;background:var(--bar);color:var(--dim);white-space:nowrap}
+.pill.warn{background:var(--warn-soft);color:var(--warn)}
+.icon{color:var(--dim);text-decoration:none;background:none;border:0;padding:0 .2rem;font-size:.95rem}
+.icon:hover{color:var(--ink)}
+.notel{display:block;font-size:.83rem;color:var(--dim);font-style:italic}
+.ft td a{color:inherit;text-decoration:none}
+.ft td a:hover{text-decoration:underline}
+.ft tr.sel td{background:var(--accent-soft)}
+.ft tr.panel>td,.ft tr.acts>td{text-align:left;white-space:normal;padding-left:.8rem}
+.ft tr.acts details{display:inline-block}
+.ft td.over{color:var(--warn)}
+.ft td.met{color:var(--accent)}
+.ft.plain td{text-align:left;padding-left:0;padding-right:.6rem}
+details>summary.ghost{display:inline-block;list-style:none;cursor:pointer}
+details>summary.ghost::-webkit-details-marker{display:none}
+details[open]>summary.ghost{border-color:var(--ink)}
+details.lookup{margin:.6rem 0}
+form.word{display:inline-flex;align-items:center;gap:.2rem;border:1px solid var(--line);border-radius:2rem;padding:.1rem .3rem .1rem .65rem;font-size:.88rem;background:var(--card);margin:0}
+.um{border-top:1px solid var(--line);padding:.45rem 0}
+.um:first-of-type{border-top:0}
+.um p.row{margin:0}
+@media (max-width:520px){.hide-sm{display:none}}
+.ft.plain select{max-width:18rem}
+@media (max-width:520px){.ft.plain tr{display:flex;flex-wrap:wrap;align-items:center;gap:.3rem .6rem;padding:.35rem 0;border-top:1px solid var(--line)}.ft.plain td{display:block;padding:0}.ft.plain select{max-width:100%;width:100%}.ft.plain td:first-child{flex-basis:100%}}
+/* One day: % of target and left / over, coloured (kcal, fat, carbs: not to go over; protein: to reach) */
+.ft tfoot tr.tg td{color:var(--dim);font-size:.9rem;padding-top:.1rem}
+.ft tfoot tr.tg td:first-child{white-space:nowrap}
+.ft tfoot tr.tg td.good{color:var(--accent);font-weight:600}
+.ft tfoot tr.tg td.warn{color:var(--warn);font-weight:600}
+.ft tfoot tr.tg td.bad{color:var(--bad);font-weight:600}

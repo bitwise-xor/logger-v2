@@ -14,7 +14,7 @@ from starlette.concurrency import run_in_threadpool
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, RedirectResponse, Response
 
-from . import auth, healthpage, logbook, todaypage, webactions, webentry, webquestions
+from . import auth, foodpage, healthpage, logbook, todaypage, webactions, webentry, webfood, webquestions
 from .ai.provider import ProviderError
 from .config import APP_HOST
 from .db import connect
@@ -96,7 +96,7 @@ def _login_page(msg: str = "", status: int = 200) -> HTMLResponse:
 def shell(session, body: str, status: int = 200, active: str = "") -> HTMLResponse:
     """A signed-in page: the top bar (with the number of open questions), the entry box, the last reply, then the body."""
     open_q = webquestions.count()
-    links = [("today", "/web/", "Today"), ("health", "/web/health", "Health"), ("questions", "/web/questions", "Questions")]
+    links = [("today", "/web/", "Today"), ("food", "/web/food", "Food"), ("health", "/web/health", "Health"), ("questions", "/web/questions", "Questions")]
     current = ' aria-current="page"'
     items = "".join(f'<a href="{href}"{current if k == active else ""}>{label}'
                     + (f'<span class="badge">{open_q}</span>' if k == "questions" and open_q else "") + "</a>"
@@ -164,6 +164,33 @@ def add_routes(mcp) -> None:
         if not session:
             return RedirectResponse("/web/login", status_code=302, headers={"Cache-Control": "no-store"})
         return shell(session, webquestions.render(session["csrf"]), active="questions")
+
+    @mcp.custom_route("/web/food", methods=["GET"])
+    async def food_log(request: Request) -> Response:
+        if (r := hidden(request)) is not None:
+            return r
+        session = current_session(request)
+        if not session:
+            return RedirectResponse("/web/login", status_code=302, headers={"Cache-Control": "no-store"})
+        return shell(session, foodpage.render_log(session["csrf"], request.query_params), active="food")
+
+    @mcp.custom_route("/web/food/catalogue", methods=["GET"])
+    async def food_catalogue(request: Request) -> Response:
+        if (r := hidden(request)) is not None:
+            return r
+        session = current_session(request)
+        if not session:
+            return RedirectResponse("/web/login", status_code=302, headers={"Cache-Control": "no-store"})
+        return shell(session, foodpage.render_catalogue(session["csrf"], request.query_params), active="food")
+
+    @mcp.custom_route("/web/food/usual", methods=["GET"])
+    async def food_usual(request: Request) -> Response:
+        if (r := hidden(request)) is not None:
+            return r
+        session = current_session(request)
+        if not session:
+            return RedirectResponse("/web/login", status_code=302, headers={"Cache-Control": "no-store"})
+        return shell(session, foodpage.render_usual(session["csrf"], request.query_params), active="food")
 
     @mcp.custom_route("/web/health", methods=["GET"])
     async def health_page(request: Request) -> Response:
@@ -300,6 +327,19 @@ def add_routes(mcp) -> None:
         r = r if r in {str(x) for x in healthpage.RANGES} else str(healthpage.DEFAULT_RANGE)
         day = str(form.get("day", ""))[:10]
         return done(session, await _run(lambda: webactions.health_day(day, r, form, form_key(form))), f"/web/health?r={r}")
+
+    def food_form(fn, back):
+        """One form of the Food page (webfood.ACTIONS): signed in, same origin, then the reply and back to the page."""
+        async def handler(request: Request) -> Response:
+            session, form = await post_form(request)
+            if form is None:
+                return session
+            k = form_key(form)
+            return done(session, await _run(lambda: fn(form, k)), back or foodpage.safe_back(form.get("back")))
+        return handler
+
+    for _name, (_fn, _back) in webfood.ACTIONS.items():
+        mcp.custom_route(f"/web/food/{_name}", methods=["POST"])(food_form(_fn, _back))
 
     @mcp.custom_route("/web/review", methods=["POST"])
     async def review(request: Request) -> Response:

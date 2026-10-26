@@ -53,6 +53,9 @@ document.addEventListener("DOMContentLoaded", () => {
     f.addEventListener("input", recalc);
     recalc();
   });
+  // Food page: a picked day or date shows at once
+  document.querySelectorAll("input.autosubmit").forEach(i => i.addEventListener("change", () => { if (i.value) i.form.requestSubmit(); }));
+
   // Health page rows: Save shows once a value of that day changed (the row's fields belong to its form)
   document.querySelectorAll("form.hday").forEach(f => {
     const ins = [...document.querySelectorAll(`[form="${f.id}"]`)], btn = f.querySelector("button");
