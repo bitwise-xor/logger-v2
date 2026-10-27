@@ -77,7 +77,7 @@ Size: S = about an hour, M = about half a day, L = a day or more. Rough guesses.
 
 | # | Idea | Why | Size |
 |---|---|---|---|
-| 28 | Prompt caching for the parser prompts (check first whether it is on) | Each AI call sends about 7,000 input tokens, mostly the same prompt every time; input is about 98% of the tokens | S-M |
+| 28 | Check that prompt caching works (it is switched on, but the audit log cannot show whether it is used; see `docs/CORE-IMPROVEMENTS.md` items 3 to 6 for AI cost) | Each AI call sends about 7,000 input tokens, mostly the same prompt every time; input is about 98% of the tokens | S |
 | 29 | Token counts for food lookups and lab reports on the Usage page | Known gap: only model and cost are recorded for them | S |
 
 ## Suggested order
