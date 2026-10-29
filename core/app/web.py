@@ -5,6 +5,7 @@ Every form post does its work, keeps the reply in the session ("flash") and send
 import hashlib
 import hmac
 import html
+import logging
 import pathlib
 import re
 import secrets
@@ -21,6 +22,7 @@ from .ai.provider import ProviderError
 from .config import APP_HOST
 from .db import connect
 
+log = logging.getLogger("logger.web")
 COOKIE = "__Host-logger_session"  # the __Host- prefix: Secure, this host only, no Domain
 DEVICE_COOKIE = "__Host-logger_device"  # marks a device that signed in once; its failed sign-ins are counted on their own
 SESSION_DAYS = 30
@@ -148,7 +150,8 @@ async def _run(work) -> dict:
     """Run one logger call (it may wait for the AI) off the event loop."""
     try:
         return await run_in_threadpool(work)
-    except ProviderError:
+    except ProviderError as e:
+        log.warning("the AI service did not answer (%s)", type(e).__name__)
         return {"outcome": "rejected", "reason": "The AI service did not answer. Nothing was saved; try again in a moment."}
 
 

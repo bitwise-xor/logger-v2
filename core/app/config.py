@@ -12,7 +12,8 @@ DB_HOST = os.environ.get("DB_HOST", "db")
 DB_PORT = os.environ.get("DB_PORT", "5432")
 DB_NAME = os.environ.get("DB_NAME", "appdata")
 
-# The MCP endpoint lives at an unguessable path while it has no login (pilot, test data only).
+# The MCP endpoint's path. It is behind the owner's sign-in (OAuth, password and authenticator code, see auth.py); the path
+# itself is set in .env and kept unguessable as a second layer.
 MCP_PATH = os.environ.get("MCP_PATH", "/mcp")
 EXTRA_ALLOWED_HOSTS = [h.strip() for h in os.environ.get("ALLOWED_HOSTS", "log.19hospitalroad.fyi").split(",") if h.strip()]
 

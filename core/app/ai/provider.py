@@ -41,9 +41,11 @@ class Provider(Protocol):
 
 
 class AnthropicProvider:
-    def __init__(self, api_key: str, effort: str = "low", timeout: float = 60.0):
+    def __init__(self, api_key: str, effort: str = "low", timeout: float = 60.0, max_retries: int = 2):
+        # Three tries of at most 60 s each, so a message waits about three minutes at worst when the AI is down (it was five
+        # tries and five minutes); a long lab report may need most of one try, so the time of one try stays.
         import anthropic
-        self.client = anthropic.Anthropic(api_key=api_key, max_retries=4, timeout=timeout)
+        self.client = anthropic.Anthropic(api_key=api_key, max_retries=max_retries, timeout=timeout)
         self.effort = effort
 
     def json(self, system: str, user: str, schema: dict, model: str, max_tokens: int = 4000) -> tuple[dict, Usage]:

@@ -1,8 +1,11 @@
 """MCP adapter: thin. It exposes the core's operations as tools and holds no rules."""
+import functools
+import logging
 from typing import Any, Optional
 
 from mcp.server.mcpserver import MCPServer
 from mcp.server.transport_security import TransportSecuritySettings
+from starlette.concurrency import run_in_threadpool
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
@@ -11,8 +14,22 @@ from mcp.server.auth.settings import AuthSettings, ClientRegistrationOptions
 
 from . import auth, web
 from .config import EXTRA_ALLOWED_HOSTS, MCP_PATH, PILOT_TOOLS, PUBLIC_URL
+from .db import connect
 
+_LOG = logging.getLogger("logger.tools")  # not `log`: that is the name of the log tool below
 provider = auth.OwnerProvider(PUBLIC_URL)
+
+
+def _logged(fn):
+    """A tool that fails leaves one line on the container's log: the tool and the kind of error, never what the user said."""
+    @functools.wraps(fn)
+    def inner(*args, **kwargs):
+        try:
+            return fn(*args, **kwargs)
+        except Exception as e:  # noqa: BLE001 - logged, then raised as before
+            _LOG.error("tool %s failed: %s", fn.__name__, type(e).__name__)
+            raise
+    return inner
 
 mcp = MCPServer(
     "logger-v2",
@@ -33,6 +50,7 @@ def _pilot(f):
     return mcp.tool()(f) if PILOT_TOOLS else f
 
 @mcp.tool()
+@_logged
 def log(text: str, idempotency_key: Optional[str] = None) -> dict[str, Any]:
     """Log one user message (food, drinks, health values, habits, thoughts, private or gratitude lines) in the user's
     exact words, to-dos and shopping (they go to Todoist); also look-ups and changes ("what did I eat yesterday", "the apple
@@ -42,6 +60,7 @@ def log(text: str, idempotency_key: Optional[str] = None) -> dict[str, Any]:
 
 
 @mcp.tool()
+@_logged
 def add_food(name: str, kcal: float, protein: float, fat: float, carbs: float, source: str, sat_fat: Optional[float] = None,
              fibre: Optional[float] = None, sugar_total: Optional[float] = None, sugar_added: Optional[float] = None,
              sodium_mg: Optional[float] = None, caffeine_mg: Optional[float] = None, basis: str = "g",
@@ -58,6 +77,7 @@ def add_food(name: str, kcal: float, protein: float, fat: float, carbs: float, s
 
 
 @mcp.tool()
+@_logged
 def food_words(food_id: int, words: list[str], means: bool = False) -> dict[str, Any]:
     """Teach the logger words for a food it knows (N id): each word then finds that food. means=true when the user says
     a word now means this product ("waffle now means N250")."""
@@ -65,6 +85,7 @@ def food_words(food_id: int, words: list[str], means: bool = False) -> dict[str,
 
 
 @mcp.tool()
+@_logged
 def food_lookup(barcode: Optional[str] = None, name: Optional[str] = None, question_id: Optional[str] = None) -> dict[str, Any]:
     """Look up a food the catalogue does not know: by barcode (the digits under the bars, from the user's photo or words)
     in Open Food Facts, or by name in USDA and Open Food Facts. question_id: the open food question it answers.
@@ -73,6 +94,7 @@ def food_lookup(barcode: Optional[str] = None, name: Optional[str] = None, quest
 
 
 @mcp.tool()
+@_logged
 def lab_report(text: str, corrections: Optional[str] = None, source: str = "image") -> dict[str, Any]:
     """A lab or imaging report from the user's photo or PDF: text = everything on all pages written out exactly as printed
     (values, units, ranges, names, dates; never converted or translated). source: image or document. Returns a read-back
@@ -81,6 +103,7 @@ def lab_report(text: str, corrections: Optional[str] = None, source: str = "imag
 
 
 @mcp.tool()
+@_logged
 def answer(question_id: str, reply: str) -> dict[str, Any]:
     """Answer a question from `log` with the user's reply: a food name or N number, an amount, yes, or skip."""
     return logbook.answer(question_id, reply)
@@ -148,6 +171,23 @@ def undo(receipt_id: str) -> dict[str, Any]:
 @mcp.custom_route("/health", methods=["GET"])
 async def health(_: Request) -> JSONResponse:
     return JSONResponse({"status": "ok", "service": "logger-v2-core"})
+
+
+def _db_reachable() -> bool:
+    try:
+        with connect() as c:
+            c.execute("SELECT 1")
+        return True
+    except Exception as e:  # noqa: BLE001 - any failure means "not ready"
+        _LOG.error("database check failed: %s", type(e).__name__)
+        return False
+
+
+@mcp.custom_route("/ready", methods=["GET"])
+async def ready(_: Request) -> JSONResponse:
+    """/health says the app runs; /ready also needs the database (for the uptime monitor). Nothing else is revealed."""
+    ok = await run_in_threadpool(_db_reachable)
+    return JSONResponse({"status": "ok" if ok else "unavailable", "database": "ok" if ok else "down"}, status_code=200 if ok else 503)
 
 
 auth.add_login_routes(mcp, provider)

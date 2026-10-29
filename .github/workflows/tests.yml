@@ -1,0 +1,26 @@
+name: tests
+
+# The unit tests (no API key, no real data): a throwaway Postgres from tests/test-db.sh, then pytest.
+# The private golden-message tests (tests/golden) are not in the repository and not part of this.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  pytest:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - name: Install the pinned packages
+        run: |
+          python -m venv .venv
+          .venv/bin/pip install --disable-pip-version-check -r core/requirements.txt pytest
+      - name: Start the test database
+        run: tests/test-db.sh up
+      - name: Run the tests
+        run: .venv/bin/python -m pytest -q tests

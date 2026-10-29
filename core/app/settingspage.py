@@ -3,6 +3,7 @@ websettings.py; this module only reads."""
 import re
 from urllib.parse import urlencode
 
+from . import rules
 from .db import connect
 from .webentry import esc, hidden
 
@@ -42,9 +43,9 @@ def _devices(session, csrf: str) -> str:
     out = []
     for r in rows:
         here = r["token_hash"] == session["token_hash"]
-        seen = r["last_seen"].astimezone().strftime("%d.%m.%Y %H:%M")
-        made = r["created_at"].astimezone().strftime("%d.%m.%Y")
-        until = r["expires_at"].astimezone().strftime("%d.%m.%Y")
+        seen = r["last_seen"].astimezone(rules.BERLIN).strftime("%d.%m.%Y %H:%M")
+        made = r["created_at"].astimezone(rules.BERLIN).strftime("%d.%m.%Y")
+        until = r["expires_at"].astimezone(rules.BERLIN).strftime("%d.%m.%Y")
         btn = ('<span class="pill ok">this device</span>' if here else
                f'<form method="post" action="/web/settings/device">{hidden("csrf", csrf)}{hidden("sid", str(r["sid"]))}'
                '<button class="ghost sm bad" type="submit">Sign out</button></form>')

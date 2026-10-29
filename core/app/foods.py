@@ -1,6 +1,7 @@
 """Choosing one food for the user's word, and its amount. v1 split this between the server (matching) and the
 chat rules (defaults, picking among candidates, estimating unit weights); in v2 the core does all of it, so every
 client behaves the same."""
+import difflib
 import re
 from datetime import datetime
 from typing import Optional
@@ -60,6 +61,32 @@ def _singulars(term: str) -> list[str]:
     return [f"{head} {f}".strip() for f in forms]
 
 
+def _plurals(term: str) -> list[str]:
+    """The plural of the last word, for a singular typed against a plural catalogue name: "oat cookie" -> "oat cookies".
+    v1's own matching turns "cookies" into "cooky" but leaves "cookie" alone, so the two never met (29.10.2026)."""
+    head, _, last = term.strip().rpartition(" ")
+    low = last.lower()
+    if not low or low.endswith("s"):
+        return []
+    forms = [last[:-1] + "ies"] if low.endswith("y") and len(low) > 2 and low[-2] not in "aeiou" else []
+    forms.append(last + ("es" if low.endswith(("x", "z", "ch", "sh")) else "s"))
+    return [f"{head} {f}".strip() for f in forms]
+
+
+def related(term: str, f: dict) -> bool:
+    """Does the user's word share a word (or a near spelling of one) with the food's name or words? "oat cookie" and
+    "Pasta, cooked" do not, although both sound a little alike; "yoghurt" and "Yogurt, plain" do."""
+    words = [_sing(w) for w in _fkey(term).split()]
+    toks = [_sing(t) for t in _fkey(f["name"] + " " + " ".join(f.get("aliases") or [])).split()]
+    for w in words:
+        for t in toks:
+            if t == w or (min(len(w), len(t)) >= 4 and (t.startswith(w) or w.startswith(t))):
+                return True
+            if min(len(w), len(t)) >= 4 and difflib.SequenceMatcher(None, w, t).ratio() >= 0.86:
+                return True
+    return False
+
+
 # A close name whose main noun is another product is a different food: "coconut" is not "Coconut oil", "peanut" not
 # "Peanut butter", "potato" not "Potato chips"; but "chocolate" is "Milk chocolate (Aldi)" (v2 rule, 26.10.2026).
 PRODUCT_WORDS = {"oil", "milk", "water", "cream", "flour", "powder", "juice", "butter", "sauce", "paste", "syrup", "chips",
@@ -85,11 +112,12 @@ def _pick(cur, cat: dict, term: str, cooked: bool, before: Optional[datetime]) -
     if d:
         return d, "default", [d]
     matches, how = _find_foods(cat, term)
-    if how not in EXACT and how != "close":  # "radishes": try the singular before guessing
-        for one in _singulars(term):
+    used = term  # the wording that found the food; v1's whole-word check of a close match must read the same wording
+    if how not in EXACT and how != "close":  # "radishes": try the singular, "oat cookie": the plural, before guessing
+        for one in _singulars(term) + _plurals(term):
             m2, h2 = _find_foods(cat, one)
             if h2 in EXACT or h2 == "close":
-                matches, how = m2, h2
+                matches, how, used = m2, h2, one
                 break
     act = [m for m in matches if m["active"]] or matches
     if how in EXACT:
@@ -100,11 +128,11 @@ def _pick(cur, cat: dict, term: str, cooked: bool, before: Optional[datetime]) -
             return (d, "usual", act) if d else (None, "ask", act)
         return None, "none", []
     if how == "close":
-        other = [f for f in act if _other_product(term, f)]
+        other = [f for f in act if _other_product(used, f)]
         if other and len(other) == len(act):  # "coconut" and only "Coconut oil": ask (the lookup offers coconut meat)
             return None, "ask", act[:4]
         act = [f for f in act if f not in other]
-        f = _silent_close(cat, term, act, how)
+        f = _silent_close(cat, used, act, how)
         if f:
             return f, "close", act
         cands = act[:8]
@@ -117,6 +145,9 @@ def _pick(cur, cat: dict, term: str, cooked: bool, before: Optional[datetime]) -
                 cands = st
         d = _dominant(cur, cands, before)
         return (d, "usual", cands) if d else (None, "ask", cands)
+    # Nothing matches by words: v1 offers names that merely sound alike ("oat cookie" -> "Pasta, cooked"). Only foods that
+    # share a word, or nearly a word, with the user's are worth offering; with none left the question says nothing fits.
+    act = [f for f in act if related(term, f)]
     return None, ("ask" if act else "none"), act[:4]
 
 

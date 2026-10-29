@@ -174,9 +174,12 @@ def _process(cur, text: str, now: datetime, pred: Optional[dict] = None, channel
         out["questions"] = out.get("questions", []) + sub.get("questions", [])
     _audit(cur, "log", out["outcome"], {"raw_id": out.get("raw_id"), "private_id": out.get("private_id"),
                                         "questions": [q["pending_id"] for q in out.get("questions", [])], "escalated": escalated,
+                                        "escalation": r.escalation,
                                         "steps": out.get("steps") or out.get("command", {}).get("steps"),
+                                        # "in" is all input tokens; the cached share is kept apart to show whether prompt caching is used
                                         "ai": [{"model": u.model, "in": u.input_tokens + u.cache_read_tokens + u.cache_write_tokens,
-                                                "out": u.output_tokens, "usd": round(u.usd, 6)} for u in usages]}, channel)
+                                                "out": u.output_tokens, "cache_read": u.cache_read_tokens, "cache_write": u.cache_write_tokens,
+                                                "usd": round(u.usd, 6)} for u in usages]}, channel)
     return out
 
 

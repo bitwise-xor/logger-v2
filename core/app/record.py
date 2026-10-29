@@ -20,7 +20,7 @@ from . import v1_log, v1_thoughts
 from .ai import parser
 from .ai.provider import Provider, Usage
 from .clock import read_when
-from .foods import amount, pick
+from .foods import amount, pick, related
 from .v1_food import _find_foods, _fkey, _food_cat, _resolve_type, _types
 from .v1_log import Entry, FoodItem, MealUse, NewFood, ReadBack, Reject
 from .v1_thoughts import Thought
@@ -42,6 +42,7 @@ class Reading:
     private: Optional[str] = None  # "private" or "gratitude": the message goes to the private store only
     questions: list[dict] = field(default_factory=list)  # {kind, text, item, candidates}
     notes: list[str] = field(default_factory=list)
+    escalation: Optional[dict] = None  # when the larger model re-read it: the kinds of open question before and after, which reading was kept
 
 
 def _iso(ts: datetime, date_only: bool) -> str:
@@ -62,7 +63,7 @@ def _food_item(cur, cat: dict, it: dict, now: datetime, f: Optional[dict] = None
             if sugg:
                 text = (f"Which food is '{it['food']}'? By its English name: "
                         + "; ".join(f"N{c['id']} {c['name']}" for c in sugg) + ". Or add it as a new food.")
-                return None, dict(kind="food", text=text, item=it, candidates=[c["id"] for c in sugg]), None
+                return None, dict(kind="food", text=text, item=it, candidates=[c["id"] for c in sugg], via="en"), None
     if not f:
         text = f"Which food is '{it['food']}'? " + ("; ".join(f"N{c['id']} {c['name']}" for c in cands[:6])
                                                     if cands else "Nothing in the catalogue fits.")
@@ -139,7 +140,12 @@ def read(cur, provider: Provider, text: str, now: datetime, previous=(), meals=(
     pred2, u2 = parser.parse(provider, text, naive, previous, meals, model=ESCALATION_MODEL)
     usages.append(u2)
     r2 = settle(cur, cat, types, pred2, now)
-    return (r2 if len(r2.questions) < len(r.questions) else r), usages, True
+    kept = r2 if len(r2.questions) < len(r.questions) else r
+    # Only the kinds of question (food, amount, time, type), never the words: a week of these shows whether the larger model's
+    # second read ever settles anything the first read could not (core list item 3).
+    kept.escalation = {"before": [q["kind"] for q in r.questions], "after": [q["kind"] for q in r2.questions],
+                       "kept": "second" if kept is r2 else "first"}
+    return kept, usages, True
 
 
 def _ask(cur, raw_id: int, questions: list[dict], now: datetime) -> list[dict]:
@@ -253,7 +259,10 @@ def answer(cur, pending_id: str, reply: str, now: datetime) -> dict:
                 return {"outcome": "needs_choice", "question": f"'{reply}' fits several or no foods: "
                         + "; ".join(f"N{c['id']} {c['name']}" for c in cands[:6])
                         + ". If it is a new food, add it with add_food and this question id."}
-        if f["id"] in (q.get("candidates") or []):  # the user picked one of the foods suggested for this word
+        # The user picked one of the foods suggested for this word. The word is kept for it when the suggestion was the parser's
+        # English name of it (a translation: "frischkäse" -> cream cheese) or when the two share a word; a pick among
+        # look-alike suggestions ("oat cookie" -> "Pasta, cooked") must not teach a wrong word (29.10.2026).
+        if f["id"] in (q.get("candidates") or []) and (q.get("via") == "en" or related(it["food"], f)):
             alias_note = _alias(cur, cat, f, it["food"])
         else:
             alias_note = _word_hint(f, it["food"])
