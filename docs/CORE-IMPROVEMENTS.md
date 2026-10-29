@@ -53,6 +53,21 @@ Size: S = about an hour, M = about half a day, L = a day or more. Rough guesses.
 | 19 | Export everything you logged (CSV or JSON, one download) | Your data in an open form, apart from the Sheet and the encrypted backup | S-M |
 | 20 | Food look-up: search German words in Open Food Facts; prefer full-fat when no fat level is said ("greek yogurt" comes back low-fat) | Known gaps from HANDOVER section 6 | S-M |
 
+## 6. Food matching (found 29.10.2026, "oat cookie" logged as pasta)
+
+What happened: the food is "Oat cookies, Oaties (Biscotto)" (N244). `v1_food._sing` turns "cookies" into "cooky" but
+leaves "cookie" unchanged, so the singular "oat cookie" never matched it. The question that followed offered
+unrelated "cooked" foods (Pasta, Cod, Quinoa, Peas) from the fuzzy match, N244 not among them. The pick of Pasta saved
+"oat cookie" as a permanent word for it (`record._alias`), and the next messages matched pasta without asking. The
+data was fixed the same day (word moved from N138 to N244).
+
+| # | Idea | Why | Size |
+|---|---|---|---|
+| 21 | Singular and plural match both ways: compare a word, its singular and its plural forms (cookie / cookies, berry / berries, box / boxes) in a v2 wrapper around `_find_foods`; do not edit the copied v1 `_sing`. Tests with the real cases (cookie, cookies, berries, waffles, chips, noodles) | The same fault hits any food whose name ends in "-ies" typed in the singular | S |
+| 22 | Learn a word only from a good suggestion: do not save the picked word as an alias when the suggestions came from the loose "sounds similar" match; show "saved 'oat cookie' as a word for Pasta, cooked" in the reply with an Undo button | One wrong click gave a permanent wrong word, and later messages matched it silently | S-M |
+| 23 | Better suggestions when nothing matches: list foods that share a whole word first, and say "none of these? look it up or add a new food" as the first choice; never list foods that only share a word ending ("cookie" vs "cooked") | The suggestions were unrelated and pasta came first | S-M |
+| 24 | A "words" review: list all learned words (aliases) by date on the web Catalogue, so a wrong one is easy to find and remove | The fault was found by searching the database | S |
+
 Already on other lists, not repeated here: Telegram, the exchange log of the chat, the chat saving a usual meal,
 token counts for food look-ups and lab reports (web list 21, 20, 29).
 
@@ -60,5 +75,6 @@ token counts for food look-ups and lab reports (web list 21, 20, 29).
 
 1. Items 7 and 8 together with the Uptime Kuma monitors.
 2. Items 1 and 5 (never lose a message, shorter wait), then 2.
-3. Items 3 and 4 (cost), measured for a week before changing anything.
-4. Items 13 and 14 (clean-up), then 15.
+3. Items 21 and 22 (food matching), soon: they change what gets logged every day.
+4. Items 3 and 4 (cost), measured for a week before changing anything.
+5. Items 13 and 14 (clean-up), then 15.

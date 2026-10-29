@@ -15,6 +15,7 @@ Size: S = about an hour, M = about half a day, L = a day or more. Rough guesses.
 | 31 | A separate Habits page: today's habits as big one-click buttons, the calendar of the last 30 days (moved off the Health page), and a click on a past day's square to tick or untick that day | Habits are ticked on Today; the 30-day calendar is on the Health page and cannot be clicked | M |
 | 32 | Choose which habits show on Today (add or remove them), and their order | Today shows every habit marked `on_checklist` in the database; changing that needs SQL. To decide in the plan: does "not on Today" also hide a habit from the Habits page and the Sheet's Habits tab, or only from Today? | S-M |
 | 33 | Sort the food catalogue: most eaten (all time or last 30 days), last eaten, date added, kcal per 100 g, protein per 100 g, name | The catalogue is always sorted by most eaten (all time), then by name; the filters (All, Drinks, Added in the last 14 days, Needs review) cannot be combined with another order | S |
+| 34 | Customize the Today page: add and remove its items (habits, the Health card's rows such as blood sugar or wake-up, the usual-meal buttons, the review box), reorder them, and bring them back later. Saved per user in the database, with "Reset to default" | Today shows a fixed set. Widens item 32 (which habits show) to the whole page; plan the two together, and decide whether a hidden item is also hidden elsewhere (Habits page, Sheet) or only on Today | M |
 
 ## 1. Quick wins (small, used every day)
 
