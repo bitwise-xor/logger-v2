@@ -245,7 +245,8 @@ def _modes(on: str, start=None, end=None) -> str:
 def _tabs(on: str) -> str:
     return (f'<div class="head"><h1>Food</h1><nav class="seg" aria-label="Food"><a href="/web/food"{' aria-current="page"' if on == "log" else ""}>Food log</a>'
             f'<a href="/web/food/catalogue"{' aria-current="page"' if on == "cat" else ""}>Catalogue</a>'
-            f'<a href="/web/food/usual"{' aria-current="page"' if on == "usual" else ""}>Usual meals</a></nav></div>')
+            f'<a href="/web/food/usual"{' aria-current="page"' if on == "usual" else ""}>Usual meals</a>'
+            f'<a href="/web/food/trends"{' aria-current="page"' if on == "trends" else ""}>Trends</a></nav></div>')
 
 
 def render_log(csrf: str, q) -> str:
@@ -336,7 +337,6 @@ def _usual_meals(cur, csrf: str, um, back: str) -> str:
         head = (f'<p class="row"><a href="{esc(link)}#U{uid}" id="U{uid}"><b>{esc(name)}</b></a>'
                 f'<span class="small">{len(items)} items · {_n(kcal)} kcal · P {_n(prot)}</span></p>')
         if open_:
-            opts = _food_options(cur)
             rows = "".join(f'<tr><td><select name="food_{k}" aria-label="Food">{_food_options(cur, i["food_id"])}</select></td>'
                            f'<td><input type="number" name="g_{k}" min="0" step="any" value="{_plain(i["grams"])}" aria-label="Amount"> {esc(i["basis"])}</td>'
                            f'<td><label class="small"><input type="checkbox" name="rm_{k}" value="1"> remove</label></td></tr>'
@@ -345,7 +345,7 @@ def _usual_meals(cur, csrf: str, um, back: str) -> str:
                      f'{hidden("rows", str(len(items)))}{hidden("back", back)}'
                      f'<p class="row"><label class="small">Name <input name="name" value="{esc(name)}" maxlength="60" required></label></p>'
                      f'<div class="tablewrap"><table class="ft plain"><tbody>{rows}'
-                     f'<tr><td><select name="add_food" aria-label="Add a food"><option value="">add a food …</option>{opts}</select></td>'
+                     '<tr><td><input name="add_name" list="foods-dl" autocomplete="off" placeholder="add a food: type to search" aria-label="Add a food"></td>'
                      '<td><input type="number" name="add_g" min="0" step="any" placeholder="g" aria-label="Amount of the added food"></td><td></td></tr>'
                      '</tbody></table></div><p class="row"><button class="primary sm" type="submit" name="act" value="save">Save</button>'
                      '<button class="ghost sm bad" type="submit" name="act" value="delete">Delete</button>'
@@ -400,10 +400,27 @@ def render_catalogue(csrf: str, q) -> str:
             f'<p class="small hint">Sorted by: {label.lower()}. Click a food to see and change it.</p></div>')
 
 
+def _new_usual(cur, csrf: str) -> str:
+    """The form for a new usual meal or drink: foods typed (or picked from the list while typing) with their grams."""
+    cur.execute("SELECT name FROM foods WHERE active ORDER BY lower(name)")
+    datalist = '<datalist id="foods-dl">' + "".join(f'<option value="{esc(r["name"])}">' for r in cur.fetchall()) + "</datalist>"
+    rows = "".join(f'<tr><td><input name="food_{k}" list="foods-dl" autocomplete="off" placeholder="food: type to search" aria-label="Food {k + 1}"></td>'
+                   f'<td><input type="number" name="g_{k}" min="0" step="any" inputmode="decimal" placeholder="g or ml" aria-label="Amount {k + 1}"></td></tr>'
+                   for k in range(8))
+    return (f'{datalist}<details class="lookup"><summary class="ghost">New usual meal or drink</summary>'
+            f'<form class="fbox" method="post" action="/web/food/usualcreate">{hidden("csrf", csrf)}'
+            '<p class="row"><label class="small">Name <input name="name" maxlength="60" required placeholder="e.g. morning bowl"></label>'
+            '<label class="small">Is a <select name="kind"><option value="meal">meal</option><option value="drink">drink</option></select></label></p>'
+            f'<div class="tablewrap"><table class="ft plain"><tbody>{rows}</tbody></table></div>'
+            '<p class="row"><button class="primary sm" type="submit">Save</button>'
+            '<span class="small">Type a food and pick it from the list; leave unused rows empty. Amounts are grams (millilitres for drinks).</span></p></form></details>')
+
+
 def render_usual(csrf: str, q) -> str:
     um = str(q.get("um", ""))[:12]
     with connect() as conn, conn.cursor() as cur:
         body = _usual_meals(cur, csrf, um, url("/web/food/usual", um=um))
-    return (_tabs("usual") + f'<div class="card">{body}'
+        new = _new_usual(cur, csrf)
+    return (_tabs("usual") + f'<div class="card">{new}{body}'
             '<p class="small hint">Click a usual meal to change its foods and weights, rename it or delete it. '
-            'New usual meals are saved from a meal in the food log.</p></div>')
+            'A meal you already logged can also be saved from the Food log ("Save as usual meal").</p></div>')

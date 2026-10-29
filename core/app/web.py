@@ -16,8 +16,8 @@ from starlette.concurrency import run_in_threadpool
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, RedirectResponse, Response
 
-from . import (auth, foodpage, healthpage, ideaspage, labspage, logbook, privatepage, settingspage, todaypage, usagepage, webactions,
-               webentry, webfood, webideas, weblabs, webprivate, websettings, webquestions)
+from . import (auth, foodpage, habitspage, healthpage, ideaspage, labspage, logbook, privatepage, searchpage, settingspage, todaypage,
+               trendspage, usagepage, webactions, weekpage, webentry, webfood, webideas, weblabs, webprivate, websettings, webquestions)
 from .ai.provider import ProviderError
 from .config import APP_HOST
 from .db import connect
@@ -34,7 +34,7 @@ _HEADERS = {"Cache-Control": "no-store", "X-Frame-Options": "DENY", "Referrer-Po
             "Content-Security-Policy": "default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self'; "
                                        "form-action 'self'; frame-ancestors 'none'; base-uri 'none'; manifest-src 'self'"}
 # Where a form on the entry box or the reply may send the browser back to: any signed-in page of the app, with its query.
-BACK_ANY = re.compile(r"/web(/(questions|food(/catalogue|/usual)?|ideas(/todoist)?|health|private|usage|labs(/tests|/meds)?|settings))?/?"
+BACK_ANY = re.compile(r"/web(/(questions|food(/catalogue|/usual|/trends)?|ideas(/todoist)?|health|habits|week|search|private|usage|labs(/tests|/meds)?|settings))?/?"
                       r"(\?[A-Za-z0-9=&._%+-]*)?")
 _STATIC_DIR = pathlib.Path(__file__).resolve().parent / "static"
 _STATIC = {"app.css": "text/css; charset=utf-8", "app.js": "text/javascript; charset=utf-8",
@@ -111,9 +111,10 @@ def _login_page(msg: str = "", status: int = 200) -> HTMLResponse:
 def shell(session, body: str, status: int = 200, active: str = "") -> HTMLResponse:
     """A signed-in page: the top bar (with the number of open questions), the entry box, the last reply, then the body."""
     open_q = webquestions.count()
-    links = [("today", "/web/", "Today"), ("food", "/web/food", "Food"), ("ideas", "/web/ideas", "Ideas and tasks"), ("health", "/web/health", "Health"), ("questions", "/web/questions", "Questions"),
+    links = [("today", "/web/", "Today"), ("food", "/web/food", "Food"), ("ideas", "/web/ideas", "Ideas and tasks"), ("health", "/web/health", "Health"),
+             ("habits", "/web/habits", "Habits"), ("week", "/web/week", "Week"), ("questions", "/web/questions", "Questions"),
              ("private", "/web/private", "Private"), ("usage", "/web/usage", "Usage"),
-             ("labs", "/web/labs", "Labs and medication"), ("settings", "/web/settings", "Settings")]
+             ("labs", "/web/labs", "Labs and medication"), ("search", "/web/search", "Search"), ("settings", "/web/settings", "Settings")]
     current = ' aria-current="page"'
     badge = f'<span class="badge">{open_q}<span class="sr"> open</span></span>'
     link = lambda k, href, label: (f'<a href="{href}"{current if k == active else ""}>{label}'
@@ -222,6 +223,33 @@ def add_routes(mcp) -> None:
         if not session:
             return RedirectResponse("/web/login", status_code=302, headers={"Cache-Control": "no-store"})
         return shell(session, foodpage.render_usual(session["csrf"], request.query_params), active="food")
+
+    @mcp.custom_route("/web/search", methods=["GET"])
+    async def search_page(request: Request) -> Response:
+        if (r := hidden(request)) is not None:
+            return r
+        session = current_session(request)
+        if not session:
+            return RedirectResponse("/web/login", status_code=302, headers={"Cache-Control": "no-store"})
+        return shell(session, searchpage.render(session["csrf"], request.query_params), active="search")
+
+    @mcp.custom_route("/web/food/trends", methods=["GET"])
+    async def food_trends(request: Request) -> Response:
+        if (r := hidden(request)) is not None:
+            return r
+        session = current_session(request)
+        if not session:
+            return RedirectResponse("/web/login", status_code=302, headers={"Cache-Control": "no-store"})
+        return shell(session, foodpage._tabs("trends") + trendspage.render(session["csrf"], request.query_params), active="food")
+
+    @mcp.custom_route("/web/week", methods=["GET"])
+    async def week_page(request: Request) -> Response:
+        if (r := hidden(request)) is not None:
+            return r
+        session = current_session(request)
+        if not session:
+            return RedirectResponse("/web/login", status_code=302, headers={"Cache-Control": "no-store"})
+        return shell(session, weekpage.render(session["csrf"], request.query_params), active="week")
 
     @mcp.custom_route("/web/ideas", methods=["GET"])
     async def ideas_thoughts(request: Request) -> Response:
@@ -411,7 +439,24 @@ def add_routes(mcp) -> None:
         if form is None:
             return session
         name, action, eid = str(form.get("name", ""))[:64], str(form.get("action", "")), str(form.get("eid", ""))[:20]
-        return done(session, await _run(lambda: webactions.habit(name, action, eid, form_key(form))))
+        return done(session, await _run(lambda: webactions.habit(name, action, eid, form_key(form))), back_any(form))
+
+    @mcp.custom_route("/web/habit/day", methods=["POST"])
+    async def habit_day(request: Request) -> Response:
+        session, form = await post_form(request)
+        if form is None:
+            return session
+        name, day = str(form.get("name", ""))[:64], str(form.get("day", ""))[:10]
+        return done(session, await _run(lambda: webactions.habit_day(name, day, form_key(form))), back_any(form))
+
+    @mcp.custom_route("/web/habits", methods=["GET"])
+    async def habits_page(request: Request) -> Response:
+        if (r := hidden(request)) is not None:
+            return r
+        session = current_session(request)
+        if not session:
+            return RedirectResponse("/web/login", status_code=302, headers={"Cache-Control": "no-store"})
+        return shell(session, habitspage.render(session["csrf"]), active="habits")
 
     @mcp.custom_route("/web/usual", methods=["POST"])
     async def usual_meal(request: Request) -> Response:

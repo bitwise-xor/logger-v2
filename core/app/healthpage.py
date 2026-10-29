@@ -12,7 +12,6 @@ from .webentry import esc, hidden, key
 RANGES = (7, 30, 90)
 DEFAULT_RANGE = 30
 SHOWN_DAYS = 14  # rows before "Show all"
-CAL_DAYS = 30
 # The table's columns: key, heading, sub-heading, log type, period, number of values ("t" = a time)
 COLS = (("w", "Weight", "kg", "weight", None, 1), ("bm", "BP", "morning", "bp", "morning", 2),
         ("be", "BP", "evening", "bp", "evening", 2), ("s", "Sugar", "fasted", "blood_sugar", "fasted", 1),
@@ -71,15 +70,7 @@ def load(days: int) -> dict:
             weights[r["day"]] = float(r["value1"])
         cur.execute("SELECT wake_day, bed_at, wake_at, hours FROM v_sleep WHERE wake_day BETWEEN %s AND %s ORDER BY wake_at", (start, today))
         sleep = {r["wake_day"]: r for r in cur.fetchall()}
-        cal_start = today - timedelta(days=CAL_DAYS - 1)
-        cur.execute("""SELECT name, label, daily_target FROM log_types WHERE on_checklist AND active AND kind = 'event'
-                       ORDER BY sort_order, name""")
-        habits = cur.fetchall()
-        cur.execute("""SELECT t.name, e.day, count(*)::int AS n FROM events e JOIN log_types t ON t.id = e.type_id
-                       WHERE t.on_checklist AND e.day BETWEEN %s AND %s GROUP BY 1, 2""", (cal_start, today))
-        done = {(r["name"], r["day"]): r["n"] for r in cur.fetchall()}
-    return {"today": today, "start": start, "days": days, "vals": vals, "weights": weights, "sleep": sleep,
-            "habits": habits, "done": done, "cal_start": cal_start}
+    return {"today": today, "start": start, "days": days, "vals": vals, "weights": weights, "sleep": sleep}
 
 
 def _dm(d: date) -> str:
@@ -157,24 +148,6 @@ def _charts(d: dict) -> str:
             + "</div>")
 
 
-def _calendar(d: dict) -> str:
-    if not d["habits"]:
-        return ""
-    days = [d["cal_start"] + timedelta(days=i) for i in range(CAL_DAYS)]
-    rows = []
-    for h in d["habits"]:
-        target, cells, full = h["daily_target"] or 1, [], 0
-        for day in days:
-            n = d["done"].get((h["name"], day), 0)
-            full += n >= target
-            cls = "d" if n >= target else "h" if n else ""
-            cells.append(f'<i class="{cls}" title="{_dm(day)}: {n} of {target}"></i>')
-        rows.append(f'<span class="lbl">{esc(h["label"])} <span class="small">{full}/{CAL_DAYS}</span></span><span class="days">{"".join(cells)}</span>')
-    return (f'<div class="card"><h2>Habits · last {CAL_DAYS} days</h2><div class="cal">{"".join(rows)}'
-            f'<span></span><span class="axis"><span>{d["cal_start"]:%d.%m.}</span><span>today</span></span></div>'
-            '<p class="legend"><i class="key sq d"></i>done <i class="key sq h"></i>partly <i class="key sq"></i>not logged</p></div>')
-
-
 def _field(day: date, col: str, kind, cur, fid: str) -> str:
     v = cur["v"] if cur else ([""] * (2 if kind == 2 else 1))
     name = NAMES[col]
@@ -215,4 +188,5 @@ def render(csrf: str, days: int, show_all: bool = False) -> str:
     d = load(days)
     seg = "".join(f'<a href="/web/health?r={r}"{" aria-current=\"page\"" if r == days else ""}>{r} days</a>' for r in RANGES)
     return (f'<div class="head"><h1>Health</h1><nav class="seg" aria-label="Range">{seg}</nav></div>'
-            f'{_charts(d)}{_calendar(d)}{_entries(d, csrf, show_all)}')
+            f'{_charts(d)}{_entries(d, csrf, show_all)}'
+            '<p class="small">The habits calendar moved to <a href="/web/habits">the Habits page</a>.</p>')

@@ -158,15 +158,7 @@ def test_bad_input_changes_nothing(web, fake):
     assert n("SELECT count(*) AS n FROM measurements") == 1 and weights() == []
 
 
-def test_the_habits_calendar(web, fake):
-    d = today()
-    event("meds", d, "08:00")
-    event("shoonya", d, "07:30")
-    owner_sql("UPDATE log_types SET daily_target = 2 WHERE name = 'shoonya'")  # two sessions a day: one is "partly"
-    try:
-        page = web[0].get("/web/health")
-    finally:
-        owner_sql("UPDATE log_types SET daily_target = 1 WHERE name = 'shoonya'")
-    assert re.search(r'Medication <span class="small">1/30</span>', page.text)
-    assert f'<i class="d" title="{d:%a %d.%m.}: 1 of 1"></i>' in page.text
-    assert f'<i class="h" title="{d:%a %d.%m.}: 1 of 2"></i>' in page.text
+def test_the_habits_calendar_moved_to_the_habits_page(web, fake):
+    event("meds", today(), "08:00")
+    page = web[0].get("/web/health")
+    assert "Habits · last" not in page.text and 'class="cal"' not in page.text and 'href="/web/habits"' in page.text

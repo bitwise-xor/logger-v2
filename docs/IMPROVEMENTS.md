@@ -7,6 +7,12 @@ Before building one, plan it in the doc first (with a clickable mockup for a new
 
 Size: S = about an hour, M = about half a day, L = a day or more. Rough guesses.
 
+## Status (29.10.2026, end of the first build run; details in `docs/reports/web-app-2026-10-29.md`)
+
+- **Done and deployed:** 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 19, 22, 23, 26 (the unknown-page screen; the error page is not done), 27 (titles, skip link, labelled menus), 30, 31, 32, 33, 34.
+- **Open:** 16 (lab upload on the web), 17 (barcode by camera), 18 (link thoughts): no answers yet. 25 (one helper for the host check) and the error page of 26 are code tidying, not started.
+- **On the core list, not here:** 20, 21, 24, 28, 29 (see `docs/CORE-IMPROVEMENTS.md`).
+
 ## 0. Your additions (28.10.2026)
 
 | # | Idea | What is there now | Size |

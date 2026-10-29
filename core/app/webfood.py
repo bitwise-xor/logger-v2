@@ -10,7 +10,7 @@ from typing import Optional
 from . import commands, foodpage, logbook, v1_log
 from .db import connect
 from .todaypage import _plain
-from .v1_log import ReadBack, RecipeDef, Reject
+from .v1_log import ReadBack, RecipeDef, RecipeItem, Reject
 from .webactions import TIME, _change, _num, _pred, _rejected
 from .when import BERLIN
 
@@ -140,6 +140,55 @@ def usual_new(form, key: Optional[str]) -> dict:
     return {"outcome": "changed", "head": f'Saved "{name}" as a usual meal ({n} items). It shows on Today and in the Catalogue.'}
 
 
+def food_id(cur, text: str) -> Optional[int]:
+    """The active food the user typed or picked from the list: its exact name or one of its words (not a guess)."""
+    t = " ".join(str(text).split())
+    if not t:
+        return None
+    m = re.fullmatch(r"[nN]#?(\d{1,9})", t)
+    cur.execute("SELECT id FROM foods WHERE active AND (lower(name) = lower(%s) OR %s = ANY(SELECT lower(a) FROM unnest(aliases) a)"
+                + (" OR id = %s" if m else "") + ")", (t, t.lower()) + ((int(m[1]),) if m else ()))
+    rows = cur.fetchall()
+    return rows[0]["id"] if len(rows) == 1 else None
+
+
+NEW_ROWS = 8
+
+
+def usual_create(form, key: Optional[str]) -> dict:
+    """A new usual meal or usual drink made from foods typed or picked by name and grams (no logged meal needed)."""
+    name = " ".join(str(form.get("name", "")).split())[:60]
+    if len(name) < 2:
+        return _rejected("Give the usual meal a name.")
+    drink = form.get("kind") == "drink"
+    items, now = [], datetime.now(BERLIN)
+    with connect() as conn, conn.cursor() as cur:
+        for k in range(NEW_ROWS):
+            typed, g_text = str(form.get(f"food_{k}", "")).strip(), str(form.get(f"g_{k}", "")).strip()
+            if not typed and not g_text:
+                continue
+            fid = food_id(cur, typed)
+            if fid is None:
+                return _rejected(f"Row {k + 1}: pick a food from the list ({typed or 'empty'} is not exactly one food of the catalogue).")
+            g = _num(g_text)
+            if g is None or not 0 < g <= 5000:
+                return _rejected(f"Row {k + 1}: give an amount above 0 and at most 5000.")
+            items.append(RecipeItem(food=f"N{fid}", grams=g))
+        if not items:
+            return _rejected("Add at least one food with its amount.")
+        try:
+            prep = v1_log._prepare_food(cur, [], [], [RecipeDef(name=name, kind="usual", items=items, drink=drink)], None, True, None, now, [])
+            out: list[str] = []
+            for rec in prep["recipes"]:
+                v1_log._create_recipe(cur, rec, out)
+        except (Reject, ReadBack) as e:
+            conn.rollback()
+            return _rejected(str(e).replace("READ BACK, nothing saved (nothing else in this message was saved either):", "Not saved:").strip())
+        logbook._audit(cur, "web_change", "changed", {"what": "usual new from foods", "drink": drink}, logbook.WEB)
+    return {"outcome": "changed", "head": f'Saved "{name}" as a usual {"drink" if drink else "meal"} ({len(items)} item{"" if len(items) == 1 else "s"}). '
+                                          'It shows on Today and in the list below.'}
+
+
 # ---- the catalogue ---------------------------------------------------------------------------------
 
 def _food(ref: str):
@@ -244,6 +293,12 @@ def usual_meal(form, key: Optional[str]) -> dict:
             return _rejected("Give every food an amount above 0 and at most 5000.")
         items.append((int(fid), g))
     add_f, add_g = str(form.get("add_food", "")), str(form.get("add_g", "")).strip()
+    if str(form.get("add_name", "")).strip():  # a food typed or picked by name (the page's list), not from a long drop-down
+        with connect() as c, c.cursor() as cur:
+            picked = food_id(cur, form.get("add_name"))
+        if picked is None:
+            return _rejected(f"Pick the added food from the list ({str(form.get('add_name')).strip()} is not exactly one food of the catalogue).")
+        add_f = str(picked)
     if add_f:
         g = _num(add_g)
         if not add_f.isdigit() or g is None or not 0 < g <= 5000:
@@ -280,6 +335,6 @@ def usual_meal(form, key: Optional[str]) -> dict:
 
 # Every form of the Food page: path under /web/food/, the function, and where the browser goes afterwards
 # (None = the page the form came from).
-ACTIONS = {"entry": (entry, None), "note": (note, None), "copy": (copy, "/web/food"), "usualnew": (usual_new, None),
+ACTIONS = {"entry": (entry, None), "note": (note, None), "copy": (copy, "/web/food"), "usualnew": (usual_new, None), "usualcreate": (usual_create, None),
            "values": (values, None), "words": (words, None), "barcode": (barcode, None), "reviewed": (reviewed, None),
            "lookup": (lookup, "/web/questions"), "usualmeal": (usual_meal, None)}

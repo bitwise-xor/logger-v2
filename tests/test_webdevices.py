@@ -27,12 +27,12 @@ IPHONE = {"User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) 
 def test_wide_screens_get_every_link_and_phones_a_tab_bar_with_more(web):
     page = web[0].get("/web/health").text
     top = re.search(r'<nav class="top" aria-label="Main">(.*?)</nav>', page, re.S)[1]
-    for label in ("Today", "Food", "Ideas and tasks", "Health", "Questions", "Private", "Usage", "Labs and medication", "Settings"):
+    for label in ("Today", "Food", "Ideas and tasks", "Health", "Habits", "Week", "Questions", "Private", "Usage", "Labs and medication", "Search", "Settings"):
         assert f">{label}" in top
     tabs = re.search(r'<nav class="tabs" aria-label="Main menu">(.*?)</nav>', page, re.S)[1]
     bar, panel = tabs.split('<details class="more">')
     assert [m for m in re.findall(r">(Today|Food|Health|Ideas)<", bar)] == ["Today", "Food", "Health", "Ideas"]
-    for label in ("Questions", "Private", "Usage", "Labs and medication", "Settings"):
+    for label in ("Habits", "Week", "Questions", "Private", "Usage", "Labs and medication", "Search", "Settings"):
         assert f">{label}" in panel and f">{label}" not in bar
     assert "<summary>More</summary>" in panel and 'aria-current="page">Health' in bar
 
@@ -102,7 +102,7 @@ def test_the_devices_list_shows_each_device_and_signs_others_out(web):
     c, csrf = web
     other = client()
     other.post("/web/login", data={"password": "correct horse battery staple", "code": code_now(1)}, headers={**ORIGIN, **IPHONE})
-    page = c.get("/web/settings").text
+    page = c.get("/web/settings?tab=devices").text
     assert "Signed-in devices" in page and "iPhone, Safari" in page and "this device" in page and "Sign out all 1 other device" in page
     sid = re.search(r'name="sid" value="([0-9a-f-]{36})"', page)[1]
     assert "Signed that device out." in act(web, "/web/settings/device", sid=sid).text

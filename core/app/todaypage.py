@@ -2,7 +2,7 @@
 habit toggles, the Health card (edited in place) and items to review. web.py wraps it in the page and the sign-in."""
 from datetime import date, datetime
 
-from . import rules
+from . import rules, uiprefs
 from .db import connect
 from .webentry import esc, hidden, key
 
@@ -78,8 +78,9 @@ def load() -> dict:
                            FROM events e JOIN log_types lt ON lt.id = e.type_id WHERE e.needs_review
                        ) x ORDER BY at DESC LIMIT %s""", (REVIEW_LIMIT,))
         review = cur.fetchall()
+        prefs = uiprefs.load(cur)
     return {"day": day, "food": food, "foods": foods, "usual": usual, "habits": habits, "last_tick": last_tick,
-            "health": health, "review": review}
+            "health": health, "review": review, "prefs": prefs}
 
 
 # ---- food -----------------------------------------------------------------------------------------
@@ -131,11 +132,14 @@ def _food_section(d: dict, csrf: str) -> str:
 
 
 def _usual_section(d: dict, csrf: str) -> str:
-    if not d["usual"]:
+    prefs = d["prefs"]
+    meals = [kv for kv in d["usual"].items() if uiprefs.shown("usual", kv[0][0], prefs)]
+    meals = uiprefs.ordered(meals, lambda kv: kv[0][0], prefs["order"].get("usual", []))
+    if not meals:
         return ""
     now = _hm(datetime.now(rules.BERLIN))
     out = []
-    for (mid, name), its in d["usual"].items():
+    for (mid, name), its in meals:
         rows = "".join(
             f'<tr class="item" data-per100="{float(i["kcal"])},{float(i["protein"])},{float(i["fat"])},{float(i["carbs"])}">'
             f'<td><div class="edrow"><label><input type="checkbox" name="on_{i["id"]}" id="u{mid}-on-{i["id"]}" checked> {esc(i["name"])}</label>'
@@ -157,10 +161,13 @@ def _usual_section(d: dict, csrf: str) -> str:
 # ---- habits, health, review ------------------------------------------------------------------------
 
 def _habit_section(d: dict, csrf: str) -> str:
-    if not d["habits"]:
+    prefs = d["prefs"]
+    habits = uiprefs.ordered([h for h in d["habits"] if uiprefs.shown("habit", h["type_name"], prefs)],
+                             lambda h: h["type_name"], prefs["order"].get("habit", []))
+    if not habits:
         return ""
     btns = []
-    for h in d["habits"]:
+    for h in habits:
         done = h["complete"]
         count = f' <span class="cnt">{h["done"]}/{h["target"]}</span>' if h["target"] > 1 else ""
         act = hidden("action", "untick") + hidden("eid", str(d["last_tick"].get(h["type_name"], ""))) if done else \
@@ -168,14 +175,19 @@ def _habit_section(d: dict, csrf: str) -> str:
         btns.append(f'<form method="post" action="/web/habit">{hidden("csrf", csrf)}{hidden("name", h["type_name"])}{act}'
                     f'<button class="habit{" done" if done else ""}" type="submit" aria-pressed="{str(done).lower()}">'
                     f'<span class="box">{"&#10003;" if done else ""}</span>{esc(h["label"])}{count}</button></form>')
-    n_done = sum(1 for h in d["habits"] if h["complete"])
-    return (f'<div class="card"><h2>Habits · {n_done} of {len(d["habits"])} done</h2><div class="habits">{"".join(btns)}</div>'
+    n_done = sum(1 for h in habits if h["complete"])
+    return (f'<div class="card"><h2><span>Habits · {n_done} of {len(habits)} done</span><a href="/web/habits">All habits</a></h2>'
+            f'<div class="habits">{"".join(btns)}</div>'
             '<p class="small hint">Click to tick, click again to untick.</p></div>')
 
 
 def _health_section(d: dict, csrf: str) -> str:
     rows = []
-    for k, label, sub, _t, _p, unit in HEALTH_ROWS:
+    prefs = d["prefs"]
+    shown_rows = uiprefs.ordered([r for r in HEALTH_ROWS if uiprefs.shown("health", r[0], prefs)], lambda r: r[0], prefs["order"].get("health", []))
+    if not shown_rows:
+        return ""
+    for k, label, sub, _t, _p, unit in shown_rows:
         cur = d["health"].get(k)
         if k == "wake":
             v = cur["v"][0] if cur else ""
@@ -223,6 +235,10 @@ def _review_item(r: dict, csrf: str) -> str:
 
 
 def _review_section(d: dict, csrf: str) -> str:
+    if not uiprefs.shown("review", "box", d["prefs"]):  # hidden: only a one-line notice while something waits, so it is never forgotten
+        n = len(d["review"])
+        return (f'<p class="small notice">{n} item{"" if n == 1 else "s"} to review is hidden here · '
+                '<a href="/web/settings?tab=today">show the box</a></p>') if n else ""
     body = "".join(_review_item(r, csrf) for r in d["review"]) or '<p class="empty">Nothing to review.</p>'
     return f'<div class="card"><h2>To review</h2>{body}</div>'
 
@@ -230,7 +246,8 @@ def _review_section(d: dict, csrf: str) -> str:
 def render(csrf: str) -> str:
     d = load()
     return (f'<div class="grid"><section>{_food_section(d, csrf)}</section>'
-            f'<aside>{_habit_section(d, csrf)}{_health_section(d, csrf)}{_review_section(d, csrf)}</aside></div>')
+            f'<aside>{_habit_section(d, csrf)}{_health_section(d, csrf)}{_review_section(d, csrf)}'
+            '<p class="small"><a href="/web/settings?tab=today">Customize this page</a></p></aside></div>')
 
 
 def day_title(day: date) -> str:

@@ -6,7 +6,7 @@ import re
 from datetime import date, datetime, timedelta
 from typing import Optional
 
-from . import commands, healthpage, logbook
+from . import commands, habitspage, healthpage, logbook
 from .db import connect
 from .todaypage import AREAS, HEALTH_ROWS, THOUGHT_TYPES
 from .v1_log import Reject, _words_in
@@ -97,6 +97,32 @@ def habit(name: str, action: str, eid: str, key: Optional[str]) -> dict:
     if not row:
         return {"outcome": "unchanged", "reason": f"{t['label']} has no tick from today to remove."}
     return _change([{"action": "change", "args": {"id": f"e{row['id']}", "delete": True}}], "untick", f"Removed the {t['label']} tick.")
+
+
+def habit_day(name: str, day: str, key: Optional[str]) -> dict:
+    """The Habits page's squares: a click on a day with fewer ticks than the habit's daily count adds one tick for that day
+    (date only, no time); a click on a day that is done takes that day's ticks off. Not for the Wake-up habit, which is a time."""
+    with connect() as c:
+        t = c.execute("SELECT name, label, daily_target FROM log_types WHERE name = %s AND kind = 'event' AND on_checklist AND active", (name,)).fetchone()
+        today = c.execute("SELECT log_day(now()) AS d").fetchone()["d"]
+    if not t or name in habitspage.LOCKED:
+        return _rejected("That habit cannot be changed for a past day here.")
+    try:
+        d = date.fromisoformat(day)
+    except ValueError:
+        return _rejected("Unknown day.")
+    if d > today or d < today - timedelta(days=habitspage.DAYS + 5):
+        return _rejected("Only the last 30 days can be changed here.")
+    with connect() as c:
+        ids = [r["id"] for r in c.execute("""SELECT e.id FROM events e JOIN log_types lt ON lt.id = e.type_id WHERE lt.name = %s AND e.day = %s
+                                             ORDER BY e.event_at, e.id""", (name, d)).fetchall()]
+    if len(ids) < (t["daily_target"] or 1):
+        pred = _pred(health=[{"type": name, "value": None, "value2": None, "period": None, "session": None, "when": d.isoformat()}])
+        # The time of the click makes each message different: the same words twice within 30 minutes (tick, take off, tick again)
+        # would otherwise stop at the "log it again?" question.
+        return logbook.log(f"tick {name} on {d:%d.%m.%Y} (clicked {datetime.now(BERLIN):%H:%M:%S.%f})", key, pred, channel=logbook.WEB)
+    steps = [{"action": "change", "args": {"id": f"e{i}", "delete": True}} for i in ids]
+    return _change(steps, "untick day", f"Removed {len(ids)} tick{'' if len(ids) == 1 else 's'} of {t['label']} on {d:%d.%m.%Y}.")
 
 
 # ---- usual meals -----------------------------------------------------------------------------------

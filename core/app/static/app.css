@@ -306,6 +306,32 @@ header{padding-top:env(safe-area-inset-top)}
 .card h2+.dev{border-top:0}
 .dev>div{display:flex;flex-direction:column}
 .dev form{margin:0}
+/* Habits page and Settings */
+.habit.big{padding:.75rem 1.2rem;font-size:1.05rem}
+.hcal .calrow{display:grid;grid-template-columns:9rem 1fr;gap:.35rem .7rem;align-items:center;margin:.2rem 0}
+.hcal .days{display:grid;grid-template-columns:repeat(30,1fr);gap:2px}
+.hcal .sq{display:block;aspect-ratio:1;min-height:0;padding:0;border:0;border-radius:3px;background:var(--bar)}
+.hcal button.sq{cursor:pointer;min-height:0}
+.hcal button.sq:hover{outline:2px solid var(--ink);outline-offset:1px}
+.hcal .sq.d{background:var(--accent)}
+.hcal .sq.h{background:var(--accent-soft);box-shadow:inset 0 0 0 1px var(--accent)}
+.hcal span.sq{opacity:.7}
+.hcal .axis{display:flex;justify-content:space-between;font-size:.75rem;color:var(--dim)}
+.hcal .lbl{font-size:.9rem}
+@media (max-width:520px){.hcal .calrow{grid-template-columns:1fr}.hcal .days{grid-template-columns:repeat(10,1fr);gap:4px}}
+.habrow{display:flex;flex-wrap:wrap;gap:.5rem .8rem;align-items:flex-end;padding:.6rem 0;border-top:1px solid var(--line);margin:0}
+.habrow label{display:flex;flex-direction:column;font-size:.8rem;color:var(--dim);gap:.15rem}
+.habrow label.row{flex-direction:row;align-items:center;gap:.3rem}
+.habrow input[type=number]{width:5rem}
+.card h2+.habrow{border-top:0}
+.notice{margin:.6rem 0}
+.chart .ref.t{stroke:var(--accent)}
+.chart text.reflbl.t{fill:var(--accent)}
+.key.ref.t{border-top-color:var(--accent)}
+.meter .goal{fill:var(--dim)}
+.far td.bar{width:55%}
+.far td{vertical-align:middle}
+.card h3{font-size:.88rem;margin:1rem 0 .2rem}
 /* Private: the words shown, a New entry box, gratitude by day and by week */
 textarea.wide{width:100%;resize:vertical}
 .pill.grat{background:var(--accent-soft);color:var(--accent)}

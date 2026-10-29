@@ -8,6 +8,12 @@ The v1 files (`v1_*.py`) are copied unchanged on purpose and are left as they ar
 
 Size: S = about an hour, M = about half a day, L = a day or more. Rough guesses.
 
+## Status (29.10.2026, first build run; details in `docs/reports/core-2026-10-29.md`)
+
+- **Done and deployed:** 3 (preparation only: the audit log now records what the second read did), 4, 5, 7, 8, 10, 11, 14, 21, 22, 23. 15 (GitHub Actions) is written but has never run.
+- **Left alone on purpose:** 1 and 2 (need a decision / too risky unattended), 6, 9, 12, 13, 16.
+- **Open:** 17 to 20 (need your decisions), 24 (a page of learned words).
+
 ## 1. Never lose a message
 
 | # | Idea | Why | Size |
