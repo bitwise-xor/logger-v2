@@ -49,6 +49,36 @@ def _change(steps: list[dict], what: str, ok: str) -> dict:
     return {"outcome": "changed", "head": ok}
 
 
+# ---- undo ------------------------------------------------------------------------------------------
+
+def undo(raw_id: str) -> dict:
+    """The Undo button under a reply: the chat's own undo, but only while that message is still the newest one that
+    can be undone (the chat's undo always takes the newest). A look at what it would do comes first, in a savepoint."""
+    def refused(why: str) -> dict:
+        return {**_rejected(why), "head": "Nothing undone."}
+
+    if not raw_id.isdigit():
+        return refused("Unknown message.")
+    step = {"action": "undo", "args": {}}
+    now = datetime.now(BERLIN)
+    with connect() as conn, conn.cursor() as cur:
+        try:
+            seen = " ".join(commands._preview(cur, [step], now))
+        except Reject as e:
+            return refused(str(e))
+        found = re.search(r"undid raw #(\d+)", seen)
+        if not found or found[1] != raw_id:
+            return refused("Something newer was logged since, so nothing was undone. Open the Food log to change an entry, "
+                           "or type \"undo\" to undo the newest one.")
+        try:
+            out = commands._run_changes(cur, [step], now)
+        except Reject as e:
+            conn.rollback()
+            return refused(str(e))
+        logbook._audit(cur, "web_change", "changed", {"what": "undo", "ids": [int(raw_id)]}, logbook.WEB)
+    return {"outcome": "changed", "head": "Undone.", "result": "\n".join(out)}
+
+
 # ---- habits ----------------------------------------------------------------------------------------
 
 def habit(name: str, action: str, eid: str, key: Optional[str]) -> dict:

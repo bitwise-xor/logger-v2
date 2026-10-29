@@ -19,7 +19,7 @@ def _schema():
 @pytest.fixture(autouse=True)
 def clean():
     with connect(owner=True) as c:
-        c.execute("TRUNCATE food_entries, food_units, food_defaults, foods, thoughts, thought_updates, thought_links, private.entries, measurements, events, raw_inbox, pending, idempotency_keys, audit_log, owner_credentials, oauth_clients, oauth_requests, oauth_codes, oauth_tokens, login_failures, web_sessions RESTART IDENTITY CASCADE")
+        c.execute("TRUNCATE food_entries, food_units, food_defaults, foods, thoughts, thought_updates, thought_links, private.entries, measurements, events, raw_inbox, pending, idempotency_keys, audit_log, owner_credentials, oauth_clients, oauth_requests, oauth_codes, oauth_tokens, login_failures, web_sessions, trusted_devices RESTART IDENTITY CASCADE")
     yield
 
 

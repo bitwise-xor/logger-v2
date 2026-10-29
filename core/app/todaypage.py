@@ -40,7 +40,7 @@ def load() -> dict:
         cur.execute("""SELECT meal, meal_label, kcal, protein, fat, carbs, target_kcal, target_protein, target_fat, target_carbs
                        FROM v_food_day WHERE day = %s ORDER BY meal IS NULL, meal = 0, meal""", (day,))
         food = cur.fetchall()
-        cur.execute("""SELECT meal, time, food, amount, unit, portion_text, kcal, protein, fat, carbs FROM v_food_log
+        cur.execute("""SELECT id, meal, time, food, amount, unit, portion_text, kcal, protein, fat, carbs FROM v_food_log
                        WHERE day = %s ORDER BY meal, time NULLS LAST, id""", (day,))
         foods = cur.fetchall()
         cur.execute("""SELECT u.id AS meal_id, u.name AS meal, i.id, i.grams, f.name, f.basis, f.kcal, f.protein, f.fat, f.carbs
@@ -121,7 +121,9 @@ def _food_section(d: dict, csrf: str) -> str:
         rows = items.get(r["meal"], [])
         times = [f["time"] for f in rows if f["time"]]
         when = f' <span class="small">{min(times).strftime("%H:%M")}</span>' if times and r["meal"] != 0 else ""
-        lines = "".join(f'<tr class="item"><td>{esc(f["food"])} <span class="small">{esc(f["shown"])}</span></td>{_cols(f)}</tr>' for f in rows)
+        edit = lambda f: f'/web/food?day={d["day"].isoformat()}&amp;edit=f{f["id"]}#f{f["id"]}'  # opens the entry on the Food log to change it
+        lines = "".join(f'<tr class="item"><td><a href="{edit(f)}" title="Change or delete">{esc(f["food"])}</a> '
+                        f'<span class="small">{esc(f["shown"])}</span></td>{_cols(f)}</tr>' for f in rows)
         groups.append(f'<tbody><tr class="mealrow"><td>{esc(r["meal_label"])}{when}</td>{_cols(r)}</tr>{lines}</tbody>')
     table = (f'<div class="tablewrap"><table class="ft">{_head()}{"".join(groups)}</table></div>' if groups
              else '<p class="empty">Nothing logged yet today.</p>')

@@ -282,7 +282,30 @@ form.word{display:inline-flex;align-items:center;gap:.2rem;border:1px solid var(
 .due.late{background:var(--warn-soft);color:var(--warn)}
 .due.today{background:var(--accent-soft);color:var(--accent)}
 /* five tabs: on the phone they get their own row under the name and Sign out */
-@media (max-width:620px){.bar{flex-wrap:wrap;row-gap:.4rem}.bar .brand{flex:1}.bar nav{order:3;flex-basis:100%;flex-wrap:wrap;gap:.2rem .9rem}}
+/* wide screens: every link in the top bar; phones: a tab bar at the bottom (Today, Food, Health, Ideas, More) */
+nav.top{flex-wrap:wrap;gap:.2rem 1rem}
+.tabs{display:none}
+header{padding-top:env(safe-area-inset-top)}
+@media (max-width:620px){
+  .bar{gap:.8rem}.bar .brand{flex:1}.bar nav.top{display:none}
+  main{padding-bottom:6rem}
+  .tabs{display:flex;position:fixed;left:0;right:0;bottom:0;z-index:4;gap:0;background:var(--card);border-top:1px solid var(--line);
+        padding-bottom:env(safe-area-inset-bottom)}
+  .tabs>a,.tabs summary{flex:1;display:flex;align-items:center;justify-content:center;gap:.2rem;min-height:3.2rem;padding:.4rem .2rem;
+        color:var(--dim);text-decoration:none;font-size:.85rem;border-bottom:0;list-style:none;cursor:pointer}
+  .tabs summary::-webkit-details-marker{display:none}
+  .tabs [aria-current]{color:var(--ink);font-weight:650;box-shadow:inset 0 2px 0 var(--ink)}
+  .tabs details{flex:1;position:relative;display:flex}
+  .tabs details>summary{flex:1}
+  .tabs .panel{position:absolute;right:.3rem;bottom:calc(100% + .3rem);min-width:13rem;background:var(--card);border:1px solid var(--line);
+        border-radius:.6rem;padding:.3rem;box-shadow:0 .4rem 1.2rem rgba(0,0,0,.25)}
+  .tabs .panel a{display:flex;align-items:center;gap:.4rem;padding:.75rem .9rem;color:var(--ink);text-decoration:none;border-radius:.4rem;border-bottom:0}
+  .tabs .panel a[aria-current]{background:var(--accent-soft);font-weight:650;box-shadow:none}
+}
+.dev{display:flex;justify-content:space-between;align-items:center;gap:.8rem;padding:.6rem 0;border-top:1px solid var(--line)}
+.card h2+.dev{border-top:0}
+.dev>div{display:flex;flex-direction:column}
+.dev form{margin:0}
 /* Private: the words shown, a New entry box, gratitude by day and by week */
 textarea.wide{width:100%;resize:vertical}
 .pill.grat{background:var(--accent-soft);color:var(--accent)}
@@ -324,3 +347,30 @@ textarea.wide{width:100%;resize:vertical}
 .key.w{background:var(--warn)}
 .key.sq.band{background:var(--accent-soft)}
 .ft td.l{white-space:normal}
+/* Batch A (28.10.2026): skip link, busy state, reference lines and tap text on charts, bigger touch targets */
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.skip{position:absolute;left:-999rem;top:.5rem;z-index:5;background:var(--ink);color:var(--card);padding:.4rem .8rem;border-radius:.4rem}
+.skip:focus{left:.5rem}
+body.busy,body.busy button{cursor:progress}
+button:disabled{opacity:.6;cursor:progress}
+.reply form{margin-top:.5rem}
+.chart .ref{stroke-width:1.2;stroke-dasharray:5 4}
+.chart .ref.w{stroke:var(--warn)}
+.chart .ref.r{stroke:var(--bad)}
+.chart text.reflbl{font-size:10px}
+.chart text.reflbl.w{fill:var(--warn)}
+.chart text.reflbl.r{fill:var(--bad)}
+.chart .tip rect{fill:var(--ink)}
+.chart .tip text{fill:var(--card);font-size:11px}
+.key.ref{height:0;border-top:2px dashed var(--warn);background:none;border-radius:0;width:.9rem;vertical-align:.2rem}
+.key.ref.r{border-top-color:var(--bad)}
+@media (pointer:coarse),(max-width:520px){
+  button,.ghost,.primary,.chip,.cand,.habit,.icon,summary.ghost,a.ghost{min-height:2.6rem}
+  .primary.sm,.ghost.sm{padding:.4rem .8rem}
+  .icon{min-width:2.4rem;font-size:1.1rem}
+  nav a{padding:.55rem 0}
+  nav.seg a{padding:.55rem .9rem}
+  input:not([type=checkbox]):not([type=radio]),select{min-height:2.6rem}
+  input[type=checkbox],input[type=radio]{width:1.3rem;height:1.3rem}
+  .tick{width:1.5rem;height:1.5rem}
+}

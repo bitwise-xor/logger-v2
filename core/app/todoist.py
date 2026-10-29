@@ -25,6 +25,7 @@ class Todoist(Protocol):
     def reopen(self, task_id: str) -> None: ...
     def delete(self, task_id: str) -> None: ...
     def update(self, task_id: str, content: str) -> None: ...
+    def set_due(self, task_id: str, due_date: Optional[str]) -> None: ...
     def move(self, task_id: str, section_id: Optional[str] = None, project_id: Optional[str] = None) -> None: ...
 
 
@@ -94,6 +95,10 @@ class TodoistAPI:
     def update(self, task_id: str, content: str) -> None:
         self._call("POST", f"/tasks/{task_id}", body={"content": content})
 
+    def set_due(self, task_id: str, due_date: Optional[str]) -> None:
+        """due_date: YYYY-MM-DD, or None to remove the due date."""
+        self._call("POST", f"/tasks/{task_id}", body={"due_date": due_date} if due_date else {"due_string": "no date"})
+
     def move(self, task_id: str, section_id: Optional[str] = None, project_id: Optional[str] = None) -> None:
         self._call("POST", f"/tasks/{task_id}/move", body={"section_id": section_id} if section_id else {"project_id": project_id})
 
@@ -155,6 +160,11 @@ class FakeTodoist:
         self._up()
         self.tasks[task_id]["content"] = content
         self.log.append(("update", task_id, content))
+
+    def set_due(self, task_id, due_date):
+        self._up()
+        self.tasks[task_id]["due"] = {"date": due_date} if due_date else None
+        self.log.append(("due", task_id, due_date))
 
     def move(self, task_id, section_id=None, project_id=None):
         self._up()

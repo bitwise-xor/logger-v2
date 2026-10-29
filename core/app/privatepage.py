@@ -144,10 +144,13 @@ def _gratitude(cur, csrf: str, q) -> str:
     prev, nxt = first - timedelta(days=step), first + timedelta(days=step)
     seg = (f'<nav class="seg" aria-label="Day or week"><a href="{esc(url(view="grat", day=d.isoformat()))}"{' aria-current="page"' if mode == "day" else ""}>Day</a>'
            f'<a href="{esc(url(view="grat", mode="week", day=d.isoformat()))}"{' aria-current="page"' if mode == "week" else ""}>Week</a></nav>')
+    pick = (f'<form class="row" method="get" action="/web/private">{hidden("view", "grat")}{hidden("mode", "week") if mode == "week" else ""}'
+            f'<input type="date" name="day" value="{d.isoformat()}" max="{today.isoformat()}" aria-label="Pick a day" class="autosubmit">'
+            '<button class="ghost sm" type="submit">Show</button></form>')
     arrows = (f'<span class="row"><a class="ghost" href="{esc(url(view="grat", mode=mode if mode == "week" else "", day=prev.isoformat()))}" aria-label="Earlier">&larr;</a>'
               f'<b>{title}</b>'
               + (f'<a class="ghost" href="{esc(url(view="grat", mode=mode if mode == "week" else "", day=nxt.isoformat()))}" aria-label="Later">&rarr;</a>' if last < today else "")
-              + "</span>")
+              + f"{pick}</span>")
     count = f'<h2>{len(rows)} gratitude {"entry" if len(rows) == 1 else "entries"}{" this week" if mode == "week" else ""}</h2>'
     return (_new_box(csrf, url(view="grat", mode=mode if mode == "week" else "", day=d.isoformat()))
             + f'<div class="card"><div class="head sub">{seg}{arrows}</div>{count}{body}</div>')

@@ -4,6 +4,7 @@ a deletion is shown first. Todoist: tick off at once with Undo (recorded in todo
 text or section is shown first, then sent after the Yes; only tasks the logger added can be deleted."""
 import re
 import secrets
+from datetime import date
 from typing import Optional
 
 from . import ideaspage, logbook, todos
@@ -116,11 +117,23 @@ def task(form, key: Optional[str]) -> dict:
             return _rejected("The task's text cannot be empty.")
         if place not in names:
             return _rejected("Pick a section from the list.")
+        old_due, new_due = ideaspage.due_of(t), ideaspage.due_of(t)
+        if "due" in form and not ideaspage.due_lock(t):  # a form without the field (older page, other client) leaves the date alone
+            if form.get("no_due") == "1":
+                new_due = None
+            elif str(form.get("due", "")).strip():
+                try:
+                    new_due = date.fromisoformat(str(form.get("due")).strip())
+                except ValueError:
+                    return _rejected("Give the due date as a date.")
         lines = []
         if content != t["content"]:
             lines.append(f'Text: "{t["content"]}" → "{content}"')
         if place != ideaspage.place_of(t):
             lines.append(f"Section: {names.get(ideaspage.place_of(t), 'Lists')} → {names[place]}")
+        if new_due != old_due:
+            lines.append(f"Due date: {old_due:%d.%m.%Y} → " if old_due else "Due date: none → ")
+            lines[-1] += f"{new_due:%d.%m.%Y}" if new_due else "none"
         if not lines:
             return {"outcome": "unchanged", "reason": "Nothing changed."}
         if form.get("confirmed") != "1":
@@ -131,8 +144,11 @@ def task(form, key: Optional[str]) -> dict:
         if place != ideaspage.place_of(t):
             kind, pid = place.split(":", 1)
             todos.client().move(tid, section_id=pid if kind == "s" else None, project_id=pid if kind == "p" else None)
+        if new_due != old_due:
+            todos.client().set_due(tid, new_due.isoformat() if new_due else None)
         with connect() as conn, conn.cursor() as cur:
-            logbook._audit(cur, "web_todo", "changed", {"task": tid, "text": content != t["content"], "moved": place != ideaspage.place_of(t)}, logbook.WEB)
+            logbook._audit(cur, "web_todo", "changed", {"task": tid, "text": content != t["content"], "moved": place != ideaspage.place_of(t),
+                                                        "due": new_due != old_due}, logbook.WEB)
         todos.forget()
         return {"outcome": "changed", "head": "Changed in Todoist: " + "; ".join(lines) + "."}
     except TodoistError:

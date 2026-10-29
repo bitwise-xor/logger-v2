@@ -128,27 +128,32 @@ def _charts(d: dict) -> str:
         series.append({"mark": mark, "cls": "b", "pts": [[idx(day), b, tip(day, a, b, per)] for day, a, b in bp[col]]})
     mean = lambda rows: f"{round(_avg([r[1] for r in rows]))}/{round(_avg([r[2] for r in rows]))}" if rows else "–"
     bpstat = f'Morning avg <b>{mean(bp["bm"])}</b> · evening avg <b>{mean(bp["be"])}</b>'
-    pressure = _chart("c-bp", d, series, label="Blood pressure in mmHg")
+    # dashed lines at the limits decided for the Sheet (27.10.2026): amber from 130/80, red from 140/90
+    pressure = _chart("c-bp", d, series, label="Blood pressure in mmHg", lines=[[140, "r", "140"], [130, "w", "130"], [90, "r", "90"], [80, "w", "80"]])
     # fasted sugar
     s = [(day, float(d["vals"][day]["s"]["v"][0])) for day in days if d["vals"].get(day, {}).get("s")]
     sstat = f'avg <b>{round(_avg([v for _, v in s]))}</b> mg/dL · {len(s)} readings' if s else "no readings in this range"
     sugar = _chart("c-sugar", d, [{"mark": "dot", "cls": "a", "pts": [[idx(day), v, f"{_dm(day)}: {v:g} mg/dL"] for day, v in s]}],
-                   label="Fasted blood sugar in mg/dL")
+                   label="Fasted blood sugar in mg/dL", lines=[[126, "r", "126"], [100, "w", "100"]])
     # sleep: hours from bed to wake-up, on the day of the wake-up
     nights = [(day, d["sleep"][day]) for day in days if day in d["sleep"] and 0 < float(d["sleep"][day]["hours"]) < 24]
     hm = lambda h: f"{int(h)} h {round((h % 1) * 60):02d} min"
     pts = [[idx(day), round(float(r["hours"]), 2), f"Night to {_dm(day)}: bed {_hm(r['bed_at'])}, up {_hm(r['wake_at'])}, {hm(float(r['hours']))}"]
            for day, r in nights]
     slstat = f'avg <b>{hm(_avg([float(r["hours"]) for _, r in nights]))}</b> · {len(nights)} nights' if nights else "no nights with bed and wake-up"
-    sleep = _chart("c-sleep", d, [{"mark": "bar", "cls": "a", "pts": pts}], label="Sleep in hours", min=0, unit=" h")
+    sleep = _chart("c-sleep", d, [{"mark": "bar", "cls": "a", "pts": pts}], label="Sleep in hours", min=0, unit=" h",
+                   lines=[[7, "w", "7 h"], [6, "r", "6 h"]])
     card = lambda title, stat, chart, legend="": (f'<div class="card"><h2>{title}</h2><p class="stat">{stat}</p>{chart}'
                                                  + (f'<p class="legend">{legend}</p>' if legend else "") + "</div>")
     return ('<div class="grid2">'
             + card("Weight", wstat, weight, '<i class="key a"></i>daily <i class="key line b"></i>7-day average')
             + card('Blood pressure <span class="small">mmHg</span>', bpstat, pressure,
-                   '<i class="key a"></i>systolic <i class="key b"></i>diastolic · filled = morning, ring = evening')
-            + card('Blood sugar <span class="small">fasted, mg/dL</span>', sstat, sugar)
-            + card("Sleep", slstat, sleep, "Hours from bed to wake-up; point at a bar for the times")
+                   '<i class="key a"></i>systolic <i class="key b"></i>diastolic · filled = morning, ring = evening · '
+                   '<i class="key ref"></i>amber from 130/80 <i class="key ref r"></i>red from 140/90')
+            + card('Blood sugar <span class="small">fasted, mg/dL</span>', sstat, sugar,
+                   '<i class="key ref"></i>amber from 100 <i class="key ref r"></i>red from 126')
+            + card("Sleep", slstat, sleep, 'Hours from bed to wake-up; point at or tap a bar for the times · '
+                   '<i class="key ref"></i>amber under 7 h <i class="key ref r"></i>red under 6 h')
             + "</div>")
 
 

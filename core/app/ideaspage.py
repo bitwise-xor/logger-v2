@@ -143,6 +143,26 @@ def due_of(t: dict):
         return None
 
 
+def due_lock(t: dict) -> str:
+    """Why the date cannot be changed here ("" = it can): a repeating task or one with a time would lose that."""
+    due = t.get("due") if isinstance(t.get("due"), dict) else {}
+    if due.get("is_recurring"):
+        return f'Repeats ({due.get("string") or "recurring"})'
+    if len(str(due.get("date") or "")) > 10:
+        return "Has a time of day"
+    return ""
+
+
+def _due_fields(t: dict) -> str:
+    """The due date in the edit form."""
+    d = due_of(t)
+    if why := due_lock(t):
+        return f'<p class="small">{esc(why)}; change its date in Todoist.</p>'
+    return ('<div class="fields"><label>Due date'
+            f'<input type="date" name="due" value="{d.isoformat() if d else ""}"></label></div>'
+            + ('<label class="row small"><input type="checkbox" name="no_due" value="1"> Remove the due date</label>' if d else ""))
+
+
 def _due_chip(d, today: date) -> str:
     if not d:
         return ""
@@ -171,8 +191,9 @@ def _task_row(csrf: str, t: dict, names: dict, today: date, ours: bool, edit: st
         extra = (f'<form class="fbox" method="post" action="/web/ideas/task">{base}{hidden("act", "edit")}<div class="fields wide2">'
                  f'<label>Text<input name="content" value="{esc(t["content"])}" maxlength="500" required></label>'
                  f'<label>Section<select name="place">{opts}</select></label></div>'
+                 + _due_fields(t) +
                  f'<p class="row"><button class="primary sm" type="submit">Save</button><a class="ghost sm dim" href="{esc(back)}">Cancel</a>'
-                 '<span class="small">You see the change first, then Yes. Due dates are set in Todoist.</span></p></form>')
+                 '<span class="small">You see the change first, then Yes.</span></p></form>')
     link = url("/web/ideas/todoist", sort=_sort_of(back), edit="" if edit == t["id"] else t["id"])
     delete = (f'<form method="post" action="/web/ideas/task">{base}{hidden("act", "delete")}'
               '<button class="icon" type="submit" title="Delete (only tasks the logger added)" aria-label="Delete">&times;</button></form>' if ours else "")

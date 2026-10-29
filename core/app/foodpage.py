@@ -5,6 +5,7 @@ import re
 from datetime import date, timedelta
 from urllib.parse import urlencode
 
+from . import rules
 from .db import connect
 from .todaypage import MACROS, _cols, _head, _n, _plain
 from .webentry import esc, hidden, key
@@ -14,6 +15,16 @@ NUT = (("kcal", "kcal"), ("protein", "Protein g"), ("fat", "Fat g"), ("sat_fat",
        ("fibre", "Fibre g"), ("sugar_total", "Sugar g"), ("sugar_added", "Added sugar g"), ("sodium_mg", "Sodium mg"),
        ("caffeine_mg", "Caffeine mg"))
 FILTERS = (("all", "All"), ("drinks", "Drinks"), ("new", "Added in the last 14 days"), ("review", "Needs review"))
+# The catalogue's orders (fixed SQL texts, picked by key): key, label, ORDER BY
+SORTS = (("eaten", "Most eaten", "count(e.id) DESC, lower(f.name)"),
+         ("recent", "Most eaten in the last 30 days",
+          "count(e.id) FILTER (WHERE e.day > (now() AT TIME ZONE 'Europe/Berlin')::date - 30) DESC, count(e.id) DESC, lower(f.name)"),
+         ("last", "Eaten most recently", "max(e.day) DESC NULLS LAST, lower(f.name)"),
+         ("added", "Newest added", "f.created_at DESC, f.id DESC"),
+         ("kcal", "Most calories", "f.kcal DESC, lower(f.name)"),
+         ("kcal_low", "Fewest calories", "f.kcal ASC, lower(f.name)"),
+         ("protein", "Most protein", "f.protein DESC, lower(f.name)"),
+         ("name", "Name A to Z", "lower(f.name)"))
 MAX_RANGE = 366
 LIST_LIMIT = 400
 BACK = re.compile(r"/web/food(/catalogue|/usual)?(\?[A-Za-z0-9=&._%-]*)?")
@@ -256,7 +267,7 @@ def render_log(csrf: str, q) -> str:
 
 # ---- catalogue -------------------------------------------------------------------------------------
 
-def _food_list(cur, text: str, flt: str):
+def _food_list(cur, text: str, flt: str, sort: str = "eaten"):
     where, args = ["f.active"], []
     t = text.strip().lower()
     if t:
@@ -265,10 +276,11 @@ def _food_list(cur, text: str, flt: str):
                      + (" OR f.id = %s" if m else "") + ")")
         args += [f"%{t}%", f"%{t}%", t] + ([int(m[1])] if m else [])
     where.append({"drinks": "f.is_drink", "new": "f.created_at > now() - interval '14 days'", "review": "f.needs_review"}.get(flt, "true"))
-    cur.execute(f"""SELECT f.id, f.name, f.basis, f.kcal, f.protein, f.fat, f.carbs, f.is_drink, f.needs_review,
+    order = next((o for k, _l, o in SORTS if k == sort), SORTS[0][2])
+    cur.execute(f"""SELECT f.id, f.name, f.basis, f.kcal, f.protein, f.fat, f.carbs, f.is_drink, f.needs_review, f.created_at,
                            count(e.id) AS n, max(e.day) AS last
                     FROM foods f LEFT JOIN food_entries e ON e.food_id = f.id WHERE {" AND ".join(where)}
-                    GROUP BY f.id ORDER BY count(e.id) DESC, lower(f.name) LIMIT %s""", args + [LIST_LIMIT])  # where: fixed texts only
+                    GROUP BY f.id ORDER BY {order} LIMIT %s""", args + [LIST_LIMIT])  # where and order: fixed texts only
     return cur.fetchall()
 
 
@@ -346,27 +358,33 @@ def _usual_meals(cur, csrf: str, um, back: str) -> str:
 def render_catalogue(csrf: str, q) -> str:
     text, flt = str(q.get("q", ""))[:60], q.get("f", "all")
     flt = flt if flt in dict(FILTERS) else "all"
+    srt = q.get("s", "eaten")
+    srt = srt if srt in {k for k, _l, _o in SORTS} else "eaten"
+    s_q = "" if srt == "eaten" else srt  # the default order is left out of the links
     sel = q.get("food", "")
     m = re.fullmatch(r"N(\d+)", sel)
-    back = url("/web/food/catalogue", q=text, f="" if flt == "all" else flt, food=sel)
+    back = url("/web/food/catalogue", q=text, f="" if flt == "all" else flt, s=s_q, food=sel)
     with connect() as conn, conn.cursor() as cur:
-        rows = _food_list(cur, text, flt)
+        rows = _food_list(cur, text, flt, srt)
         body = []
         for r in rows:
             nid = f"N{r['id']}"
             open_ = sel == nid
-            link = url("/web/food/catalogue", q=text, f="" if flt == "all" else flt, food="" if open_ else nid)
+            link = url("/web/food/catalogue", q=text, f="" if flt == "all" else flt, s=s_q, food="" if open_ else nid)
             flags = (' <span class="pill warn">review</span>' if r["needs_review"] else "") + (' <span class="pill">drink</span>' if r["is_drink"] else "")
             body.append(f'<tr class="click{" sel" if open_ else ""}" id="{nid}"><td><a href="{esc(link)}#{nid}"><span class="small">{nid}</span> {esc(r["name"])}</a>{flags}</td>'
                         + "".join(f"<td>{_n(r[k], 1) if r[k] is not None and float(r[k]) % 1 else _n(r[k])}</td>" for k in ("kcal", "protein", "fat", "carbs"))
-                        + f'<td class="hide-sm">{r["n"]}</td><td class="hide-sm">{r["last"].strftime("%d.%m.") if r["last"] else "–"}</td></tr>')
+                        + f'<td class="hide-sm">{r["n"]}</td><td class="hide-sm">{r["last"].strftime("%d.%m.") if r["last"] else "–"}</td>'
+                        + f'<td class="hide-sm">{r["created_at"].astimezone(rules.BERLIN).strftime("%d.%m.%y")}</td></tr>')
             if open_ and m:
-                body.append(f'<tr class="panel"><td colspan="7">{_food_detail(cur, csrf, int(m[1]), back)}</td></tr>')
-    chips = "".join(f'<a class="chip{" on" if k == flt else ""}" href="{esc(url("/web/food/catalogue", q=text, f="" if k == "all" else k))}">{lbl}</a>'
+                body.append(f'<tr class="panel"><td colspan="8">{_food_detail(cur, csrf, int(m[1]), back)}</td></tr>')
+    chips = "".join(f'<a class="chip{" on" if k == flt else ""}" href="{esc(url("/web/food/catalogue", q=text, f="" if k == "all" else k, s=s_q))}">{lbl}</a>'
                     for k, lbl in FILTERS)
+    sort_opts = "".join(f'<option value="{k}"{" selected" if k == srt else ""}>{lbl}</option>' for k, lbl, _o in SORTS)
     search = (f'<form class="row" method="get" action="/web/food/catalogue"><input type="search" name="q" value="{esc(text)}" class="grow" '
               'placeholder="Search by name, word, N number or barcode" aria-label="Search foods">'
-              f'{hidden("f", flt) if flt != "all" else ""}<button class="ghost" type="submit">Search</button></form>')
+              f'{hidden("f", flt) if flt != "all" else ""}<button class="ghost" type="submit">Search</button>'
+              f'<label class="small">Sort by <select name="s" class="autosubmit" aria-label="Sort by">{sort_opts}</select></label></form>')
     lookup = (f'<details class="lookup"><summary class="ghost sm">New food</summary><form class="fbox row" method="post" action="/web/food/lookup">'
               f'{hidden("csrf", csrf)}<input name="name" maxlength="120" required class="grow" placeholder="Food name or barcode" aria-label="Food name or barcode">'
               '<button class="primary sm" type="submit">Look up</button><span class="small">USDA and Open Food Facts, like the chat. '
@@ -374,10 +392,12 @@ def render_catalogue(csrf: str, q) -> str:
     more = f'<p class="small">Showing the first {LIST_LIMIT}; search to find others.</p>' if len(rows) == LIST_LIMIT else ""
     table = (f'<div class="tablewrap"><table class="ft"><thead><tr><th>Food <span class="small">per 100 g or ml</span></th><th>kcal</th>'
              '<th><span class="long">Protein</span><span class="short">P</span></th><th><span class="long">Fat</span><span class="short">F</span></th>'
-             '<th><span class="long">Carbs</span><span class="short">C</span></th><th class="hide-sm">Eaten</th><th class="hide-sm">Last</th></tr></thead>'
-             f'<tbody>{"".join(body) or "<tr><td colspan=7 class=empty>No food matches.</td></tr>"}</tbody></table></div>')
+             '<th><span class="long">Carbs</span><span class="short">C</span></th><th class="hide-sm">Eaten</th><th class="hide-sm">Last</th>'
+             '<th class="hide-sm">Added</th></tr></thead>'
+             f'<tbody>{"".join(body) or "<tr><td colspan=8 class=empty>No food matches.</td></tr>"}</tbody></table></div>')
+    label = next(lbl for k, lbl, _o in SORTS if k == srt)
     return (_tabs("cat") + f'<div class="card">{search}{lookup}<p class="chips">{chips}</p>{table}{more}'
-            '<p class="small hint">Sorted by how often you eat it. Click a food to see and change it.</p></div>')
+            f'<p class="small hint">Sorted by: {label.lower()}. Click a food to see and change it.</p></div>')
 
 
 def render_usual(csrf: str, q) -> str:

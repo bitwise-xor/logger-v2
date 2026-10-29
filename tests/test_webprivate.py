@@ -36,7 +36,7 @@ def test_new_gratitude_lines_are_saved_one_each_without_the_ai(web, fake):
         ("gratitude", "gratitude: the call with my sister", "the call with my sister", "journal", ["gratitude"]),
         ("gratitude", "gratitude: first frost on the fields", "first frost on the fields", "journal", ["gratitude"])]
     assert n("SELECT count(*) AS n FROM raw_inbox") == 0  # never the general inbox
-    assert "sister" not in str(owner_sql("SELECT detail FROM audit_log")) and "sister" not in text.split("<main>")[1].split("New entry")[0]
+    assert "sister" not in str(owner_sql("SELECT detail FROM audit_log")) and "sister" not in text.split("<main id=\"main\">")[1].split("New entry")[0]
     again = act(web, "/web/private/new", kind="gratitude", key="g1", text="Grateful for the walk\n\ngratitude: the call with my sister\nfirst frost on the fields")
     assert n("SELECT count(*) AS n FROM private.entries") == 3, again.text  # a double click saves nothing twice
 
