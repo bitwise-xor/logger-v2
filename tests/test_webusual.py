@@ -62,8 +62,44 @@ def test_a_food_is_added_to_an_existing_usual_meal_by_name(web, fake):
     mid = owner_sql("INSERT INTO usual_meals (name) VALUES ('test bowl') RETURNING id")[0]["id"]
     owner_sql("INSERT INTO usual_meal_items (meal_id, food_id, grams, sort_order) VALUES (%s, %s, 60, 10)", mid, oats)
     page = web[0].get(f"/web/food/usual?um=U{mid}").text
-    assert 'name="add_name" list="foods-dl"' in page and 'name="add_food"' not in page
+    assert 'name="add_name_0" list="foods-dl"' in page and 'name="add_food"' not in page
     shown = act(web, "/web/food/usualmeal", id=f"U{mid}", rows="1", food_0=str(oats), g_0="60", name="test bowl", add_name="test SKYR", add_g="100", act="save")
     assert "please confirm" in shown.text and "Test skyr 100 added" in html.unescape(shown.text) and items(mid) == [("Test oats", 60.0)]
     wrong = act(web, "/web/food/usualmeal", id=f"U{mid}", rows="1", food_0=str(oats), g_0="60", name="test bowl", add_name="nope", add_g="100", act="save")
     assert "Pick the added food from the list" in wrong.text
+
+
+def bowl(web):
+    oats = food("Test oats", 400, 13, 7, 60)
+    for name, kcal in (("Test skyr", 63), ("Test milk", 46), ("Test honey", 304)):
+        food(name, kcal, 5, 1, 10)
+    mid = owner_sql("INSERT INTO usual_meals (name) VALUES ('test bowl') RETURNING id")[0]["id"]
+    owner_sql("INSERT INTO usual_meal_items (meal_id, food_id, grams, sort_order) VALUES (%s, %s, 60, 10)", mid, oats)
+    return mid, dict(id=f"U{mid}", rows="1", food_0=str(oats), g_0="60", name="test bowl", act="save")
+
+
+def test_several_foods_are_added_to_an_existing_usual_meal_at_once(web, fake):
+    mid, base = bowl(web)
+    page = web[0].get(f"/web/food/usual?um=U{mid}").text
+    assert all(f'name="add_name_{k}" list="foods-dl"' in page and f'name="add_g_{k}"' in page for k in range(5)) and 'name="add_name_5"' not in page
+    form = {**base, "add_name_0": "test SKYR", "add_g_0": "100", "add_name_1": "Test milk", "add_g_1": "200,5", "add_name_3": "Test honey", "add_g_3": "15"}
+    shown = act(web, "/web/food/usualmeal", **form)
+    text = html.unescape(shown.text)
+    assert "please confirm" in shown.text and all(x in text for x in ("Test skyr 100 added", "Test milk 200.5 added", "Test honey 15 added"))
+    assert items(mid) == [("Test oats", 60.0)]  # nothing is saved before the Yes
+    done = act(web, "/web/food/usualmeal", **form, confirmed="1")
+    assert "Changed the usual meal" in done.text
+    assert items(mid) == [("Test oats", 60.0), ("Test skyr", 100.0), ("Test milk", 200.5), ("Test honey", 15.0)]
+
+
+def test_added_rows_are_checked_and_empty_rows_are_ignored(web, fake):
+    mid, base = bowl(web)
+    for extra, why in (({"add_name_1": "nope", "add_g_1": "10"}, "Pick the added food from the list"),
+                       ({"add_name_2": "Test skyr"}, "Give the added food an amount"), ({"add_name_2": "Test skyr", "add_g_2": "0"}, "Give the added food an amount"),
+                       ({"add_name_0": "Test milk", "add_g_0": "9000"}, "at most 5000"), ({"add_g_4": "30"}, "Give the amount in added row 5 a food")):
+        assert why in act(web, "/web/food/usualmeal", **{**base, **extra}).text
+    assert items(mid) == [("Test oats", 60.0)]
+    blank = {**base, **{f"add_name_{k}": "" for k in range(5)}, **{f"add_g_{k}": "" for k in range(5)}}
+    assert "Nothing changed." in act(web, "/web/food/usualmeal", **blank).text
+    one = act(web, "/web/food/usualmeal", **{**blank, "add_name_4": "Test milk", "add_g_4": "120"})  # a single food in the last row still works
+    assert "Test milk 120 added" in html.unescape(one.text)

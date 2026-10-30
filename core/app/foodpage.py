@@ -28,6 +28,7 @@ SORTS = (("eaten", "Most eaten", "count(e.id) DESC, lower(f.name)"),
 MAX_RANGE = 366
 LIST_LIMIT = 400
 BACK = re.compile(r"/web/food(/catalogue|/usual)?(\?[A-Za-z0-9=&._%-]*)?")
+ADD_ROWS = 5  # empty "add a food" rows in the editor of a usual meal
 
 
 def url(path: str, **q) -> str:
@@ -341,16 +342,18 @@ def _usual_meals(cur, csrf: str, um, back: str) -> str:
                            f'<td><input type="number" name="g_{k}" min="0" step="any" value="{_plain(i["grams"])}" aria-label="Amount"> {esc(i["basis"])}</td>'
                            f'<td><label class="small"><input type="checkbox" name="rm_{k}" value="1"> remove</label></td></tr>'
                            for k, i in enumerate(items))
+            add_rows = "".join(f'<tr><td><input name="add_name_{k}" list="foods-dl" autocomplete="off" placeholder="add a food: type to search" '
+                               f'aria-label="Add a food {k + 1}"></td><td><input type="number" name="add_g_{k}" min="0" step="any" placeholder="g" '
+                               f'aria-label="Amount of added food {k + 1}"></td><td></td></tr>' for k in range(ADD_ROWS))
             head += (f'<form class="fbox" method="post" action="/web/food/usualmeal">{hidden("csrf", csrf)}{hidden("id", f"U{uid}")}'
                      f'{hidden("rows", str(len(items)))}{hidden("back", back)}'
                      f'<p class="row"><label class="small">Name <input name="name" value="{esc(name)}" maxlength="60" required></label></p>'
                      f'<div class="tablewrap"><table class="ft plain"><tbody>{rows}'
-                     '<tr><td><input name="add_name" list="foods-dl" autocomplete="off" placeholder="add a food: type to search" aria-label="Add a food"></td>'
-                     '<td><input type="number" name="add_g" min="0" step="any" placeholder="g" aria-label="Amount of the added food"></td><td></td></tr>'
+                     f'{add_rows}'
                      '</tbody></table></div><p class="row"><button class="primary sm" type="submit" name="act" value="save">Save</button>'
                      '<button class="ghost sm bad" type="submit" name="act" value="delete">Delete</button>'
                      '<a class="ghost sm dim" href="/web/food/usual">Cancel</a>'
-                     '<span class="small">You see the change first, then Yes. Past meals keep their weights.</span></p></form>')
+                     '<span class="small">Fill in as many "add a food" rows as you need. You see the change first, then Yes. Past meals keep their weights.</span></p></form>')
         out.append(f'<div class="um">{head}</div>')
     return "".join(out) or '<p class="empty">No usual meals yet. Save one from a meal in the food log.</p>'
 

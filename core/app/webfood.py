@@ -292,18 +292,24 @@ def usual_meal(form, key: Optional[str]) -> dict:
         if not fid.isdigit() or g is None or not 0 < g <= 5000:
             return _rejected("Give every food an amount above 0 and at most 5000.")
         items.append((int(fid), g))
-    add_f, add_g = str(form.get("add_food", "")), str(form.get("add_g", "")).strip()
-    if str(form.get("add_name", "")).strip():  # a food typed or picked by name (the page's list), not from a long drop-down
-        with connect() as c, c.cursor() as cur:
-            picked = food_id(cur, form.get("add_name"))
-        if picked is None:
-            return _rejected(f"Pick the added food from the list ({str(form.get('add_name')).strip()} is not exactly one food of the catalogue).")
-        add_f = str(picked)
-    if add_f:
-        g = _num(add_g)
-        if not add_f.isdigit() or g is None or not 0 < g <= 5000:
-            return _rejected("Give the added food an amount above 0 and at most 5000.")
-        items.append((int(add_f), g))
+    # Foods added: the numbered rows of the editor (add_name_k + add_g_k, 30.10.2026) and the older single row (add_name / add_food + add_g)
+    adds = [("", form.get("add_food", ""), form.get("add_name", ""), form.get("add_g", ""))]
+    adds += [(f" {k + 1}", "", form.get(f"add_name_{k}", ""), form.get(f"add_g_{k}", "")) for k in range(foodpage.ADD_ROWS)]
+    for tag, add_f, add_name, add_g in adds:
+        add_f, add_name, add_g = str(add_f), str(add_name).strip(), str(add_g).strip()
+        if add_name:  # a food typed or picked by name (the page's list), not from a long drop-down
+            with connect() as c, c.cursor() as cur:
+                picked = food_id(cur, add_name)
+            if picked is None:
+                return _rejected(f"Pick the added food from the list ({add_name} is not exactly one food of the catalogue).")
+            add_f = str(picked)
+        elif tag and add_g:
+            return _rejected(f"Give the amount in added row{tag} a food, or empty the amount.")
+        if add_f:
+            g = _num(add_g)
+            if not add_f.isdigit() or g is None or not 0 < g <= 5000:
+                return _rejected("Give the added food an amount above 0 and at most 5000.")
+            items.append((int(add_f), g))
     if not items:
         return _rejected("A usual meal needs at least one food. To remove it, use Delete.")
     name = " ".join(str(form.get("name", "")).split())[:60]
