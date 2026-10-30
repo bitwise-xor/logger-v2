@@ -421,3 +421,32 @@ a.primary{text-decoration:none;display:inline-block}
 .hm-sw.on{background:var(--accent);border-color:var(--accent)}
 .hm-sw.on::after{left:20px;box-shadow:none}
 @media (max-width:620px){.hm-stats{flex-basis:100%}}
+
+/* Today page: day picker, macro pie with its share table, an earlier day shown read-only (30.10.2026) */
+:root{--mp:#4a6fa5;--mc:#c1554d;--mf:#d9a82f}
+@media (prefers-color-scheme:dark){:root{--mp:#8fb3e8;--mc:#e8857f;--mf:#e6c14d}}
+.daybar{margin-bottom:.8rem}
+.daybar strong{font-size:1.05rem}
+.macrobox{margin:0 0 1rem}
+.macrobox h3{margin:0 0 .5rem}
+.macros{display:grid;grid-template-columns:8.5rem minmax(0,1fr);gap:1rem;align-items:center}
+.macros>div{min-width:0}
+.pie{display:block;width:100%;height:auto}
+.pie path,.pie circle{stroke:var(--card);stroke-width:1}
+.pie .p{fill:var(--mp)}
+.pie .c{fill:var(--mc)}
+.pie .f{fill:var(--mf)}
+.sw{display:inline-block;width:.7rem;height:.7rem;border-radius:.15rem;margin-right:.4rem}
+.sw.p{background:var(--mp)}
+.sw.c{background:var(--mc)}
+.sw.f{background:var(--mf)}
+.ms{width:100%;border-collapse:collapse;font-size:.9rem}
+.ms th,.ms td{padding:.25rem .4rem;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap;font-variant-numeric:tabular-nums}
+.ms th:first-child,.ms td:first-child{text-align:left}
+.ms th{font-weight:600;color:var(--dim)}
+.ms tfoot td{font-weight:650;border-bottom:0}
+.ms td.ok{color:var(--accent);font-weight:600}
+.ms td.warn{color:var(--warn);font-weight:600}
+.ms td.bad{color:var(--bad);font-weight:600}
+.habit.static{cursor:default}
+@media (max-width:560px){.macros{grid-template-columns:1fr;justify-items:center}.macros .pie{max-width:9rem}.macros>div{width:100%}}

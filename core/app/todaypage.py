@@ -1,6 +1,7 @@
 ﻿"""The web app's Today page: food with its four macros against the day's targets, usual meals with editable weights,
 habit toggles, the Health card (edited in place) and items to review. web.py wraps it in the page and the sign-in."""
-from datetime import date, datetime
+import math
+from datetime import date, datetime, timedelta
 
 from . import healthpage, rules, uiprefs
 from .db import connect
@@ -32,11 +33,24 @@ def _hm(ts) -> str:
     return ts.astimezone(rules.BERLIN).strftime("%H:%M")
 
 
-def load() -> dict:
-    """Everything the page shows for the current logging day."""
+def pick_day(raw=None) -> tuple:
+    """The day to show (today unless an earlier day is asked for) and today's logging day."""
     with connect() as conn, conn.cursor() as cur:
         cur.execute("SELECT log_day(now()) AS d")
-        day = cur.fetchone()["d"]
+        today = cur.fetchone()["d"]
+    try:
+        asked = date.fromisoformat(str(raw))
+    except ValueError:
+        return today, today
+    return min(asked, today), today
+
+
+def load(asked: date | None = None) -> dict:
+    """Everything the page shows for a logging day: today, or the earlier day passed in."""
+    with connect() as conn, conn.cursor() as cur:
+        cur.execute("SELECT log_day(now()) AS d")
+        today = cur.fetchone()["d"]
+        day = min(asked, today) if asked else today
         cur.execute("""SELECT meal, meal_label, kcal, protein, fat, carbs, target_kcal, target_protein, target_fat, target_carbs
                        FROM v_food_day WHERE day = %s ORDER BY meal IS NULL, meal = 0, meal""", (day,))
         food = cur.fetchall()
@@ -86,7 +100,7 @@ def load() -> dict:
         review = cur.fetchall()
         prefs = uiprefs.load(cur)
     return {"day": day, "food": food, "foods": foods, "usual": usual, "habits": habits, "last_tick": last_tick,
-            "health": health, "review": review, "prefs": prefs}
+            "health": health, "review": review, "prefs": prefs, "today": today, "past": day < today}
 
 
 # ---- food -----------------------------------------------------------------------------------------
@@ -133,8 +147,9 @@ def _food_section(d: dict, csrf: str) -> str:
                         f'<span class="small">{esc(f["shown"])}</span></td>{_cols(f)}</tr>' for f in rows)
         groups.append(f'<tbody><tr class="mealrow"><td>{esc(r["meal_label"])}{when}</td>{_cols(r)}</tr>{lines}</tbody>')
     table = (f'<div class="tablewrap"><table class="ft">{_head()}{"".join(groups)}</table></div>' if groups
-             else '<p class="empty">Nothing logged yet today.</p>')
-    return f'<div class="card"><h2>Food and drinks</h2><div class="totals">{tiles}</div>{table}{_usual_section(d, csrf)}</div>'
+             else f'<p class="empty">Nothing logged {"on this day" if d["past"] else "yet today"}.</p>')
+    usual = "" if d["past"] else _usual_section(d, csrf)  # meals are logged for today only
+    return f'<div class="card"><h2>Food and drinks</h2><div class="totals">{tiles}</div>{_macro_block(total)}{table}{usual}</div>'
 
 
 def _usual_section(d: dict, csrf: str) -> str:
@@ -176,15 +191,19 @@ def _habit_section(d: dict, csrf: str) -> str:
     for h in habits:
         done = h["complete"]
         count = f' <span class="cnt">{h["done"]}/{h["target"]}</span>' if h["target"] > 1 else ""
+        if d["past"]:
+            btns.append(f'<span class="habit static{" done" if done else ""}"><span class="box">{"&#10003;" if done else ""}</span>{esc(h["label"])}{count}</span>')
+            continue
         act = hidden("action", "untick") + hidden("eid", str(d["last_tick"].get(h["type_name"], ""))) if done else \
             hidden("action", "tick") + hidden("key", key())
         btns.append(f'<form method="post" action="/web/habit">{hidden("csrf", csrf)}{hidden("name", h["type_name"])}{act}'
                     f'<button class="habit{" done" if done else ""}" type="submit" aria-pressed="{str(done).lower()}">'
                     f'<span class="box">{"&#10003;" if done else ""}</span>{esc(h["label"])}{count}</button></form>')
     n_done = sum(1 for h in habits if h["complete"])
+    hint = "" if d["past"] else '<p class="small hint">Click to tick, click again to untick.</p>'
     return (f'<div class="card"><h2><span>Habits · {n_done} of {len(habits)} done</span><a href="/web/habits">All habits</a></h2>'
             f'<div class="habits">{"".join(btns)}</div>'
-            '<p class="small hint">Click to tick, click again to untick.</p></div>')
+            f'{hint}</div>')
 
 
 def _health_section(d: dict, csrf: str) -> str:
@@ -208,12 +227,18 @@ def _health_section(d: dict, csrf: str) -> str:
             a = _plain(cur["v"][0]) if cur else ""
             fields = (f'<input type="number" name="v1" id="h-{k}" step="any" inputmode="decimal" value="{a}" data-orig="{a}" placeholder="–" aria-label="{label}">')
         small = " · ".join(x for x in (sub, unit, cur["at"] if cur else "") if x)
+        if d["past"]:
+            said = "–" if not cur else cur["v"][0] if k in ("wake", "bed") else "/".join(_plain(v) for v in cur["v"] if v is not None)
+            rows.append(f'<div class="hrow ro"><span class="lbl">{label}{f"<span class=small>{esc(small)}</span>" if small else ""}</span>'
+                        f'<span class="val">{said}</span><span class="end"></span></div>')
+            continue
         rows.append(f'<form class="hrow" method="post" action="/web/health">{hidden("csrf", csrf)}{hidden("row", k)}'
                     f'{hidden("id", cur["id"] if cur else "")}{hidden("key", key())}'
                     f'<span class="lbl">{label}{f"<span class=small>{esc(small)}</span>" if small else ""}</span>'
                     f'<span class="val">{fields}</span><span class="end"><button class="primary save" type="submit">Save</button></span></form>')
-    return ('<div class="card"><h2>Health</h2>' + "".join(rows)
-            + '<p class="small hint">Type a value and press Enter or Save. An empty field logs a new value; a filled one corrects today\'s entry.</p></div>')
+    hint = ("Values of this day, shown only." if d["past"] else
+            "Type a value and press Enter or Save. An empty field logs a new value; a filled one corrects today's entry.")
+    return ('<div class="card"><h2>Health</h2>' + "".join(rows) + f'<p class="small hint">{hint}</p></div>')
 
 
 def _review_item(r: dict, csrf: str) -> str:
@@ -251,10 +276,72 @@ def _review_section(d: dict, csrf: str) -> str:
     return f'<div class="card"><h2>To review</h2>{body}</div>'
 
 
-def render(csrf: str) -> str:
-    d = load()
-    return (f'<div class="grid"><section>{_food_section(d, csrf)}</section>'
-            f'<aside>{_habit_section(d, csrf)}{_health_section(d, csrf)}{_review_section(d, csrf)}'
+# ---- day picker, macro pie ---------------------------------------------------------------------------
+
+MACRO_KCAL = (("protein", "Protein", 4, "p"), ("carbs", "Carbs", 4, "c"), ("fat", "Fat", 9, "f"))  # key, label, kcal per gram, colour class
+
+
+def _pie(shares: list, label: str) -> str:
+    """A pie as inline SVG from (colour class, fraction) pairs; one full share is a circle."""
+    parts = [(c, v) for c, v in shares if v > 0]
+    if len(parts) == 1:
+        body = f'<circle class="{parts[0][0]}" cx="50" cy="50" r="48"/>'
+    else:
+        body, a0 = "", -math.pi / 2
+        for c, v in parts:
+            a1 = a0 + 2 * math.pi * v
+            x0, y0, x1, y1 = 50 + 48 * math.cos(a0), 50 + 48 * math.sin(a0), 50 + 48 * math.cos(a1), 50 + 48 * math.sin(a1)
+            body += f'<path class="{c}" d="M50 50 L{x0:.2f} {y0:.2f} A48 48 0 {1 if v > 0.5 else 0} 1 {x1:.2f} {y1:.2f} Z"/>'
+            a0 = a1
+    return f'<svg class="pie" viewBox="0 0 100 100" role="img" aria-label="{esc(label)}">{body}</svg>'
+
+
+def _macro_block(total) -> str:
+    """Calories from protein, carbs and fat as a pie and a table: the share of each against the share the day's targets ask for."""
+    if not total:
+        return ""
+    kcal = {k: float(total[k] or 0) * m for k, _, m, _ in MACRO_KCAL}
+    whole = sum(kcal.values())
+    if whole <= 0:
+        return ""
+    aim = {k: float(total["target_" + k] or 0) * m for k, _, m, _ in MACRO_KCAL}
+    aim_whole = sum(aim.values())
+    rows, said = [], []
+    for k, label, _m, cls in MACRO_KCAL:
+        share = kcal[k] / whole * 100
+        ideal = aim[k] / aim_whole * 100 if aim_whole else None
+        diff = None if ideal is None else share - ideal
+        level = "" if diff is None else ' class="ok"' if abs(diff) <= 5 else ' class="warn"' if abs(diff) <= 10 else ' class="bad"'
+        said.append(f"{label.lower()} {share:.0f} %")
+        rows.append(f'<tr><td><span class="sw {cls}"></span>{label}</td><td>{_n(total[k], 1)}</td><td>{_n(kcal[k])}</td><td>{share:.1f} %</td>'
+                    f'<td>{"–" if ideal is None else f"{ideal:.1f} %"}</td><td{level}>{"–" if diff is None else f"{diff:+.1f} pts"}</td></tr>')
+    head = "<thead><tr><th>Macro</th><th>g</th><th>kcal</th><th>Share</th><th>Ideal</th><th>Diff.</th></tr></thead>"
+    foot = f'<tfoot><tr><td>Total</td><td></td><td>{_n(whole)}</td><td>100 %</td><td>{"100 %" if aim_whole else "–"}</td><td></td></tr></tfoot>'
+    note = ("Calories counted from protein and carbs (4 per g) and fat (9 per g). "
+            + ("The ideal share comes from the day's targets." if aim_whole else "No targets for this day, so no ideal share."))
+    pie = _pie([(cls, kcal[k] / whole) for k, _, _, cls in MACRO_KCAL], "Calories from " + ", ".join(said))
+    return (f'<div class="macrobox"><h3>Energy from macros</h3><div class="macros">{pie}<div><div class="tablewrap">'
+            f'<table class="ms">{head}<tbody>{"".join(rows)}</tbody>{foot}</table></div><p class="small">{note}</p></div></div></div>')
+
+
+def _daybar(day: date, today: date) -> str:
+    prev, nxt = day - timedelta(days=1), day + timedelta(days=1)
+    return ('<div class="head sub daybar"><strong>' + day_title(day) + (" · today" if day == today else "") + '</strong>'
+            '<form class="row" method="get" action="/web/">'
+            f'<a class="ghost" href="/web/?day={prev.isoformat()}" aria-label="Previous day">&larr;</a>'
+            f'<input type="date" name="day" value="{day.isoformat()}" max="{today.isoformat()}" aria-label="Day" class="autosubmit">'
+            '<button class="ghost sm" type="submit">Show</button>'
+            + (f'<a class="ghost" href="/web/?day={nxt.isoformat()}" aria-label="Next day">&rarr;</a>' if day < today else "")
+            + ("" if day == today else '<a class="ghost dim" href="/web/">Today</a>') + '</form></div>')
+
+
+def render(csrf: str, asked: date | None = None) -> str:
+    d = load(asked)
+    note = ('<p class="small notice">An earlier day: habits and health values are only shown here. '
+            'Click a food to change it on the Food page.</p>' if d["past"] else "")
+    review = "" if d["past"] else _review_section(d, csrf)
+    return (f'{_daybar(d["day"], d["today"])}{note}<div class="grid"><section>{_food_section(d, csrf)}</section>'
+            f'<aside>{_habit_section(d, csrf)}{_health_section(d, csrf)}{review}'
             '<p class="small"><a href="/web/settings?tab=today">Customize this page</a></p></aside></div>')
 
 

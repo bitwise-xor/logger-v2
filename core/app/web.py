@@ -142,9 +142,11 @@ def shell(session, body: str, status: int = 200, active: str = "") -> HTMLRespon
                 f'<nav class="tabs" aria-label="Main menu">{tabs}</nav>', status)
 
 
-def home(session) -> HTMLResponse:
+def home(session, asked=None) -> HTMLResponse:
     csrf = session["csrf"]
-    return shell(session, webquestions.today_section(csrf) + todaypage.render(csrf), active="today")
+    day, today = todaypage.pick_day(asked)
+    questions = webquestions.today_section(csrf) if day == today else ""  # open questions belong to today
+    return shell(session, questions + todaypage.render(csrf, day), active="today")
 
 
 async def _run(work) -> dict:
@@ -186,7 +188,7 @@ def add_routes(mcp) -> None:
         session = current_session(request)
         if not session:
             return RedirectResponse("/web/login", status_code=302, headers={"Cache-Control": "no-store"})
-        return home(session)
+        return home(session, request.query_params.get("day"))
 
     @mcp.custom_route("/web/questions", methods=["GET"])
     async def questions_page(request: Request) -> Response:
