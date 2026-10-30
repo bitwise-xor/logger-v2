@@ -42,12 +42,11 @@ def test_the_habits_page_shows_today_as_buttons_and_30_days_as_squares(web, fake
     owner_sql("UPDATE log_types SET daily_target = 2 WHERE name = 'shoonya'")
     event("shoonya", d, "07:30")
     page = web[0].get("/web/habits").text
-    assert "<h1>Habits</h1>" in page and "Today · 1 of 3 done" in page or "Today · 1 of 3" in page
+    assert "<h1>Habits</h1>" in page and "Today · 1 of 2 done" in page
     assert re.search(r'class="habit big done"[^>]*>.*?Medication', page, re.S) and 'aria-current="page">Habits' in page
     assert f'class="sq d" type="submit" name="day" value="{d.isoformat()}" title="{d:%a %d.%m.}: done"' in page  # meds today
     assert f'class="sq h" type="submit" name="day" value="{d.isoformat()}" title="{d:%a %d.%m.}: 1 of 2"' in page  # shoonya, partly
-    assert page.count('name="day" value="') == 2 * 30  # meds and shoonya; Wake-up is read-only
-    assert re.search(r'<span class="sq[ "]', page) and "read-only" in page
+    assert page.count('name="day" value="') == 2 * 30  # meds and shoonya; Wake-up is a time, not a habit (migration 017)
     assert 'name="back" value="/web/habits"' in page or 'name="back" value="/web/" data-here' in page
 
 
@@ -161,7 +160,7 @@ def usual_meal(name="test bowl"):
 
 def test_the_today_page_shows_everything_until_something_is_chosen(web):
     page = web[0].get("/web/").text
-    for want in ("Medication", "Shoonya", "Wake-up", "Weight", "Blood sugar", "To review", "Customize this page", "All habits"):
+    for want in ("Medication", "Shoonya", "Woke up", "Weight", "Blood sugar", "To review", "Customize this page", "All habits"):
         assert want in page
     assert uiprefs.load.__doc__ and n("SELECT count(*) AS n FROM ui_settings") == 0
 
@@ -178,15 +177,15 @@ def test_the_today_tab_lists_every_part_with_its_order(web):
 def test_hidden_parts_and_their_order_apply_on_today(web):
     mid = usual_meal()
     eat("Old thing", 100, 5, review=True)
-    keep = {"show_habit_shoonya": "1", "pos_habit_shoonya": "1", "pos_habit_meds": "2", "pos_habit_wake": "3", "show_habit_wake": "1",
+    keep = {"show_habit_shoonya": "1", "pos_habit_shoonya": "1", "pos_habit_meds": "2",
             "show_health_weight": "1", "show_health_bp_morning": "1", "show_health_bp_evening": "1", "show_health_wake": "1"}  # not: meds, sugar, usual, review
     assert "Saved." in act(web, "/web/settings/today", **keep).text
     stored = owner_sql("SELECT value FROM ui_settings WHERE key = 'today'")[0]["value"]
     assert set(stored["hidden"]) == {"habit:meds", "health:sugar", f"usual:{mid}", "review:box"}
-    assert stored["order"]["habit"] == ["shoonya", "wake", "meds"] or stored["order"]["habit"][0] == "shoonya"
+    assert stored["order"]["habit"] == ["shoonya", "meds"]
     page = web[0].get("/web/").text
     assert "Medication" not in page and "Blood sugar" not in page and "+ test bowl" not in page and "To review</h2>" not in page
-    assert "Shoonya" in page and page.index("Shoonya") < page.index("Wake-up") and "Weight" in page
+    assert "Shoonya" in page and "Weight" in page
     assert "1 item to review is hidden here" in page and "Looks right" not in page  # a one-line notice, not the box
     assert "Medication" in web[0].get("/web/habits").text  # only the Today page is changed
     assert "Medication" in web[0].get("/web/settings?tab=habits").text

@@ -191,7 +191,7 @@ def _health_section(d: dict, csrf: str) -> str:
         cur = d["health"].get(k)
         if k == "wake":
             v = cur["v"][0] if cur else ""
-            fields = f'<input type="time" name="t" id="h-{k}" value="{v}" data-orig="{v}" aria-label="Woke up at">'
+            fields = f'<input type="time" name="t" id="h-{k}" value="{v}" data-orig="{v}" aria-label="Woke up at"> <button type="button" class="ghost sm" data-now="h-{k}">Now</button>'
         elif k.startswith("bp"):
             a, b = (_plain(cur["v"][0]), _plain(cur["v"][1])) if cur else ("", "")
             fields = (f'<input type="number" class="sm" name="v1" id="h-{k}-1" step="1" inputmode="numeric" value="{a}" data-orig="{a}" placeholder="–" aria-label="{label} {sub} systolic">'

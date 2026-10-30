@@ -17,7 +17,7 @@ from starlette.requests import Request
 from starlette.responses import HTMLResponse, RedirectResponse, Response
 
 from . import (auth, foodpage, habitspage, healthpage, ideaspage, labspage, logbook, privatepage, searchpage, settingspage, todaypage,
-               trendspage, usagepage, webactions, weekpage, webentry, webfood, webideas, weblabs, webprivate, websettings, webquestions)
+               trendspage, usagepage, webactions, weekpage, webentry, webfood, webideas, weblabs, webprivate, webhabits, websettings, webquestions)
 from .ai.provider import ProviderError
 from .config import APP_HOST
 from .db import connect
@@ -456,7 +456,20 @@ def add_routes(mcp) -> None:
         session = current_session(request)
         if not session:
             return RedirectResponse("/web/login", status_code=302, headers={"Cache-Control": "no-store"})
-        return shell(session, habitspage.render(session["csrf"]), active="habits")
+        return shell(session, habitspage.render(session["csrf"], request.query_params), active="habits")
+
+    def habits_form(fn):
+        """One form of the Habits page's list (webhabits.ACTIONS), back to the page it came from."""
+        async def handler(request: Request) -> Response:
+            session, form = await post_form(request)
+            if form is None:
+                return session
+            k = form_key(form)
+            return done(session, await _run(lambda: fn(form, k, session)), back_any(form, "/web/habits"))
+        return handler
+
+    for _name, _fn in webhabits.ACTIONS.items():
+        mcp.custom_route(f"/web/habits/{_name}", methods=["POST"])(habits_form(_fn))
 
     @mcp.custom_route("/web/usual", methods=["POST"])
     async def usual_meal(request: Request) -> Response:

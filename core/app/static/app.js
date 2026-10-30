@@ -39,6 +39,12 @@ document.addEventListener("DOMContentLoaded", () => {
   }));
 
   // Health: Save shows once a value changed and every field of the row is filled
+  document.querySelectorAll("button[data-now]").forEach(b => b.addEventListener("click", () => {  // a time field gets the time now
+    const i = document.getElementById(b.dataset.now), d = new Date();
+    if (!i) return;
+    i.value = String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
+    i.dispatchEvent(new Event("input", { bubbles: true }));
+  }));
   document.querySelectorAll("form.hrow").forEach(f => {
     const ins = [...f.querySelectorAll("input[data-orig]")], btn = f.querySelector(".save");
     const update = () => {
