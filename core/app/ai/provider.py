@@ -1,4 +1,5 @@
 """AI providers behind one small interface, so the parser can move to another API or a local model."""
+import base64
 import json
 import time
 from dataclasses import dataclass
@@ -39,6 +40,11 @@ class Provider(Protocol):
         """Return an object that matches the JSON schema, and what the call used."""
         ...
 
+    def image_json(self, system: str, user: str, images: list[tuple[str, bytes]], schema: dict, model: str,
+                   max_tokens: int = 2000) -> tuple[dict, Usage]:
+        """json() with photos (media type, bytes) before the text: a food label (31.10.2026)."""
+        ...
+
 
 class AnthropicProvider:
     def __init__(self, api_key: str, effort: str = "low", timeout: float = 60.0, max_retries: int = 2):
@@ -70,3 +76,9 @@ class AnthropicProvider:
                       getattr(u, "cache_creation_input_tokens", 0) or 0,
                       time.monotonic() - t0)
         return json.loads(text), usage
+
+    def image_json(self, system: str, user: str, images: list[tuple[str, bytes]], schema: dict, model: str,
+                   max_tokens: int = 2000) -> tuple[dict, Usage]:
+        content = [{"type": "image", "source": {"type": "base64", "media_type": mt, "data": base64.b64encode(b).decode()}}
+                   for mt, b in images]
+        return self.json(system, content + [{"type": "text", "text": user}], schema, model, max_tokens)  # type: ignore[arg-type]

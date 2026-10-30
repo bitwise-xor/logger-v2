@@ -149,14 +149,15 @@ function setupScan(btn) {
   btn.hidden = false;
   const video = dlg.querySelector("video"), msg = dlg.querySelector("[data-scan-msg]"), typed = dlg.querySelector("[data-scan-type]");
   const found = dlg.querySelector("[data-scan-found]"), look = dlg.querySelector("[data-scan-lookup]");
-  let reader = null, busy = false;
+  const file = dlg.querySelector("[data-label-file]"), lform = dlg.querySelector("[data-label-form]");
+  let reader = null, busy = false, lastCode = "";
   const stop = () => {
     if (reader) { try { reader.reset(); } catch (e) { /* already stopped */ } reader = null; }
     if (video.srcObject) { video.srcObject.getTracks().forEach(t => t.stop()); video.srcObject = null; }
   };
   const show = async code => {
     if (busy) return;
-    busy = true; stop();
+    busy = true; stop(); lastCode = code; lform.hidden = true;
     msg.textContent = "Barcode " + code + "…";
     try {
       const r = await fetch("/web/foods/barcode.json?code=" + encodeURIComponent(code), {credentials: "same-origin"});
@@ -185,8 +186,37 @@ function setupScan(btn) {
     s.src = dlg.dataset.lib; s.onload = ok; s.onerror = () => bad(new Error("the scanner did not load"));
     document.head.append(s);
   });
+  // "Photo of the label": the camera stops first (a phone gives the camera to one user at a time), the photo is made
+  // smaller in the browser, Claude reads it on the server, and the values come back into a form to check
+  dlg.querySelector("[data-label-pick]").addEventListener("click", stop);
+  file.addEventListener("change", async () => {
+    const f = file.files && file.files[0];
+    if (!f) return;
+    found.hidden = true; look.hidden = true; lform.hidden = true;
+    msg.textContent = "Claude is reading the label… (a few seconds)";
+    try {
+      const body = new FormData();
+      body.append("photo", await shrink(f), "label.jpg");
+      const r = await fetch("/web/food/label", {method: "POST", credentials: "same-origin", headers: {"X-CSRF": dlg.dataset.csrf}, body});
+      const j = await r.json().catch(() => ({ok: false}));
+      if (!j.ok) { msg.textContent = j.reason || "That did not work; try again."; return; }
+      const set = (k, v) => { lform.querySelector(`[name=${k}]`).value = v == null ? "" : v; };
+      set("name", j.name ? (j.brand && !j.name.toLowerCase().includes(j.brand.toLowerCase()) ? `${j.name} (${j.brand})` : j.name) : "");
+      set("basis", j.basis);
+      Object.entries(j.values).forEach(([k, v]) => set(k, v));
+      set("barcode", lastCode);
+      lform.querySelector("[data-label-note]").textContent = (j.note ? j.note + " " : "") + "Values per 100 " + j.basis + ". Correct anything that is off.";
+      msg.textContent = "Check the values, then Add.";
+      lform.hidden = false;
+      lform.querySelector("[name=name]").focus();
+    } catch (e) {
+      msg.textContent = "That did not work: " + (e && e.message ? e.message : e);
+    } finally {
+      file.value = "";
+    }
+  });
   btn.addEventListener("click", async () => {
-    found.hidden = true; look.hidden = true; busy = false;
+    found.hidden = true; look.hidden = true; lform.hidden = true; busy = false; lastCode = "";
     msg.textContent = "Starting the camera…";
     dlg.showModal();
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { msg.textContent = "No camera here: type the digits."; return; }
@@ -209,6 +239,17 @@ function setupScan(btn) {
   });
   dlg.querySelector("[data-scan-close]").addEventListener("click", () => dlg.close());
   dlg.addEventListener("close", stop);
+}
+
+// A photo made smaller in the browser (at most 1600 px, JPEG) before it is sent: faster on mobile data, and a format
+// Claude reads (an iPhone's HEIC photo comes out as JPEG). If the browser cannot open it, it is sent as it is.
+async function shrink(file) {
+  let img;
+  try { img = await createImageBitmap(file); } catch (e) { return file; }
+  const s = Math.min(1, 1600 / Math.max(img.width, img.height)), c = document.createElement("canvas");
+  c.width = Math.round(img.width * s); c.height = Math.round(img.height * s);
+  c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+  return new Promise(ok => c.toBlob(b => ok(b || file), "image/jpeg", 0.85));
 }
 
 function setupPush(box) {

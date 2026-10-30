@@ -16,7 +16,7 @@ from starlette.concurrency import run_in_threadpool
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 
-from . import (auth, foodpage, habitspage, healthpage, ideaspage, insightspage, labspage, logbook, privatepage, recentpage, searchpage, settingspage, todaypage,
+from . import (auth, foodpage, habitspage, healthpage, ideaspage, insightspage, labelread, labspage, logbook, privatepage, recentpage, searchpage, settingspage, todaypage,
                trendspage, usagepage, webactions, weekpage, webentry, webfood, webideas, weblabs, webprivate, webhabits, websettings, webquestions,
                webpush, webundo)
 from .ai.provider import ProviderError
@@ -490,6 +490,22 @@ def add_routes(mcp) -> None:
             if r:
                 food = {"id": r["id"], "name": r["name"], "basis": r["basis"], "amount": float(r["amount"]) if r["amount"] is not None else 100.0}
         return JSONResponse({"code": code, "food": food}, headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"})
+
+    @mcp.custom_route("/web/food/label", methods=["POST"])
+    async def label_photo(request: Request) -> Response:
+        """The scanner's "Photo of the label": Claude reads the values (labelread.py); the page shows them to check, nothing is saved here."""
+        if (r := hidden(request)) is not None:
+            return r
+        session = current_session(request)
+        if not session or not _origin_ok(request) or not hmac.compare_digest(request.headers.get("x-csrf", ""), session["csrf"]):
+            return JSONResponse({"ok": False}, status_code=403)
+        try:
+            form = await request.form(max_files=1, max_fields=5)
+            photo = form.get("photo")
+            data, media_type = await photo.read(labelread.MAX_BYTES + 1), (photo.content_type or "").split(";")[0].strip().lower()
+        except (AttributeError, ValueError, KeyError):
+            return JSONResponse({"ok": False, "reason": "No photo came with the request."}, status_code=400)
+        return JSONResponse(await _run(lambda: labelread.read(data, media_type)), headers={"Cache-Control": "no-store"})
 
     @mcp.custom_route("/web/sw.js", methods=["GET"])
     async def service_worker(request: Request) -> Response:

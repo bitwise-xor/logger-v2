@@ -612,6 +612,13 @@ dialog.scan::backdrop{background:rgba(10,10,8,.55)}
 dialog.scan p{margin:.6rem 0}
 dialog.scan form.row{margin:.4rem 0 0}
 dialog.scan #scan-code{flex:1;min-width:8rem}
+dialog.scan{max-height:calc(100dvh - 1.5rem);overflow-y:auto}
+.photo-btn{display:inline-flex;align-items:center;gap:.4rem;cursor:pointer}
+.photo-btn svg.ic{width:16px;height:16px}
+.label-form{margin-top:.7rem}
+.label-form .wide{grid-column:1/-1}
+.label-form p{margin:0}
+.label-form input[type=number]{text-align:right}
 .insights{grid-template-columns:repeat(auto-fit,minmax(min(100%,24rem),1fr))}
 .insight .dp{background:var(--bar);color:var(--ink);font-size:.8rem}
 .insight.wait{box-shadow:none;border:1px dashed var(--line2);background:transparent}

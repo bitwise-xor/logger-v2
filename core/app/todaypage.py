@@ -180,7 +180,20 @@ def _scanner(csrf: str) -> str:
     """The barcode scanner (app.js setupScan, the zxing reader loaded on first use): a food of the catalogue with that barcode
     gets an amount and Log (like an Again chip); an unknown one is looked up on Open Food Facts, for a yes on Questions."""
     now = _hm(datetime.now(rules.BERLIN))
-    return ('<dialog class="scan" id="scan-dlg" aria-labelledby="scan-title" data-lib="/web/static/zxing.min.js">'
+    num = lambda k, label, req=False: (f'<label>{label}<input type="number" name="{k}" id="lbl-{k}" min="0" max="5000" step="any" '  # noqa: E731
+                                       f'inputmode="decimal"{" required" if req else ""}></label>')
+    label_form = (f'<form class="fbox fields label-form" method="post" action="/web/food/labeladd" data-label-form hidden>{hidden("csrf", csrf)}'
+                  f'{hidden("key", key())}<input type="hidden" name="barcode" value="">'
+                  '<label class="wide">Name<input name="name" id="lbl-name" maxlength="120" required></label>'
+                  '<label>Per 100<select name="basis" id="lbl-basis"><option value="g">g</option><option value="ml">ml (a drink)</option></select></label>'
+                  + num("kcal", "Calories (kcal)", True) + num("protein", "Protein g", True) + num("fat", "Fat g", True)
+                  + num("sat_fat", "of which saturated g") + num("carbs", "Carbs g", True) + num("sugar_total", "of which sugar g")
+                  + num("fibre", "Fibre g") + num("salt_g", "Salt g")
+                  + '<p class="small wide" data-label-note></p>'
+                  '<label>Log now (optional)<input type="number" name="amount" id="lbl-amount" min="0" max="5000" step="any" inputmode="decimal" placeholder="amount"></label>'
+                  f'<label>Time<input type="time" name="time" id="lbl-time" value="{now}"></label>'
+                  '<p class="wide row"><button class="primary" type="submit">Add to my foods</button></p></form>')
+    return (f'<dialog class="scan" id="scan-dlg" aria-labelledby="scan-title" data-lib="/web/static/zxing.min.js" data-csrf="{esc(csrf)}">'
             f'<div class="scan-head"><b id="scan-title">Scan a barcode</b><button class="iconbtn" type="button" data-scan-close aria-label="Close">{icon("close")}</button></div>'
             '<div class="scan-view"><video id="scan-video" playsinline muted></video></div>'
             '<p class="small" data-scan-msg aria-live="polite"></p>'
@@ -192,7 +205,10 @@ def _scanner(csrf: str) -> str:
             f'<label>Time <input type="time" name="time" id="scan-time" value="{now}"></label><button class="primary sm" type="submit">Log</button></form>'
             f'<form class="row" method="post" action="/web/food/lookup" data-scan-lookup hidden>{hidden("csrf", csrf)}<input type="hidden" name="name" value="">'
             '<span class="small">Not in your catalogue yet.</span><button class="primary sm" type="submit">Look it up on Open Food Facts</button></form>'
-            '</dialog>')
+            f'<p class="row"><label class="ghost sm photo-btn" data-label-pick>{icon("camera")}Photo of the label'
+            '<input class="sr" type="file" accept="image/*" capture="environment" data-label-file></label>'
+            '<span class="small">Claude reads the values; you check them before anything is saved.</span></p>'
+            f'{label_form}</dialog>')
 
 
 def _item(f: dict, d: dict, csrf: str) -> str:

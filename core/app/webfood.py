@@ -7,7 +7,7 @@ import re
 from datetime import datetime, timedelta
 from typing import Optional
 
-from . import commands, foodpage, logbook, v1_log
+from . import commands, foodpage, logbook, record, v1_log
 from .db import connect
 from .todaypage import _plain
 from .v1_log import ReadBack, RecipeDef, RecipeItem, Reject
@@ -371,8 +371,63 @@ def usual_meal(form, key: Optional[str]) -> dict:
                       shown=f'Change the usual meal "{u["name"]}":\n' + "\n".join(f"- {x}" for x in lines))
 
 
+# ---- a food from a label photo (31.10.2026) ---------------------------------------------------------
+
+LABEL_FIELDS = (("kcal", "Calories"), ("protein", "Protein"), ("fat", "Fat"), ("carbs", "Carbs"))
+LABEL_OPTIONAL = ("sat_fat", "sugar_total", "fibre")
+
+
+def label_add(form, key: Optional[str]) -> dict:
+    """The values Claude read from a label photo, as the owner checked and corrected them: the food goes into the catalogue
+    through the logger's own new-food checks (impossible values are refused), with its barcode when it was scanned first;
+    with an amount it is logged straight away as well (like an Again chip)."""
+    name = " ".join(str(form.get("name", "")).split())[:120]
+    if len(name) < 2:
+        return _rejected("Give the food a name.")
+    basis = "ml" if form.get("basis") == "ml" else "g"
+    values: dict = {}
+    for k, label in LABEL_FIELDS:
+        v = _num(form.get(k, ""))
+        if v is None or v < 0:
+            return _rejected(f"{label} per 100 {basis} is missing or not a number.")
+        values[k] = v
+    for k in LABEL_OPTIONAL:
+        if str(form.get(k, "")).strip():
+            v = _num(form.get(k, ""))
+            if v is None or v < 0:
+                return _rejected("The extra values must be numbers (or empty).")
+            values[k] = v
+    salt = str(form.get("salt_g", "")).strip()
+    if salt:
+        s = _num(salt)
+        if s is None or s < 0:
+            return _rejected("Salt must be a number of grams (or empty).")
+        values["sodium_mg"] = round(s * 400, 1)  # salt = sodium x 2.5
+    code = re.sub(r"\D", "", str(form.get("barcode", "")))
+    code = code if BARCODE.fullmatch(code) else None
+    now = datetime.now(BERLIN)
+    values.update(basis=basis, source="label", drink=basis == "ml",
+                  source_note=f"label photo read by Claude, checked by the owner on {now:%d.%m.%Y}" + (f"; barcode {code}" if code else ""))
+    with connect() as conn, conn.cursor() as cur:
+        out = record.add_food(cur, name, values, "catalogue", now, None, confirmed=True)
+        if out["outcome"] == "needs_confirmation" and out.get("code"):
+            # v1 reads every label food back and wants its code: the form the owner checked against the pack is that read-back
+            out = record.add_food(cur, name, values, "catalogue", now, None, food_code=out["code"], confirmed=True)
+        if out["outcome"] not in ("saved", "partly_saved") or not out.get("food_id"):
+            conn.rollback()
+            return out
+        if code:
+            cur.execute("UPDATE foods SET barcode = %s WHERE id = %s", (code, out["food_id"]))
+        logbook._audit(cur, "web_change", "changed", {"what": "food from a label photo", "ids": [out["food_id"]]}, logbook.WEB)
+    head = f"Added {name} to your catalogue."
+    if str(form.get("amount", "")).strip():
+        logged = again({"food": str(out["food_id"]), "amount": form.get("amount"), "time": form.get("time", "")}, key)
+        return {**logged, "head": f"{head} {logged.get('head') or ('Logged it.' if logged.get('outcome') == 'saved' else '')}".strip()}
+    return {"outcome": "changed", "head": head + " Scan it again or find it in the Again chips to log it."}
+
+
 # Every form of the Food page: path under /web/food/, the function, and where the browser goes afterwards
 # (None = the page the form came from).
 ACTIONS = {"entry": (entry, None), "note": (note, None), "copy": (copy, "/web/food"), "usualnew": (usual_new, None), "usualcreate": (usual_create, None),
            "values": (values, None), "words": (words, None), "barcode": (barcode, None), "reviewed": (reviewed, None),
-           "lookup": (lookup, "/web/questions"), "usualmeal": (usual_meal, None), "again": (again, "/web/")}
+           "lookup": (lookup, "/web/questions"), "usualmeal": (usual_meal, None), "again": (again, "/web/"), "labeladd": (label_add, "/web/")}
