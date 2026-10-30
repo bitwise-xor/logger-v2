@@ -2,7 +2,7 @@
 habit toggles, the Health card (edited in place) and items to review. web.py wraps it in the page and the sign-in."""
 from datetime import date, datetime
 
-from . import rules, uiprefs
+from . import healthpage, rules, uiprefs
 from .db import connect
 from .webentry import esc, hidden, key
 
@@ -11,9 +11,9 @@ MACROS = (("kcal", "Calories", "kcal"), ("protein", "Protein", "g"), ("fat", "Fa
 THOUGHT_TYPES = ("idea", "question", "task", "project", "note", "journal", "reading", "progress")
 AREAS = ("health", "projects", "finance", "immigration", "learning", "personal")
 # The Health card's rows: key, label, sub-label, log type, period, unit
-HEALTH_ROWS = (("weight", "Weight", "", "weight", None, "kg"), ("bp_morning", "Blood pressure", "morning", "bp", "morning", "mmHg"),
-               ("bp_evening", "Blood pressure", "evening", "bp", "evening", "mmHg"),
-               ("sugar", "Blood sugar", "fasted", "blood_sugar", "fasted", "mg/dL"), ("wake", "Woke up", "", "wake", None, ""))
+HEALTH_ROWS = (("bed", "Bed", "night before", "bed", None, ""), ("wake", "Woke up", "", "wake", None, ""), ("weight", "Weight", "", "weight", None, "kg"),
+               ("sugar", "Blood sugar", "fasted", "blood_sugar", "fasted", "mg/dL"),
+               ("bp_morning", "Blood pressure", "morning", "bp", "morning", "mmHg"), ("bp_evening", "Blood pressure", "evening", "bp", "evening", "mmHg"))
 
 
 def _n(x, digits: int = 0) -> str:
@@ -66,6 +66,12 @@ def load() -> dict:
         w = cur.fetchone()
         if w:
             health["wake"] = {"id": f"e{w['id']}", "v": [_hm(w["event_at"])], "at": ""}
+        lo, hi = healthpage.bed_window(day)  # the bed time of the night before (noon of the day before to noon of today)
+        cur.execute("""SELECT e.id, e.event_at FROM events e JOIN log_types t ON t.id = e.type_id
+                       WHERE t.name = 'bed' AND e.event_at >= %s AND e.event_at < %s ORDER BY e.event_at DESC, e.id DESC LIMIT 1""", (lo, hi))
+        b = cur.fetchone()
+        if b:
+            health["bed"] = {"id": f"e{b['id']}", "v": [_hm(b["event_at"])], "at": ""}
         cur.execute("""SELECT * FROM (
                          SELECT 't' || t.id AS ref, 'thought' AS kind, t.summary AS what, (t.logged_at AT TIME ZONE 'Europe/Berlin')::date AS day,
                                 t.review_reason AS reason, t.logged_at AS at, t.thought_type AS a, t.area AS b, NULL::numeric AS v1, NULL::numeric AS v2, NULL AS unit
@@ -189,9 +195,11 @@ def _health_section(d: dict, csrf: str) -> str:
         return ""
     for k, label, sub, _t, _p, unit in shown_rows:
         cur = d["health"].get(k)
-        if k == "wake":
+        if k in ("wake", "bed"):
             v = cur["v"][0] if cur else ""
-            fields = f'<input type="time" name="t" id="h-{k}" value="{v}" data-orig="{v}" aria-label="Woke up at"> <button type="button" class="ghost sm" data-now="h-{k}">Now</button>'
+            now_button = ' <button type="button" class="ghost sm" data-now="h-wake">Now</button>' if k == "wake" else ""
+            fields = (f'<input type="time" name="t" id="h-{k}" value="{v}" data-orig="{v}" '
+                      f'aria-label="{"Woke up at" if k == "wake" else "Went to bed at, the night before"}">{now_button}')
         elif k.startswith("bp"):
             a, b = (_plain(cur["v"][0]), _plain(cur["v"][1])) if cur else ("", "")
             fields = (f'<input type="number" class="sm" name="v1" id="h-{k}-1" step="1" inputmode="numeric" value="{a}" data-orig="{a}" placeholder="–" aria-label="{label} {sub} systolic">'

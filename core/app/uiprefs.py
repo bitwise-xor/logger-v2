@@ -6,7 +6,7 @@ from psycopg.types.json import Jsonb
 from .db import connect
 
 KEY = "today"
-HEALTH_ROWS = ("weight", "bp_morning", "bp_evening", "sugar", "wake")  # the Health card's rows (todaypage.HEALTH_ROWS keys)
+HEALTH_ROWS = ("bed", "wake", "weight", "sugar", "bp_morning", "bp_evening")  # the Health card's rows (todaypage.HEALTH_ROWS keys)
 
 
 def load(cur) -> dict:

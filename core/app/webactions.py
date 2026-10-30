@@ -170,11 +170,15 @@ def health(row: str, ref: str, form, key: Optional[str]) -> dict:
         return _rejected("Unknown row.")
     label, sub, ltype, period = _ROWS[row]
     name = f"{label} {sub}".strip()
-    if row == "wake":
-        t = str(form.get("t", "")).strip()
-        if not TIME.match(t):
+    if row in ("wake", "bed"):
+        m = TIME.match(str(form.get("t", "")).strip())
+        if not m:
             return _rejected("Give the time as hh:mm.")
+        t = f"{int(m[1]):02d}:{m[2]}"
         vals, fields, said = None, {"when": t}, t
+        if row == "bed":  # the night before: from noon on it is the evening before today, earlier it is after midnight today
+            with connect() as c:
+                fields = {"when": _when(c.execute("SELECT log_day(now()) AS d").fetchone()["d"], "bed", t)}
     else:
         v1 = _num(form.get("v1", ""))
         v2 = _num(form.get("v2", "")) if ltype == "bp" else None
@@ -197,11 +201,11 @@ def health(row: str, ref: str, form, key: Optional[str]) -> dict:
         out = _change([{"action": "change", "args": {"id": ref, "fields": fields}}], f"health {row}", f"{name} changed to {said}.")
         if out["outcome"] == "needs_confirmation":
             out["confirm"] = {"action": "/web/health", "label": "Yes, save it",
-                              "fields": {"row": row, "id": ref, "confirmed": "1", **({"t": said} if row == "wake" else {"v1": form.get("v1", ""), "v2": form.get("v2", "")})}}
+                              "fields": {"row": row, "id": ref, "confirmed": "1", **({"t": said} if row in ("wake", "bed") else {"v1": form.get("v1", ""), "v2": form.get("v2", "")})}}
         return out
     item = {"type": ltype, "value": vals[0] if vals else None, "value2": vals[1] if vals else None,
             "period": period, "session": None, "when": fields.get("when")}
-    words = {"weight": f"weight {said}", "bp": f"bp {said} {period}", "blood_sugar": f"sugar {said} fasted", "wake": f"woke up {said}"}[ltype]
+    words = {"weight": f"weight {said}", "bp": f"bp {said} {period}", "blood_sugar": f"sugar {said} fasted", "wake": f"woke up {said}", "bed": f"went to bed {said}"}[ltype]
     return logbook.log(words, key, _pred(health=[item]), channel=logbook.WEB)
 
 

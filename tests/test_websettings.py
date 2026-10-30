@@ -178,7 +178,7 @@ def test_hidden_parts_and_their_order_apply_on_today(web):
     mid = usual_meal()
     eat("Old thing", 100, 5, review=True)
     keep = {"show_habit_shoonya": "1", "pos_habit_shoonya": "1", "pos_habit_meds": "2",
-            "show_health_weight": "1", "show_health_bp_morning": "1", "show_health_bp_evening": "1", "show_health_wake": "1"}  # not: meds, sugar, usual, review
+            "show_health_weight": "1", "show_health_bp_morning": "1", "show_health_bp_evening": "1", "show_health_wake": "1", "show_health_bed": "1"}  # not: meds, sugar, usual, review
     assert "Saved." in act(web, "/web/settings/today", **keep).text
     stored = owner_sql("SELECT value FROM ui_settings WHERE key = 'today'")[0]["value"]
     assert set(stored["hidden"]) == {"habit:meds", "health:sugar", f"usual:{mid}", "review:box"}
