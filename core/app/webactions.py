@@ -6,7 +6,7 @@ import re
 from datetime import date, datetime, timedelta
 from typing import Optional
 
-from . import commands, habitspage, healthpage, logbook
+from . import commands, habitspage, healthpage, logbook, webundo
 from .db import connect
 from .todaypage import AREAS, HEALTH_ROWS, THOUGHT_TYPES
 from .v1_log import Reject, _words_in
@@ -33,7 +33,10 @@ def _rejected(reason: str) -> dict:
 
 
 def _change(steps: list[dict], what: str, ok: str) -> dict:
-    """Run changes through the logger's own change function, in one transaction, with an audit row (ids only)."""
+    """Run changes through the logger's own change function, in one transaction, with an audit row (ids only). When every
+    step changes a food entry, a tick or a health value, the rows as they were go with the reply, for the Undo bar."""
+    refs = [str(s["args"].get("id", "")) for s in steps if s["action"] == "change"]
+    before = webundo.snapshot(refs) if refs and len(refs) == len(steps) and all(webundo.undoable(r) for r in refs) else []
     with connect() as conn, conn.cursor() as cur:
         try:
             commands._run_changes(cur, steps, datetime.now(BERLIN))
@@ -46,7 +49,7 @@ def _change(steps: list[dict], what: str, ok: str) -> dict:
                 return {"outcome": "needs_confirmation", "read_back": msg.split(". Ask the user")[0].replace("READ BACK, nothing changed: ", "")}
             return _rejected(msg)
         logbook._audit(cur, "web_change", "changed", {"what": what, "ids": [s["args"].get("id") for s in steps]}, logbook.WEB)
-    return {"outcome": "changed", "head": ok}
+    return {"outcome": "changed", "head": ok, **({"undo_rows": before} if before else {})}
 
 
 # ---- undo ------------------------------------------------------------------------------------------

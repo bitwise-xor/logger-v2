@@ -8,6 +8,7 @@ from .db import connect
 from .webentry import esc, hidden, icon, key
 
 REVIEW_LIMIT = 20
+AGAIN = 8  # Again chips: the latest different foods
 MACROS = (("kcal", "Calories", "kcal"), ("protein", "Protein", "g"), ("fat", "Fat", "g"), ("carbs", "Carbs", "g"))
 THOUGHT_TYPES = ("idea", "question", "task", "project", "note", "journal", "reading", "progress")
 AREAS = ("health", "projects", "finance", "immigration", "learning", "personal")
@@ -98,9 +99,16 @@ def load(asked: date | None = None) -> dict:
                            FROM events e JOIN log_types lt ON lt.id = e.type_id WHERE e.needs_review
                        ) x ORDER BY at DESC LIMIT %s""", (REVIEW_LIMIT,))
         review = cur.fetchall()
+        again = []
+        if day == today:  # the Again chips: the latest different foods, each with the amount used last
+            cur.execute("""SELECT f.id, f.name, f.basis, x.amount FROM (
+                             SELECT DISTINCT ON (e.food_id) e.food_id, e.amount, e.eaten_at, e.id FROM food_entries e
+                             ORDER BY e.food_id, e.eaten_at DESC, e.id DESC) x
+                           JOIN foods f ON f.id = x.food_id WHERE f.active ORDER BY x.eaten_at DESC, x.id DESC LIMIT %s""", (AGAIN,))
+            again = cur.fetchall()
         prefs = uiprefs.load(cur)
     return {"day": day, "food": food, "foods": foods, "usual": usual, "habits": habits, "last_tick": last_tick,
-            "health": health, "review": review, "prefs": prefs, "today": today, "past": day < today}
+            "health": health, "review": review, "prefs": prefs, "today": today, "past": day < today, "again": again}
 
 
 # ---- food -----------------------------------------------------------------------------------------
@@ -157,15 +165,46 @@ def _food_section(d: dict, csrf: str) -> str:
         rows = items.get(r["meal"], [])
         times = [f["time"] for f in rows if f["time"]]
         when = f' <span class="small">{min(times).strftime("%H:%M")}</span>' if times and r["meal"] != 0 else ""
-        edit = lambda f: f'/web/food?day={d["day"].isoformat()}&amp;edit=f{f["id"]}#f{f["id"]}'  # opens the entry on the Food log to change it
-        lines = "".join(f'<tr class="item"><td><a href="{edit(f)}" title="Change or delete">{esc(f["food"])}</a> '
-                        f'<span class="small">{esc(f["shown"])}</span></td>{_cols(f)}</tr>' for f in rows)
+        lines = "".join(f'<tr class="item"><td>{_item(f, d, csrf)}</td>{_cols(f)}</tr>' for f in rows)
         groups.append(f'<tbody><tr class="mealrow"><td>{esc(r["meal_label"])}{when}</td>{_cols(r)}</tr>{lines}</tbody>')
     table = (f'<div class="tablewrap"><table class="ft">{_head()}{"".join(groups)}</table></div>' if groups
              else f'<p class="empty">Nothing logged {"on this day" if d["past"] else "yet today"}.</p>')
-    usual = "" if d["past"] else _usual_section(d, csrf)  # meals are logged for today only
+    usual = "" if d["past"] else _again_section(d, csrf) + _usual_section(d, csrf)  # logged for today only
     return (f'<div class="totals">{tiles}</div>{_macro_block(total)}'
             f'<div class="card"><h2>Food and drinks<a href="/web/food?day={d["day"].isoformat()}">Open food log</a></h2>{table}{usual}</div>')
+
+
+def _item(f: dict, d: dict, csrf: str) -> str:
+    """One food of the table. Today: a tap opens a small editor in place (amount, time, Delete; Undo instead of a question).
+    An earlier day: a link to the entry on the Food log."""
+    shown = f' <span class="small">{esc(f["shown"])}</span>'
+    if d["past"]:
+        href = f'/web/food?day={d["day"].isoformat()}&amp;edit=f{f["id"]}#f{f["id"]}'
+        return f'<a href="{href}" title="Change or delete">{esc(f["food"])}</a>{shown}'
+    ref, t = f"f{f['id']}", f["time"].strftime("%H:%M") if f["time"] else ""
+    return (f'<details class="fe"><summary title="Change or delete">{esc(f["food"])}{shown}</summary>'
+            f'<form class="fe-form" method="post" action="/web/food/entry">{hidden("csrf", csrf)}{hidden("id", ref)}{hidden("back", "/web/")}'
+            f'<label>Amount <input type="number" name="amount" id="fe-a-{ref}" min="0" max="5000" step="any" inputmode="decimal" '
+            f'value="{_plain(f["amount"])}"> {esc(f["unit"])}</label>'
+            f'<label>Time <input type="time" name="time" id="fe-t-{ref}" value="{t}"></label>'
+            '<span class="row"><button class="primary sm" type="submit" name="act" value="save">Save</button>'
+            '<button class="ghost sm bad" type="submit" name="act" value="delete">Delete</button></span></form></details>')
+
+
+def _again_section(d: dict, csrf: str) -> str:
+    """Again chips: the latest different foods; a tap opens the amount (the one used last) and the time, then Log."""
+    if not d["again"]:
+        return ""
+    now = _hm(datetime.now(rules.BERLIN))
+    chips = "".join(
+        f'<details class="usual again"><summary>+ {esc(a["name"])} <span class="small num">{_plain(a["amount"])} {a["basis"]}</span></summary>'
+        f'<form class="again-form" method="post" action="/web/food/again">{hidden("csrf", csrf)}{hidden("key", key())}{hidden("food", str(a["id"]))}'
+        f'<label>Amount <input type="number" name="amount" id="ag-a-{a["id"]}" min="0" max="5000" step="any" inputmode="decimal" '
+        f'value="{_plain(a["amount"])}"> {a["basis"]}</label>'
+        f'<label>Time <input type="time" name="time" id="ag-t-{a["id"]}" value="{now}"></label>'
+        '<button class="primary sm" type="submit">Log</button></form></details>'
+        for a in d["again"])
+    return f'<div class="usual-row again-row"><span class="small">Again:</span>{chips}</div>'
 
 
 def _usual_section(d: dict, csrf: str) -> str:

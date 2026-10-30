@@ -63,16 +63,14 @@ def test_one_day_shows_target_percent_and_left_or_over_in_colour(web):
     assert '<td class="bad">115%</td>' in page and '<td class="good">100%</td>' in page
 
 
-def test_changing_an_entry_shows_it_first_then_changes_on_yes(web, fake):
+def test_changing_an_entry_changes_it_at_once_with_undo(web, fake):  # Undo instead of a question (31.10.2026)
     d = day()
     eid = eat_on(d, "08:10", oats(), 60, 240)
     form = dict(id=f"f{eid}", food=str(owner_sql("SELECT food_id FROM food_entries")[0]["food_id"]), amount="80", time="08:10",
                 act="save", back=f"/web/food?day={d.isoformat()}")
     page = act(web, "/web/food/entry", **form)
-    assert "please confirm" in page.text and "Yes, change" in page.text and "80" in page.text
-    assert float(entry(eid)["amount"]) == 60
-    page = act(web, "/web/food/entry", **form, confirmed="1")
     assert "Changed Test oats." in page.text and float(entry(eid)["amount"]) == 80 and fake.calls == []
+    assert 'action="/web/undo/last"' in page.text and "please confirm" not in page.text
 
 
 def test_another_food_and_another_time(web, fake):
@@ -86,12 +84,10 @@ def test_another_food_and_another_time(web, fake):
     assert (e["name"], e["t"]) == ("Test skyr", "07:15")
 
 
-def test_deleting_an_entry_asks_first(web, fake):
+def test_deleting_an_entry_deletes_it_at_once_with_undo(web, fake):
     eid = eat_on(day(), "08:10", oats(), 60)
     page = act(web, "/web/food/entry", id=f"f{eid}", act="delete", amount="60")
-    assert "Yes, delete" in page.text and entry(eid)
-    act(web, "/web/food/entry", id=f"f{eid}", act="delete", amount="60", confirmed="1")
-    assert entry(eid) is None
+    assert "Deleted Test oats." in page.text and entry(eid) is None and 'action="/web/undo/last"' in page.text
 
 
 def test_a_note_is_saved_at_once_and_shown(web, fake):

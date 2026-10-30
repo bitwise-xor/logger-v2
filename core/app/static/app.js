@@ -6,7 +6,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Enter sends, Shift+Enter makes a new line; the box grows with its text (up to the height app.css allows)
   if (box) {
+    const ac = suggestFoods(box);
     box.addEventListener("keydown", e => {
+      if (ac.key(e)) return;  // the suggestion list took the key (arrows, Enter or Tab on a suggestion, Escape)
       if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); box.form.requestSubmit(); }
     });
     const grow = () => { box.style.height = ""; if (box.value) box.style.height = box.scrollHeight + "px"; };
@@ -109,6 +111,81 @@ document.addEventListener("DOMContentLoaded", () => {
   let resized;
   window.addEventListener("resize", () => { clearTimeout(resized); resized = setTimeout(drawAll, 150); });
 });
+
+// Food suggestions in the entry box (31.10.2026): after 2 letters of the part being typed (after the last comma or
+// "and"), foods of the catalogue that match, most eaten first; picking one puts in its name and the amount eaten last.
+function suggestFoods(box) {
+  let foods = null, shown = [], sel = -1, skip = false;
+  const list = document.createElement("ul");
+  list.className = "ac"; list.id = "ac-list"; list.setAttribute("role", "listbox"); list.hidden = true;
+  box.form.append(list);
+  box.setAttribute("aria-autocomplete", "list"); box.setAttribute("aria-controls", "ac-list"); box.setAttribute("aria-expanded", "false");
+  const load = () => {
+    if (foods) return;
+    foods = [];
+    fetch("/web/foods.json", {credentials: "same-origin"}).then(r => (r.ok ? r.json() : [])).then(j => { foods = j; }).catch(() => {});
+  };
+  box.addEventListener("focus", load);
+  const part = () => {  // the piece being typed: from the last comma, semicolon, line or "and" up to the caret
+    const before = box.value.slice(0, box.selectionStart);
+    const pieces = before.split(/[,;\n]/).pop().split(/\band\b/i);
+    const raw = pieces[pieces.length - 1].replace(/^\s+/, "");
+    const q = raw.replace(/^\d+([.,]\d+)?\s*(g|ml|x)?\s+/i, "").trim().toLowerCase();
+    return {start: before.length - raw.length, end: box.selectionStart, q};
+  };
+  const close = () => { list.hidden = true; shown = []; sel = -1; box.setAttribute("aria-expanded", "false"); box.removeAttribute("aria-activedescendant"); };
+  const amount = f => (f.a == null ? "" : ` ${+f.a.toFixed(1)} ${f.b}`);
+  const pick = f => {
+    const p = part(), text = f.n + amount(f);
+    box.value = box.value.slice(0, p.start) + text + box.value.slice(p.end);
+    const at = p.start + text.length;
+    box.setSelectionRange(at, at);
+    close(); skip = true;
+    box.dispatchEvent(new Event("input", {bubbles: true}));
+    box.focus();
+  };
+  const mark = () => [...list.children].forEach((li, i) => {
+    li.setAttribute("aria-selected", i === sel ? "true" : "false");
+    if (i === sel) box.setAttribute("aria-activedescendant", li.id);
+  });
+  box.addEventListener("input", () => {
+    if (skip) { skip = false; return; }
+    const {q} = part();
+    if (!foods || q.length < 2) { close(); return; }
+    const score = f => {
+      const name = f.n.toLowerCase(), words = (name + " " + (f.w || []).join(" ").toLowerCase());
+      if (name.startsWith(q)) return 3;
+      if (words.split(/[\s,()/-]+/).some(w => w.startsWith(q))) return 2;
+      return words.includes(q) ? 1 : 0;
+    };
+    shown = foods.map(f => [score(f), f]).filter(x => x[0]).sort((a, b) => b[0] - a[0] || b[1].c - a[1].c).slice(0, 6).map(x => x[1]);
+    if (!shown.length) { close(); return; }
+    list.replaceChildren(...shown.map((f, i) => {
+      const li = document.createElement("li"), b = document.createElement("b"), s = document.createElement("span");
+      li.id = "ac-" + i; li.setAttribute("role", "option");
+      b.textContent = f.n; s.textContent = amount(f);
+      li.append(b, s);
+      li.addEventListener("mousedown", e => { e.preventDefault(); pick(f); });
+      return li;
+    }));
+    sel = -1; mark();
+    list.hidden = false; box.setAttribute("aria-expanded", "true");
+  });
+  box.addEventListener("blur", () => setTimeout(close, 150));
+  return {
+    key(e) {
+      if (list.hidden || !shown.length) return false;
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault();
+        sel = (sel + (e.key === "ArrowDown" ? 1 : shown.length - 1 + (sel < 0 ? 1 : 0))) % shown.length;
+        mark(); return true;
+      }
+      if ((e.key === "Enter" || e.key === "Tab") && sel >= 0) { e.preventDefault(); pick(shown[sel]); return true; }
+      if (e.key === "Escape") { e.preventDefault(); close(); return true; }
+      return false;
+    },
+  };
+}
 
 function niceTicks(lo, hi, n) {
   if (hi - lo < 1e-9) { lo -= 1; hi += 1; }

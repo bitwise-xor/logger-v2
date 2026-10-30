@@ -50,6 +50,18 @@ def undo_form(resp: dict, csrf: str) -> str:
             '<button class="ghost sm" type="submit">Undo</button></form>')
 
 
+def undo_bar(rec, csrf: str) -> str:
+    """The Undo bar (31.10.2026): the device's last action, with Undo, until its next action (webundo.record)."""
+    if not rec:
+        return ""
+    if rec.get("raw_id"):
+        button = undo_form({"raw_id": rec["raw_id"], "outcome": "saved"}, csrf)
+    else:
+        button = (f'<form method="post" action="/web/undo/last">{hidden("csrf", csrf)}{hidden("token", rec.get("token", ""))}{here()}'
+                  '<button class="ghost sm" type="submit">Undo</button></form>')
+    return f'<div class="undobar" role="status">{icon("check")}<span>{esc(rec.get("head") or "Saved.")}</span>{button}</div>'
+
+
 def readable(text: str) -> str:
     """A read-back as a person reads it: without the lines that tell the chat app what to do next."""
     keep = [ln for ln in str(text).splitlines()
@@ -95,7 +107,6 @@ def reply_html(resp: dict, csrf: str) -> str:
                   f'<a class="ghost dim" href="{esc(c.get("no", "/web/"))}">{esc(c.get("no_label", "No"))}</a></form>')
     if resp.get("retry_text"):
         extra += '<p class="small">Your message is back in the box above.</p>'
-    extra += undo_form(resp, csrf)
     warn = " warn" if resp["outcome"] in ("rejected", "needs_confirmation", "needs_choice", "not_logged") else ""
     return f'<section class="reply{warn}" aria-live="polite"><b>{esc(head)}</b>{_body(resp)}{extra}</section>'
 
@@ -110,6 +121,7 @@ ICONS = {
     "habits": '<circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/>',
     "ideas": '<path d="M9 18h6M10 21.5h4M12 2.5a6.5 6.5 0 0 0-4 11.6V16h8v-1.9a6.5 6.5 0 0 0-4-11.6z"/>',
     "week": '<rect x="3.5" y="5" width="17" height="15.5" rx="3"/><path d="M3.5 10h17M8 3v4M16 3v4"/>',
+    "recent": '<path d="M3.5 12a8.5 8.5 0 1 0 2.6-6.1L3.5 8.4"/><path d="M3.5 3.8v4.6h4.6M12 7.5V12l3 2"/>',
     "questions": '<circle cx="12" cy="12" r="9"/><path d="M9.6 9.4a2.5 2.5 0 1 1 3.4 2.4c-.6.3-1 .8-1 1.5v.4M12 17h.01"/>',
     "private": '<rect x="4.5" y="10.5" width="15" height="10" rx="2.5"/><path d="M8 10.5v-3a4 4 0 0 1 8 0v3"/>',
     "usage": '<path d="M5 20v-7M11 20V5M17 20v-10M3 20h18"/>',

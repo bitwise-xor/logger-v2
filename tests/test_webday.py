@@ -50,7 +50,8 @@ def test_an_earlier_day_shows_that_days_food_and_its_arrows(web):
     assert f'name="day" value="{d - timedelta(days=1)}"' in page and '<div class="kicker">Today</div>' not in page
     assert f'href="/web/?day={d}" aria-label="Next day"' in page and f'href="/web/?day={d - timedelta(days=2)}" aria-label="Previous day"' in page
     assert 'class="ghost" href="/web/">Today</a>' in page and "An earlier day" in page
-    assert "Test yesterday porridge" not in today(web) and "Test todays skyr" in today(web)
+    table = re.search(r'<table class="ft">.*?</table>', today(web), re.S)[0]  # (yesterday's food may be an Again chip today)
+    assert "Test yesterday porridge" not in table and "Test todays skyr" in table
 
 
 def test_a_day_without_food_says_so(web):

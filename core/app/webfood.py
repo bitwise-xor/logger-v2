@@ -38,6 +38,15 @@ def _ask_first(steps: list[dict], what: str, ok: str, form, action: str, label: 
                         "fields": _again(form) | {"confirmed": "1"}}}
 
 
+def _now_or_ask(steps: list[dict], what: str, ok: str, form, action: str, label: str = "Yes, change") -> dict:
+    """Undo instead of a question (31.10.2026): a food entry's change or delete is made at once and the Undo bar offers to
+    take it back; only a change the logger reads back first (an odd value) still asks, as before."""
+    out = _change(steps, what, ok)
+    if out["outcome"] == "needs_confirmation" and form.get("confirmed") != "1":
+        return _ask_first(steps, what, ok, form, action, label)
+    return out
+
+
 def _hm(t: str) -> str:
     h, m = t.split(":")
     return f"{int(h):02d}:{m}"
@@ -55,8 +64,8 @@ def entry(form, key: Optional[str]) -> dict:
     if not e:
         return _rejected("That entry is not there any more.")
     if form.get("act") == "delete":
-        return _ask_first([{"action": "change", "args": {"id": ref, "delete": True}}], "food delete", f"Deleted {e['name']}.",
-                          form, "/web/food/entry", "Yes, delete")
+        return _now_or_ask([{"action": "change", "args": {"id": ref, "delete": True}}], "food delete", f"Deleted {e['name']}.",
+                           form, "/web/food/entry", "Yes, delete")
     fields: dict = {}
     food = str(form.get("food", ""))
     if food.isdigit() and int(food) != e["food_id"]:
@@ -75,8 +84,31 @@ def entry(form, key: Optional[str]) -> dict:
             fields["when"] = f"{old:%d.%m.%Y} {_hm(t)}"
     if not fields:
         return {"outcome": "unchanged", "reason": "Nothing changed."}
-    return _ask_first([{"action": "change", "args": {"id": ref, "fields": fields}}], "food entry", f"Changed {e['name']}.",
-                      form, "/web/food/entry")
+    return _now_or_ask([{"action": "change", "args": {"id": ref, "fields": fields}}], "food entry", f"Changed {e['name']}.",
+                       form, "/web/food/entry")
+
+
+def again(form, key: Optional[str]) -> dict:
+    """An Again chip on Today: a recently eaten food logged once more, with the amount and time in the chip's small form.
+    Logged like a typed message with a ready parser answer (no AI call), so the Undo bar takes it back."""
+    fid = str(form.get("food", ""))
+    if not fid.isdigit():
+        return _rejected("Unknown food.")
+    with connect() as c:
+        f = c.execute("SELECT id, name, basis, is_drink FROM foods WHERE id = %s AND active", (int(fid),)).fetchone()
+    if not f:
+        return _rejected("That food is not in the catalogue any more.")
+    a = _num(form.get("amount", ""))
+    if a is None or not 0 < a <= 5000:
+        return _rejected(f"Give the amount as a number above 0 and at most 5000 {f['basis']}.")
+    t = str(form.get("time", "")).strip()
+    if t and not TIME.match(t):
+        return _rejected("Give the time as hh:mm.")
+    when = _hm(t) if t else None
+    item = {"food": f"N{f['id']}", "food_en": f["name"], "amount": a, "unit": f["basis"], "grams_per_unit": None,
+            "cooked": False, "drink": f["is_drink"], "when": when, "note": None}
+    text = f"{f['name']} {_plain(a)} {f['basis']} again" + (f" at {when}" if when else "")
+    return logbook.log(text, key, _pred(food=[item]), channel=logbook.WEB)
 
 
 def note(form, key: Optional[str]) -> dict:
@@ -343,4 +375,4 @@ def usual_meal(form, key: Optional[str]) -> dict:
 # (None = the page the form came from).
 ACTIONS = {"entry": (entry, None), "note": (note, None), "copy": (copy, "/web/food"), "usualnew": (usual_new, None), "usualcreate": (usual_create, None),
            "values": (values, None), "words": (words, None), "barcode": (barcode, None), "reviewed": (reviewed, None),
-           "lookup": (lookup, "/web/questions"), "usualmeal": (usual_meal, None)}
+           "lookup": (lookup, "/web/questions"), "usualmeal": (usual_meal, None), "again": (again, "/web/")}

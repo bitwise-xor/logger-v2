@@ -1,6 +1,7 @@
 """Small web app improvements of 29.10.2026: a message that was not saved comes back in the box, the entry box returns to
 its own page, Undo under a reply, a friendly unknown-page, page titles and a skip link, the catalogue's orders, links from
 Today's food rows, the Gratitude date picker and the limit lines on the Health charts."""
+from datetime import timedelta
 import re
 
 from app import logbook
@@ -118,11 +119,15 @@ def test_pages_have_a_title_a_skip_link_and_a_labelled_menu(web):
 
 # ---- Today, the catalogue, Gratitude, Health -------------------------------------------------------
 
-def test_today_links_each_food_to_its_edit_panel(web):
+def test_today_opens_each_food_in_place_and_an_earlier_day_links_to_the_food_log(web):  # in place since 31.10.2026
     d = day()
     eid = eat_on(d, "08:10", oats(), 60, 240)
     page = web[0].get("/web/")
-    assert f'href="/web/food?day={d.isoformat()}&amp;edit=f{eid}#f{eid}"' in page.text
+    assert f'name="id" value="f{eid}"' in page.text and 'action="/web/food/entry"' in page.text
+    owner_sql("UPDATE food_entries SET day = day - 1")
+    page = web[0].get(f"/web/?day={d - timedelta(days=1)}")
+    assert f'href="/web/food?day={(d - timedelta(days=1)).isoformat()}&amp;edit=f{eid}#f{eid}"' in page.text
+    d = d - timedelta(days=1)
     assert 'action="/web/food/entry"' in web[0].get(f"/web/food?day={d.isoformat()}&edit=f{eid}").text
 
 

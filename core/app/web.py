@@ -14,10 +14,11 @@ from datetime import datetime, timedelta, timezone
 from psycopg.types.json import Jsonb
 from starlette.concurrency import run_in_threadpool
 from starlette.requests import Request
-from starlette.responses import HTMLResponse, RedirectResponse, Response
+from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 
-from . import (auth, foodpage, habitspage, healthpage, ideaspage, labspage, logbook, privatepage, searchpage, settingspage, todaypage,
-               trendspage, usagepage, webactions, weekpage, webentry, webfood, webideas, weblabs, webprivate, webhabits, websettings, webquestions)
+from . import (auth, foodpage, habitspage, healthpage, ideaspage, labspage, logbook, privatepage, recentpage, searchpage, settingspage, todaypage,
+               trendspage, usagepage, webactions, weekpage, webentry, webfood, webideas, weblabs, webprivate, webhabits, websettings, webquestions,
+               webundo)
 from .ai.provider import ProviderError
 from .config import APP_HOST
 from .db import connect
@@ -31,10 +32,10 @@ DEVICE_DAYS = 400
 # and _origin_ok needs the real origin. Other sites still get no referrer.
 _HEADERS = {"Cache-Control": "no-store", "X-Frame-Options": "DENY", "Referrer-Policy": "same-origin",
             "X-Content-Type-Options": "nosniff",
-            "Content-Security-Policy": "default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self'; font-src 'self'; "
+            "Content-Security-Policy": "default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self'; "
                                        "form-action 'self'; frame-ancestors 'none'; base-uri 'none'; manifest-src 'self'"}
 # Where a form on the entry box or the reply may send the browser back to: any signed-in page of the app, with its query.
-BACK_ANY = re.compile(r"/web(/(questions|food(/catalogue|/usual|/trends)?|ideas(/todoist)?|health|habits|week|search|private|usage|labs(/tests|/meds)?|settings))?/?"
+BACK_ANY = re.compile(r"/web(/(questions|food(/catalogue|/usual|/trends)?|ideas(/todoist)?|health|habits|week|search|private|usage|labs(/tests|/meds)?|settings|recent))?/?"
                       r"(\?[A-Za-z0-9=&._%+-]*)?")
 _STATIC_DIR = pathlib.Path(__file__).resolve().parent / "static"
 _STATIC = {"app.css": "text/css; charset=utf-8", "app.js": "text/javascript; charset=utf-8", "theme.js": "text/javascript; charset=utf-8",
@@ -81,6 +82,12 @@ def _set_flash(session, resp: dict) -> None:
         c.execute("UPDATE web_sessions SET flash = %s WHERE token_hash = %s", (Jsonb(resp), session["token_hash"]))
 
 
+def _set_undo(session, rec) -> None:
+    """What the Undo bar offers on this device until its next action (None: no bar)."""
+    with connect() as c:
+        c.execute("UPDATE web_sessions SET undo = %s WHERE token_hash = %s", (Jsonb(rec) if rec else None, session["token_hash"]))
+
+
 def _pop_flash(session):
     with connect() as c:
         row = c.execute("SELECT flash FROM web_sessions WHERE token_hash = %s FOR UPDATE", (session["token_hash"],)).fetchone()
@@ -115,7 +122,7 @@ def shell(session, body: str, status: int = 200, active: str = "") -> HTMLRespon
     open_q = webquestions.count()
     links = [("today", "/web/", "Today"), ("food", "/web/food", "Food"), ("ideas", "/web/ideas", "Ideas and tasks"), ("health", "/web/health", "Health"),
              ("habits", "/web/habits", "Habits"), ("week", "/web/week", "Week"), ("questions", "/web/questions", "Questions"),
-             ("private", "/web/private", "Private"), ("usage", "/web/usage", "Usage"),
+             ("recent", "/web/recent", "Recent"), ("private", "/web/private", "Private"), ("usage", "/web/usage", "Usage"),
              ("labs", "/web/labs", "Labs and medication"), ("search", "/web/search", "Search"), ("settings", "/web/settings", "Settings")]
     current = ' aria-current="page"'
     badge = f'<span class="badge">{open_q}<span class="sr"> open</span></span>'
@@ -143,10 +150,11 @@ def shell(session, body: str, status: int = 200, active: str = "") -> HTMLRespon
            '<button class="ghost dim" type="submit">Sign out</button></form></div></header>')
     flash = _pop_flash(session)
     reply = webentry.reply_html(flash, csrf) if flash else ""
+    undo = webentry.undo_bar(session.get("undo"), csrf)
     title = next((label for k, _href, label in links if k == active), "")
     return page(f"{title} · Logger" if title else "Logger",
                 f'<a class="skip" href="#main">Skip to content</a>{bar}<main id="main">'
-                f'{webentry.entry_form(csrf, (flash or {}).get("retry_text", ""))}{reply}{body}</main>'
+                f'{webentry.entry_form(csrf, (flash or {}).get("retry_text", ""))}{reply}{undo}{body}</main>'
                 f'<nav class="tabs" aria-label="Main menu">{tabs}</nav>', status)
 
 
@@ -385,7 +393,9 @@ def add_routes(mcp) -> None:
         return session, form
 
     def done(session, resp: dict, back: str = "/web/") -> Response:
+        rows = resp.pop("undo_rows", None)  # the rows before a change: kept for Undo, not shown
         _set_flash(session, resp)
+        _set_undo(session, webundo.record(resp, rows))  # every action replaces the last one's Undo (or clears it)
         return RedirectResponse(back, status_code=303, headers={"Cache-Control": "no-store"})
 
     def form_key(form):
@@ -416,6 +426,42 @@ def add_routes(mcp) -> None:
             return session
         raw_id = str(form.get("raw_id", ""))[:12]
         return done(session, await _run(lambda: webactions.undo(raw_id)), back_any(form))
+
+    @mcp.custom_route("/web/undo/last", methods=["POST"])
+    async def undo_bar(request: Request) -> Response:
+        """The Undo bar of a delete or a correction: only the change this device made last, named by its token."""
+        session, form = await post_form(request)
+        if form is None:
+            return session
+        rec = session.get("undo") or {}
+        if not rec or not hmac.compare_digest(str(form.get("token", "")), str(rec.get("token", ""))):
+            return done(session, {"outcome": "rejected", "head": "Nothing undone.", "reason": "There is nothing to undo any more."}, back_any(form))
+        return done(session, await _run(lambda: webundo.apply(rec)), back_any(form))
+
+    @mcp.custom_route("/web/recent", methods=["GET"])
+    async def recent_page(request: Request) -> Response:
+        if (r := hidden(request)) is not None:
+            return r
+        session = current_session(request)
+        if not session:
+            return RedirectResponse("/web/login", status_code=302, headers={"Cache-Control": "no-store"})
+        return shell(session, recentpage.render(session["csrf"]), active="recent")
+
+    @mcp.custom_route("/web/foods.json", methods=["GET"])
+    async def foods_json(request: Request) -> Response:
+        """The catalogue for the entry box's suggestions: active foods, how often each was eaten and its last amount."""
+        if (r := hidden(request)) is not None:
+            return r
+        if not current_session(request):
+            return Response("Not found", status_code=404)
+        with connect() as c:
+            rows = c.execute("""SELECT f.name, f.basis, f.aliases, x.amount, coalesce(x.n, 0) AS n FROM foods f
+                                LEFT JOIN (SELECT food_id, count(*) AS n, (array_agg(amount ORDER BY eaten_at DESC, id DESC))[1] AS amount
+                                           FROM food_entries GROUP BY food_id) x ON x.food_id = f.id
+                                WHERE f.active ORDER BY n DESC, f.name""").fetchall()
+        out = [{"n": r["name"], "b": r["basis"], "w": list(r["aliases"] or []), "a": float(r["amount"]) if r["amount"] is not None else None,
+                "c": r["n"]} for r in rows]
+        return JSONResponse(out, headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"})
 
     @mcp.custom_route("/web/answer", methods=["POST"])
     async def answer_question(request: Request) -> Response:

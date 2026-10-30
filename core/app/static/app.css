@@ -544,3 +544,45 @@ a.primary{text-decoration:none;display:inline-block}
 .macrobox h2{flex-direction:column;align-items:flex-start;gap:.15rem}
 @media (max-width:560px){.macros{justify-content:center}.daybar h1{font-size:1.4rem}.donut{width:8rem;height:8rem}
   .ms th:nth-child(2),.ms td:nth-child(2),.ms th:nth-child(3),.ms td:nth-child(3){display:none}}
+
+/* Round 1 (31.10.2026): Undo bar, the food editor on Today, Again chips, food suggestions in the entry box (two lines tall
+   on the PC), the Recent page */
+.entry{position:relative}
+@media (min-width:1081px){.entry textarea{min-height:4.5rem}}
+.ac{position:absolute;left:.6rem;right:.6rem;top:calc(100% + .35rem);z-index:6;margin:0;padding:.3rem;list-style:none;background:var(--card);
+    border-radius:14px;box-shadow:var(--shadow-pop);max-height:18rem;overflow-y:auto}
+.ac li{display:flex;justify-content:space-between;gap:.8rem;padding:.55rem .7rem;border-radius:10px;cursor:pointer}
+.ac li b{font-weight:500;min-width:0}
+.ac li span{color:var(--dim);white-space:nowrap;font-variant-numeric:tabular-nums}
+.ac li:hover,.ac li[aria-selected=true]{background:var(--accent-soft)}
+@media (max-width:1080px){.ac{top:auto;bottom:calc(100% + .35rem)}}
+.undobar{display:flex;align-items:center;gap:.6rem;background:var(--ink);color:var(--card);border-radius:12px;padding:.4rem .45rem .4rem .9rem;
+         margin:-.4rem 0 1.25rem;box-shadow:var(--shadow)}
+.undobar svg.ic{color:var(--accent-soft)}
+.undobar span{flex:1;min-width:0;font-size:.9rem;overflow-wrap:anywhere}
+.undobar form{margin:0}
+.undobar .ghost{background:transparent;color:var(--card);border-color:color-mix(in srgb,var(--card) 40%,transparent);font-weight:600}
+.undobar .ghost:hover{background:color-mix(in srgb,var(--card) 14%,transparent)}
+details.fe>summary{list-style:none;cursor:pointer}
+details.fe>summary::-webkit-details-marker{display:none}
+details.fe>summary:hover{text-decoration:underline}
+details.fe[open]>summary{font-weight:600}
+.fe-form,.again-form{display:flex;flex-wrap:wrap;gap:.5rem .8rem;align-items:center;margin:.55rem 0 .2rem;padding:.6rem .75rem;background:var(--field);
+         border:1px solid var(--line);border-radius:12px;color:var(--ink);white-space:normal;font-weight:400}
+.fe-form label,.again-form label{display:inline-flex;align-items:center;gap:.35rem;font-size:.85rem;color:var(--dim)}
+.fe-form input[type=number],.again-form input[type=number]{width:5rem;text-align:right}
+.fe-form .row{gap:.4rem}
+.again-row+.usual-row{margin-top:.4rem}
+details.usual>summary .small{margin-left:.35rem}
+details.usual[open]>summary .small{color:inherit;opacity:.75}
+details.again[open]{flex-basis:100%}
+.recent{padding-top:.3rem}
+.recent .rc-day{margin:1rem 0 .1rem}
+.rc{padding:.8rem 0;border-top:1px solid var(--line)}
+.rc-day+.rc{border-top:0}
+.rc-top{display:flex;gap:.6rem;align-items:center;font-size:.85rem;color:var(--dim)}
+.rc-text{margin:.3rem 0 .45rem;font-weight:500;white-space:pre-wrap;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}
+.rc-saved{list-style:none;margin:0 0 .55rem;padding:0;display:flex;flex-direction:column;gap:.3rem;font-size:.9rem}
+.rc-saved .pill{margin-right:.35rem}
+.rc-none{margin:0 0 .55rem}
+.rc .row{gap:.4rem}

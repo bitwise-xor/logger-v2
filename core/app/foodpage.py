@@ -27,7 +27,7 @@ SORTS = (("eaten", "Most eaten", "count(e.id) DESC, lower(f.name)"),
          ("name", "Name A to Z", "lower(f.name)"))
 MAX_RANGE = 366
 LIST_LIMIT = 400
-BACK = re.compile(r"/web/food(/catalogue|/usual)?(\?[A-Za-z0-9=&._%-]*)?")
+BACK = re.compile(r"/web/(food(/catalogue|/usual)?)?(\?[A-Za-z0-9=&._%-]*)?")  # the Food page, or Today (its food editor)
 ADD_ROWS = 5  # empty "add a food" rows in the editor of a usual meal
 
 
