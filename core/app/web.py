@@ -31,13 +31,14 @@ DEVICE_DAYS = 400
 # and _origin_ok needs the real origin. Other sites still get no referrer.
 _HEADERS = {"Cache-Control": "no-store", "X-Frame-Options": "DENY", "Referrer-Policy": "same-origin",
             "X-Content-Type-Options": "nosniff",
-            "Content-Security-Policy": "default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self'; "
+            "Content-Security-Policy": "default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self'; font-src 'self'; "
                                        "form-action 'self'; frame-ancestors 'none'; base-uri 'none'; manifest-src 'self'"}
 # Where a form on the entry box or the reply may send the browser back to: any signed-in page of the app, with its query.
 BACK_ANY = re.compile(r"/web(/(questions|food(/catalogue|/usual|/trends)?|ideas(/todoist)?|health|habits|week|search|private|usage|labs(/tests|/meds)?|settings))?/?"
                       r"(\?[A-Za-z0-9=&._%+-]*)?")
 _STATIC_DIR = pathlib.Path(__file__).resolve().parent / "static"
-_STATIC = {"app.css": "text/css; charset=utf-8", "app.js": "text/javascript; charset=utf-8",
+_STATIC = {"app.css": "text/css; charset=utf-8", "app.js": "text/javascript; charset=utf-8", "theme.js": "text/javascript; charset=utf-8",
+           "inter.woff2": "font/woff2",
            "manifest.webmanifest": "application/manifest+json", "icon.svg": "image/svg+xml", "icon-192.png": "image/png",
            "icon-512.png": "image/png", "apple-touch-icon.png": "image/png"}
 _STATIC_V = hashlib.sha256(b"".join((_STATIC_DIR / n).read_bytes() for n in sorted(_STATIC))).hexdigest()[:10]
@@ -94,7 +95,8 @@ def page(title: str, body: str, status: int = 200, cls: str = "") -> HTMLRespons
            '<link rel="icon" href="/web/static/icon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="/web/static/apple-touch-icon.png">'
            '<meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes">'
            '<meta name="apple-mobile-web-app-title" content="Logger"><meta name="apple-mobile-web-app-status-bar-style" content="default">'
-           f'<title>{html.escape(title)}</title><link rel="stylesheet" href="/web/static/app.css?v={_STATIC_V}">'
+           f'<title>{html.escape(title)}</title><script src="/web/static/theme.js?v={_STATIC_V}"></script>'  # light or dark before the first paint
+           f'<link rel="stylesheet" href="/web/static/app.css?v={_STATIC_V}">'
            f'<script src="/web/static/app.js?v={_STATIC_V}" defer></script></head><body class="{cls}">{body}</body></html>')
     return HTMLResponse(doc, status_code=status, headers=_HEADERS)
 
@@ -117,20 +119,26 @@ def shell(session, body: str, status: int = 200, active: str = "") -> HTMLRespon
              ("labs", "/web/labs", "Labs and medication"), ("search", "/web/search", "Search"), ("settings", "/web/settings", "Settings")]
     current = ' aria-current="page"'
     badge = f'<span class="badge">{open_q}<span class="sr"> open</span></span>'
+    icon = webentry.icon
+    # the icon comes after the label in the markup and is drawn before it (CSS order), so the label stays the link's first text
     link = lambda k, href, label: (f'<a href="{href}"{current if k == active else ""}>{label}'
-                                   + (badge if k == "questions" and open_q else "") + "</a>")
-    # Wide screens: all links in the top bar. Phones: Today, Food, Health, Ideas and a More menu in a bar at the bottom.
-    phone = ("today", "food", "health", "ideas")
+                                   + (badge if k == "questions" and open_q else "") + icon(k) + "</a>")
     by_key = {k: (href, label) for k, href, label in links}
-    items = "".join(link(k, href, label) for k, href, label in links)
-    tabs = "".join(link(k, by_key[k][0], "Ideas" if k == "ideas" else by_key[k][1]) for k in phone)
-    more = "".join(link(k, href, label) for k, href, label in links if k not in phone)
-    in_more = active in {k for k, _h, _l in links if k not in phone}
-    tabs += (f'<details class="more"><summary{current if in_more else ""}>More{badge if open_q else ""}</summary>'
-             f'<div class="panel">{more}</div></details>')
+
+    def menu(shown, short=False):
+        """The given links, then a More menu with all the others."""
+        rest = [k for k, _h, _l in links if k not in shown]
+        return ("".join(link(k, by_key[k][0], "Ideas" if short and k == "ideas" else by_key[k][1]) for k in shown)
+                + f'<details class="more"><summary{current if active in rest else ""}>More{badge if open_q else ""}{icon("more")}</summary>'
+                + f'<div class="panel">{"".join(link(k, *by_key[k]) for k in rest)}</div></details>')
+
+    # Wide screens: the main links in the top bar, the rest under More. Phones: Today, Food, Health, Ideas and More in a bar at the bottom.
+    items = menu(("today", "food", "health", "habits", "ideas", "week", "search"))
+    tabs = menu(("today", "food", "health", "ideas"), short=True)
     csrf = session["csrf"]
-    bar = (f'<header><div class="bar"><span class="brand">Logger</span><nav class="top" aria-label="Main">{items}</nav>'
-           f'<span class="small date">{datetime.now(logbook.BERLIN):%a %d.%m.%Y}</span>'
+    bar = (f'<header><div class="bar"><a class="brand" href="/web/">{icon("logo")}Logger</a><nav class="top" aria-label="Main">{items}</nav>'
+           f'<button class="iconbtn themebtn" type="button" data-theme-toggle aria-label="Switch between light and dark">'
+           f'{icon("moon", "moon")}{icon("sun", "sun")}</button>'
            f'<form method="post" action="/web/logout"><input type="hidden" name="csrf" value="{html.escape(csrf)}">'
            '<button class="ghost dim" type="submit">Sign out</button></form></div></header>')
     flash = _pop_flash(session)

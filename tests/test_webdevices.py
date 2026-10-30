@@ -34,7 +34,7 @@ def test_wide_screens_get_every_link_and_phones_a_tab_bar_with_more(web):
     assert [m for m in re.findall(r">(Today|Food|Health|Ideas)<", bar)] == ["Today", "Food", "Health", "Ideas"]
     for label in ("Habits", "Week", "Questions", "Private", "Usage", "Labs and medication", "Search", "Settings"):
         assert f">{label}" in panel and f">{label}" not in bar
-    assert "<summary>More</summary>" in panel and 'aria-current="page">Health' in bar
+    assert "<summary>More<svg" in panel and 'aria-current="page">Health' in bar
 
 
 def test_more_is_marked_when_the_page_is_in_it_and_shows_the_open_questions(web, fake_question):

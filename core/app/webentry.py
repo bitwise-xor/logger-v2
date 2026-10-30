@@ -98,3 +98,33 @@ def reply_html(resp: dict, csrf: str) -> str:
     extra += undo_form(resp, csrf)
     warn = " warn" if resp["outcome"] in ("rejected", "needs_confirmation", "needs_choice", "not_logged") else ""
     return f'<section class="reply{warn}" aria-live="polite"><b>{esc(head)}</b>{_body(resp)}{extra}</section>'
+
+
+# ---- icons: line drawings on a 24 px grid, sized and coloured by app.css (svg.ic), hidden from screen readers -------------
+
+ICONS = {
+    "logo": '<rect x="3" y="3" width="18" height="18" rx="6"/><path d="m8 12.5 2.6 2.6L16 9.5"/>',
+    "today": '<path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/>',
+    "food": '<path d="M3 12h18a9 9 0 0 1-18 0z"/><path d="M8 3.5v4M12 3v5M16 3.5v4"/>',
+    "health": '<path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8z"/>',
+    "habits": '<circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/>',
+    "ideas": '<path d="M9 18h6M10 21.5h4M12 2.5a6.5 6.5 0 0 0-4 11.6V16h8v-1.9a6.5 6.5 0 0 0-4-11.6z"/>',
+    "week": '<rect x="3.5" y="5" width="17" height="15.5" rx="3"/><path d="M3.5 10h17M8 3v4M16 3v4"/>',
+    "questions": '<circle cx="12" cy="12" r="9"/><path d="M9.6 9.4a2.5 2.5 0 1 1 3.4 2.4c-.6.3-1 .8-1 1.5v.4M12 17h.01"/>',
+    "private": '<rect x="4.5" y="10.5" width="15" height="10" rx="2.5"/><path d="M8 10.5v-3a4 4 0 0 1 8 0v3"/>',
+    "usage": '<path d="M5 20v-7M11 20V5M17 20v-10M3 20h18"/>',
+    "labs": '<path d="M9 3h6M10 3v6l-5.4 9.4A1.7 1.7 0 0 0 6.1 21h11.8a1.7 1.7 0 0 0 1.5-2.6L14 9V3"/><path d="M7.4 15h9.2"/>',
+    "search": '<circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/>',
+    "settings": '<path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/>',
+    "more": '<circle cx="5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="19" cy="12" r="1.3"/>',
+    "check": '<path d="m6 12.5 4 4 8-9"/>',
+    "left": '<path d="m15 6-6 6 6 6"/>',
+    "right": '<path d="m9 6 6 6-6 6"/>',
+    "clock": '<circle cx="12" cy="12" r="9"/><path d="M12 7.5V12l3 2"/>',
+    "sun": '<circle cx="12" cy="12" r="4.5"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
+    "moon": '<path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/>',
+}
+
+
+def icon(name: str, cls: str = "") -> str:
+    return f'<svg class="ic{" " + cls if cls else ""}" viewBox="0 0 24 24" aria-hidden="true">{ICONS[name]}</svg>'

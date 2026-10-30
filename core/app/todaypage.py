@@ -5,7 +5,7 @@ from datetime import date, datetime, timedelta
 
 from . import healthpage, rules, uiprefs
 from .db import connect
-from .webentry import esc, hidden, key
+from .webentry import esc, hidden, icon, key
 
 REVIEW_LIMIT = 20
 MACROS = (("kcal", "Calories", "kcal"), ("protein", "Protein", "g"), ("fat", "Fat", "g"), ("carbs", "Carbs", "g"))
@@ -105,11 +105,25 @@ def load(asked: date | None = None) -> dict:
 
 # ---- food -----------------------------------------------------------------------------------------
 
-def _bar(value, target) -> str:
+def _bar(value, target, k: str = "") -> str:
+    """A thin bar in the macro's colour; past the target it turns amber (not for protein, a goal to reach)."""
     pct = min(100.0, float(value or 0) / float(target) * 100) if target else 0
-    over = " over" if target and float(value or 0) > float(target) else ""
+    over = " over" if target and k != "protein" and float(value or 0) > float(target) else ""
     return (f'<svg class="meter" viewBox="0 0 100 4" preserveAspectRatio="none" aria-hidden="true">'
-            f'<rect class="track" width="100" height="4" rx="2"/><rect class="fill{over}" width="{pct:.1f}" height="4" rx="2"/></svg>')
+            f'<rect class="track" width="100" height="4" rx="2"/><rect class="fill {k}{over}" width="{pct:.1f}" height="4" rx="2"/></svg>')
+
+
+def _left(value, target, unit: str, k: str) -> str:
+    """Under a tile: what is left of the target, or how far over it (protein is a goal to reach, the others a limit)."""
+    if not target:
+        return ""
+    gap = float(target) - float(value or 0)
+    amount = f'{_n(abs(gap))}{" g" if unit == "g" else " kcal"}'
+    if gap >= 0:
+        return f'<div class="left small num">{amount} {"to go" if k == "protein" else "left"}</div>'
+    if k == "protein":
+        return '<div class="left small num met">target reached</div>'
+    return f'<div class="left small num over">{amount} over</div>'
 
 
 def _head() -> str:
@@ -125,10 +139,11 @@ def _cols(r: dict) -> str:
 def _food_section(d: dict, csrf: str) -> str:
     total = next((r for r in d["food"] if r["meal"] is None), None)
     tiles = "".join(
-        f'<div class="total"><div class="lbl">{lbl}</div><span class="n num">{_n(total[k] if total else 0)}{" g" if unit == "g" else ""}</span>'
+        f'<div class="total {k}"><div class="lbl">{lbl}</div><span class="n num">{_n(total[k] if total else 0)}{" g" if unit == "g" else ""}</span>'
         + (f' <span class="of num">/ {_n(total["target_" + k])} {unit}</span>' if total and total["target_" + k] else
            (f' <span class="of">{unit}</span>' if unit == "kcal" else ""))
-        + (_bar(total[k], total["target_" + k]) if total and total["target_" + k] else "") + "</div>"
+        + (_bar(total[k], total["target_" + k], k) + _left(total[k], total["target_" + k], unit, k) if total and total["target_" + k] else "")
+        + "</div>"
         for k, lbl, unit in MACROS)
     items: dict = {}
     for f in d["foods"]:
@@ -149,7 +164,8 @@ def _food_section(d: dict, csrf: str) -> str:
     table = (f'<div class="tablewrap"><table class="ft">{_head()}{"".join(groups)}</table></div>' if groups
              else f'<p class="empty">Nothing logged {"on this day" if d["past"] else "yet today"}.</p>')
     usual = "" if d["past"] else _usual_section(d, csrf)  # meals are logged for today only
-    return f'<div class="card"><h2>Food and drinks</h2><div class="totals">{tiles}</div>{_macro_block(total)}{table}{usual}</div>'
+    return (f'<div class="totals">{tiles}</div>{_macro_block(total)}'
+            f'<div class="card"><h2>Food and drinks<a href="/web/food?day={d["day"].isoformat()}">Open food log</a></h2>{table}{usual}</div>')
 
 
 def _usual_section(d: dict, csrf: str) -> str:
@@ -192,13 +208,13 @@ def _habit_section(d: dict, csrf: str) -> str:
         done = h["complete"]
         count = f' <span class="cnt">{h["done"]}/{h["target"]}</span>' if h["target"] > 1 else ""
         if d["past"]:
-            btns.append(f'<span class="habit static{" done" if done else ""}"><span class="box">{"&#10003;" if done else ""}</span>{esc(h["label"])}{count}</span>')
+            btns.append(f'<span class="habit static{" done" if done else ""}"><span class="box">{icon("check")}</span>{esc(h["label"])}{count}</span>')
             continue
         act = hidden("action", "untick") + hidden("eid", str(d["last_tick"].get(h["type_name"], ""))) if done else \
             hidden("action", "tick") + hidden("key", key())
         btns.append(f'<form method="post" action="/web/habit">{hidden("csrf", csrf)}{hidden("name", h["type_name"])}{act}'
                     f'<button class="habit{" done" if done else ""}" type="submit" aria-pressed="{str(done).lower()}">'
-                    f'<span class="box">{"&#10003;" if done else ""}</span>{esc(h["label"])}{count}</button></form>')
+                    f'<span class="box">{icon("check")}</span>{esc(h["label"])}{count}</button></form>')
     n_done = sum(1 for h in habits if h["complete"])
     hint = "" if d["past"] else '<p class="small hint">Click to tick, click again to untick.</p>'
     return (f'<div class="card"><h2><span>Habits · {n_done} of {len(habits)} done</span><a href="/web/habits">All habits</a></h2>'
@@ -272,7 +288,8 @@ def _review_section(d: dict, csrf: str) -> str:
         n = len(d["review"])
         return (f'<p class="small notice">{n} item{"" if n == 1 else "s"} to review is hidden here · '
                 '<a href="/web/settings?tab=today">show the box</a></p>') if n else ""
-    body = "".join(_review_item(r, csrf) for r in d["review"]) or '<p class="empty">Nothing to review.</p>'
+    body = ("".join(_review_item(r, csrf) for r in d["review"])
+            or f'<div class="allgood"><span class="ok-dot">{icon("check")}</span><p class="empty">Nothing to review.</p></div>')
     return f'<div class="card"><h2>To review</h2>{body}</div>'
 
 
@@ -281,8 +298,8 @@ def _review_section(d: dict, csrf: str) -> str:
 MACRO_KCAL = (("protein", "Protein", 4, "p"), ("carbs", "Carbs", 4, "c"), ("fat", "Fat", 9, "f"))  # key, label, kcal per gram, colour class
 
 
-def _pie(shares: list, label: str) -> str:
-    """A pie as inline SVG from (colour class, fraction) pairs; one full share is a circle."""
+def _pie(shares: list, label: str, middle: str = "") -> str:
+    """A donut as inline SVG from (colour class, fraction) pairs, `middle` (the kcal) in its hole; one full share is a circle."""
     parts = [(c, v) for c, v in shares if v > 0]
     if len(parts) == 1:
         body = f'<circle class="{parts[0][0]}" cx="50" cy="50" r="48"/>'
@@ -293,7 +310,9 @@ def _pie(shares: list, label: str) -> str:
             x0, y0, x1, y1 = 50 + 48 * math.cos(a0), 50 + 48 * math.sin(a0), 50 + 48 * math.cos(a1), 50 + 48 * math.sin(a1)
             body += f'<path class="{c}" d="M50 50 L{x0:.2f} {y0:.2f} A48 48 0 {1 if v > 0.5 else 0} 1 {x1:.2f} {y1:.2f} Z"/>'
             a0 = a1
-    return f'<svg class="pie" viewBox="0 0 100 100" role="img" aria-label="{esc(label)}">{body}</svg>'
+    return (f'<div class="donut"><svg class="pie" viewBox="0 0 100 100" role="img" aria-label="{esc(label)}">{body}'
+            f'<circle class="hole" cx="50" cy="50" r="31"/></svg>'
+            f'<div class="mid" aria-hidden="true"><b class="num">{middle}</b><span>kcal</span></div></div>')
 
 
 def _macro_block(total) -> str:
@@ -311,33 +330,39 @@ def _macro_block(total) -> str:
         share = kcal[k] / whole * 100
         ideal = aim[k] / aim_whole * 100 if aim_whole else None
         diff = None if ideal is None else share - ideal
-        level = "" if diff is None else ' class="ok"' if abs(diff) <= 5 else ' class="warn"' if abs(diff) <= 10 else ' class="bad"'
+        level = "" if diff is None else "ok" if abs(diff) <= 5 else "warn" if abs(diff) <= 10 else "bad"
+        gap = "–" if diff is None else f'<span class="dp {level}">{diff:+.1f} pts</span>'
         said.append(f"{label.lower()} {share:.0f} %")
         rows.append(f'<tr><td><span class="sw {cls}"></span>{label}</td><td>{_n(total[k], 1)}</td><td>{_n(kcal[k])}</td><td>{share:.1f} %</td>'
-                    f'<td>{"–" if ideal is None else f"{ideal:.1f} %"}</td><td{level}>{"–" if diff is None else f"{diff:+.1f} pts"}</td></tr>')
+                    f'<td>{"–" if ideal is None else f"{ideal:.1f} %"}</td><td>{gap}</td></tr>')
     head = "<thead><tr><th>Macro</th><th>g</th><th>kcal</th><th>Share</th><th>Ideal</th><th>Diff.</th></tr></thead>"
     foot = f'<tfoot><tr><td>Total</td><td></td><td>{_n(whole)}</td><td>100 %</td><td>{"100 %" if aim_whole else "–"}</td><td></td></tr></tfoot>'
-    note = ("Calories counted from protein and carbs (4 per g) and fat (9 per g). "
-            + ("The ideal share comes from the day's targets." if aim_whole else "No targets for this day, so no ideal share."))
-    pie = _pie([(cls, kcal[k] / whole) for k, _, _, cls in MACRO_KCAL], "Calories from " + ", ".join(said))
-    return (f'<div class="macrobox"><h3>Energy from macros</h3><div class="macros">{pie}<div><div class="tablewrap">'
+    note = ("The ideal share comes from the day's targets." if aim_whole else "No targets for this day, so no ideal share.")
+    pie = _pie([(cls, kcal[k] / whole) for k, _, _, cls in MACRO_KCAL], "Calories from " + ", ".join(said), _n(whole))
+    return (f'<div class="card macrobox"><h2>Energy from macros<span class="small">kcal from protein, carbs (4 per g) and fat (9 per g)</span></h2>'
+            f'<div class="macros">{pie}<div><div class="tablewrap">'
             f'<table class="ms">{head}<tbody>{"".join(rows)}</tbody>{foot}</table></div><p class="small">{note}</p></div></div></div>')
 
 
 def _daybar(day: date, today: date) -> str:
+    """The day as a title (Today, Yesterday, n days ago above it) with arrows and a date field to go to another day."""
     prev, nxt = day - timedelta(days=1), day + timedelta(days=1)
-    return ('<div class="head sub daybar"><strong>' + day_title(day) + (" · today" if day == today else "") + '</strong>'
+    back = (today - day).days
+    kicker = "Today" if back == 0 else "Yesterday" if back == 1 else f"{back} days ago"
+    year = "" if day.year == today.year else f" {day.year}"
+    after = (f'<a class="iconbtn" href="/web/?day={nxt.isoformat()}" aria-label="Next day">{icon("right")}</a>' if day < today
+             else f'<span class="iconbtn off">{icon("right")}</span>')
+    return (f'<div class="daybar"><div><div class="kicker">{kicker}</div><h1>{day:%A}, {day.day} {day:%B}{year}</h1></div>'
             '<form class="row" method="get" action="/web/">'
-            f'<a class="ghost" href="/web/?day={prev.isoformat()}" aria-label="Previous day">&larr;</a>'
+            f'<a class="iconbtn" href="/web/?day={prev.isoformat()}" aria-label="Previous day">{icon("left")}</a>'
             f'<input type="date" name="day" value="{day.isoformat()}" max="{today.isoformat()}" aria-label="Day" class="autosubmit">'
-            '<button class="ghost sm" type="submit">Show</button>'
-            + (f'<a class="ghost" href="/web/?day={nxt.isoformat()}" aria-label="Next day">&rarr;</a>' if day < today else "")
-            + ("" if day == today else '<a class="ghost dim" href="/web/">Today</a>') + '</form></div>')
+            '<button class="ghost sm nojs" type="submit">Show</button>'
+            + after + ("" if day == today else '<a class="ghost" href="/web/">Today</a>') + '</form></div>')
 
 
 def render(csrf: str, asked: date | None = None) -> str:
     d = load(asked)
-    note = ('<p class="small notice">An earlier day: habits and health values are only shown here. '
+    note = (f'<p class="notice earlier">{icon("clock")}An earlier day: habits and health values are only shown here. '
             'Click a food to change it on the Food page.</p>' if d["past"] else "")
     review = "" if d["past"] else _review_section(d, csrf)
     return (f'{_daybar(d["day"], d["today"])}{note}<div class="grid"><section>{_food_section(d, csrf)}</section>'

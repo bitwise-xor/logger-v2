@@ -4,10 +4,15 @@
 document.addEventListener("DOMContentLoaded", () => {
   const box = document.getElementById("entry-text");
 
-  // Enter sends, Shift+Enter makes a new line
-  if (box) box.addEventListener("keydown", e => {
-    if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); box.form.requestSubmit(); }
-  });
+  // Enter sends, Shift+Enter makes a new line; the box grows with its text (up to the height app.css allows)
+  if (box) {
+    box.addEventListener("keydown", e => {
+      if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); box.form.requestSubmit(); }
+    });
+    const grow = () => { box.style.height = ""; if (box.value) box.style.height = box.scrollHeight + "px"; };
+    box.addEventListener("input", grow);
+    grow();
+  }
 
   // The entry box and the Undo button send the browser back to the page they were used on
   document.querySelectorAll("input[data-here]").forEach(i => { i.value = location.pathname + location.search; });
@@ -23,9 +28,16 @@ document.addEventListener("DOMContentLoaded", () => {
       if (e.persisted) { btn.disabled = false; btn.textContent = label; box.readOnly = false; }
     });
   }
-  // The phone menu's "More" closes when something else is tapped
-  const more = document.querySelector(".tabs details.more");
-  if (more) document.addEventListener("click", e => { if (more.open && !more.contains(e.target)) more.open = false; });
+  // The menus' "More" closes when something else is tapped
+  document.querySelectorAll("details.more").forEach(more =>
+    document.addEventListener("click", e => { if (more.open && !more.contains(e.target)) more.open = false; }));
+
+  // Light or dark: the button switches and this device remembers it (theme.js applies it before the next page paints)
+  document.querySelectorAll("[data-theme-toggle]").forEach(b => b.addEventListener("click", () => {
+    const t = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+    document.documentElement.dataset.theme = t;
+    try { localStorage.setItem("theme", t); } catch (e) { /* private mode: only this page */ }
+  }));
   document.addEventListener("submit", () => document.body.classList.add("busy"));
   window.addEventListener("pageshow", () => document.body.classList.remove("busy"));
 
