@@ -547,8 +547,7 @@ a.primary{text-decoration:none;display:inline-block}
 
 /* Round 1 (31.10.2026): Undo bar, the food editor on Today, Again chips, food suggestions in the entry box (two lines tall
    on the PC), the Recent page */
-.entry{position:relative}
-@media (min-width:1081px){.entry textarea{min-height:4.5rem}}
+@media (min-width:1081px){.entry{position:relative}.entry textarea{min-height:4.5rem}}  /* PC only: on phones the box stays pinned (fixed) */
 .ac{position:absolute;left:.6rem;right:.6rem;top:calc(100% + .35rem);z-index:6;margin:0;padding:.3rem;list-style:none;background:var(--card);
     border-radius:14px;box-shadow:var(--shadow-pop);max-height:18rem;overflow-y:auto}
 .ac li{display:flex;justify-content:space-between;gap:.8rem;padding:.55rem .7rem;border-radius:10px;cursor:pointer}
