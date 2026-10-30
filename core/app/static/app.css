@@ -598,3 +598,30 @@ details.again[open]{flex-basis:100%}
 .nrow{padding:.55rem 0;border-top:1px solid var(--line);gap:.5rem}
 .nrow:first-of-type{border-top:0}
 .nrow input[type=number]{width:4.2rem;text-align:right}
+
+/* Round 3 (31.10.2026): the barcode scanner on Today, the Insights page */
+h2 .row{gap:.6rem;align-items:center}
+h2 .ghost.sm{display:inline-flex;align-items:center;gap:.35rem}
+h2 .ghost.sm svg.ic{width:16px;height:16px}
+dialog.scan{width:min(30rem,calc(100vw - 1.5rem));border:0;border-radius:18px;padding:1rem;background:var(--card);color:var(--ink);box-shadow:var(--shadow-pop)}
+dialog.scan::backdrop{background:rgba(10,10,8,.55)}
+.scan-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:.7rem}
+.scan-view{position:relative;border-radius:12px;overflow:hidden;background:#000;aspect-ratio:4/3}
+.scan-view video{width:100%;height:100%;object-fit:cover;display:block}
+.scan-view::after{content:"";position:absolute;left:12%;right:12%;top:30%;bottom:30%;border:2px solid rgba(255,255,255,.85);border-radius:10px;
+                  box-shadow:0 0 0 999px rgba(0,0,0,.25)}
+dialog.scan p{margin:.6rem 0}
+dialog.scan form.row{margin:.4rem 0 0}
+dialog.scan #scan-code{flex:1;min-width:8rem}
+.insights{grid-template-columns:repeat(auto-fit,minmax(min(100%,24rem),1fr))}
+.insight .dp{background:var(--bar);color:var(--ink);font-size:.8rem}
+.insight.wait{box-shadow:none;border:1px dashed var(--line2);background:transparent}
+.isay{margin:0 0 .9rem;max-width:62ch}
+.ib{display:grid;grid-template-columns:minmax(0,12rem) minmax(0,1fr) auto;gap:.3rem .8rem;align-items:center;padding:.35rem 0;font-size:.9rem}
+.ib-l{min-width:0}
+.ib-v{font-weight:600;white-space:nowrap}
+.ibar{display:block;width:100%;height:10px}
+.ibar .track{fill:var(--bar)}
+.ibar .fill.a{fill:var(--accent)}
+.ibar .fill.b{fill:var(--c2)}
+@media (max-width:560px){.ib{grid-template-columns:1fr auto}.ib .ibar{grid-column:1/-1;grid-row:2}}

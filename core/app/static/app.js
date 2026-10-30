@@ -65,6 +65,10 @@ document.addEventListener("DOMContentLoaded", () => {
   // Notifications (Settings > Notifications): this device asks for permission, subscribes, and the server keeps its address
   const push = document.querySelector("[data-push]");
   if (push) setupPush(push);
+
+  // Barcode scanner on Today (31.10.2026)
+  const scan = document.querySelector("button[data-scan]");
+  if (scan) setupScan(scan);
   document.addEventListener("submit", () => document.body.classList.add("busy"));
   window.addEventListener("pageshow", () => document.body.classList.remove("busy"));
 
@@ -136,6 +140,76 @@ document.addEventListener("DOMContentLoaded", () => {
   let resized;
   window.addEventListener("resize", () => { clearTimeout(resized); resized = setTimeout(drawAll, 150); });
 });
+
+// The scanner: the camera reads EAN/UPC codes with the zxing library (loaded on first use, from the app itself); typing
+// the digits works too. A catalogue food with that code gets amount, time and Log; an unknown code goes to Open Food Facts.
+function setupScan(btn) {
+  const dlg = document.getElementById("scan-dlg");
+  if (!dlg || typeof dlg.showModal !== "function") return;
+  btn.hidden = false;
+  const video = dlg.querySelector("video"), msg = dlg.querySelector("[data-scan-msg]"), typed = dlg.querySelector("[data-scan-type]");
+  const found = dlg.querySelector("[data-scan-found]"), look = dlg.querySelector("[data-scan-lookup]");
+  let reader = null, busy = false;
+  const stop = () => {
+    if (reader) { try { reader.reset(); } catch (e) { /* already stopped */ } reader = null; }
+    if (video.srcObject) { video.srcObject.getTracks().forEach(t => t.stop()); video.srcObject = null; }
+  };
+  const show = async code => {
+    if (busy) return;
+    busy = true; stop();
+    msg.textContent = "Barcode " + code + "…";
+    try {
+      const r = await fetch("/web/foods/barcode.json?code=" + encodeURIComponent(code), {credentials: "same-origin"});
+      const j = r.ok ? await r.json() : {food: null};
+      if (j.food) {
+        found.querySelector("[name=food]").value = j.food.id;
+        found.querySelector("[data-scan-name]").textContent = j.food.name;
+        found.querySelector("[data-scan-unit]").textContent = j.food.basis;
+        found.querySelector("[name=amount]").value = +j.food.amount.toFixed(1);
+        msg.textContent = "In your catalogue:";
+        found.hidden = false; look.hidden = true;
+        found.querySelector("[name=amount]").focus();
+      } else {
+        look.querySelector("[name=name]").value = code;
+        msg.textContent = "Barcode " + code + ".";
+        look.hidden = false; found.hidden = true;
+      }
+    } catch (e) {
+      msg.textContent = "The look-up did not work; try again.";
+    }
+    busy = false;
+  };
+  const library = () => new Promise((ok, bad) => {
+    if (window.ZXing) { ok(); return; }
+    const s = document.createElement("script");
+    s.src = dlg.dataset.lib; s.onload = ok; s.onerror = () => bad(new Error("the scanner did not load"));
+    document.head.append(s);
+  });
+  btn.addEventListener("click", async () => {
+    found.hidden = true; look.hidden = true; busy = false;
+    msg.textContent = "Starting the camera…";
+    dlg.showModal();
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { msg.textContent = "No camera here: type the digits."; return; }
+    try {
+      await library();
+      const Z = window.ZXing, hints = new Map();
+      hints.set(Z.DecodeHintType.POSSIBLE_FORMATS, [Z.BarcodeFormat.EAN_13, Z.BarcodeFormat.EAN_8, Z.BarcodeFormat.UPC_A, Z.BarcodeFormat.UPC_E]);
+      reader = new Z.BrowserMultiFormatReader(hints);
+      await reader.decodeFromConstraints({video: {facingMode: "environment"}}, video, res => { if (res) show(res.getText()); });
+      msg.textContent = "Hold the barcode inside the frame.";
+    } catch (e) {
+      stop();
+      msg.textContent = "The camera did not start (" + (e && e.message ? e.message : e) + "). Type the digits instead.";
+    }
+  });
+  typed.addEventListener("submit", e => {
+    e.preventDefault();
+    const v = typed.querySelector("input").value.replace(/\s/g, "");
+    if (/^\d{8,14}$/.test(v)) show(v); else msg.textContent = "A barcode is 8 to 14 digits.";
+  });
+  dlg.querySelector("[data-scan-close]").addEventListener("click", () => dlg.close());
+  dlg.addEventListener("close", stop);
+}
 
 function setupPush(box) {
   const btn = box.querySelector("[data-push-on]"), msg = box.querySelector("[data-push-msg]");

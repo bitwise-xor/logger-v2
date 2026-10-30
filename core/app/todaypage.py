@@ -169,9 +169,30 @@ def _food_section(d: dict, csrf: str) -> str:
         groups.append(f'<tbody><tr class="mealrow"><td>{esc(r["meal_label"])}{when}</td>{_cols(r)}</tr>{lines}</tbody>')
     table = (f'<div class="tablewrap"><table class="ft">{_head()}{"".join(groups)}</table></div>' if groups
              else f'<p class="empty">Nothing logged {"on this day" if d["past"] else "yet today"}.</p>')
-    usual = "" if d["past"] else _again_section(d, csrf) + _usual_section(d, csrf)  # logged for today only
+    usual = "" if d["past"] else _again_section(d, csrf) + _usual_section(d, csrf) + _scanner(csrf)  # logged for today only
+    scan = "" if d["past"] else f'<button class="ghost sm" type="button" data-scan hidden>{icon("barcode")}Scan</button>'
     return (f'<div class="totals">{tiles}</div>{_macro_block(total)}'
-            f'<div class="card"><h2>Food and drinks<a href="/web/food?day={d["day"].isoformat()}">Open food log</a></h2>{table}{usual}</div>')
+            f'<div class="card"><h2>Food and drinks<span class="row">{scan}<a href="/web/food?day={d["day"].isoformat()}">Open food log</a></span></h2>'
+            f'{table}{usual}</div>')
+
+
+def _scanner(csrf: str) -> str:
+    """The barcode scanner (app.js setupScan, the zxing reader loaded on first use): a food of the catalogue with that barcode
+    gets an amount and Log (like an Again chip); an unknown one is looked up on Open Food Facts, for a yes on Questions."""
+    now = _hm(datetime.now(rules.BERLIN))
+    return ('<dialog class="scan" id="scan-dlg" aria-labelledby="scan-title" data-lib="/web/static/zxing.min.js">'
+            f'<div class="scan-head"><b id="scan-title">Scan a barcode</b><button class="iconbtn" type="button" data-scan-close aria-label="Close">{icon("close")}</button></div>'
+            '<div class="scan-view"><video id="scan-video" playsinline muted></video></div>'
+            '<p class="small" data-scan-msg aria-live="polite"></p>'
+            '<form class="row" data-scan-type><input id="scan-code" inputmode="numeric" autocomplete="off" placeholder="or type the digits" '
+            'aria-label="Barcode digits"><button class="ghost sm" type="submit">Find</button></form>'
+            f'<form class="again-form" method="post" action="/web/food/again" data-scan-found hidden>{hidden("csrf", csrf)}{hidden("key", key())}'
+            '<input type="hidden" name="food" value=""><b data-scan-name></b>'
+            '<label>Amount <input type="number" name="amount" id="scan-amount" min="0" max="5000" step="any" inputmode="decimal"> <span data-scan-unit></span></label>'
+            f'<label>Time <input type="time" name="time" id="scan-time" value="{now}"></label><button class="primary sm" type="submit">Log</button></form>'
+            f'<form class="row" method="post" action="/web/food/lookup" data-scan-lookup hidden>{hidden("csrf", csrf)}<input type="hidden" name="name" value="">'
+            '<span class="small">Not in your catalogue yet.</span><button class="primary sm" type="submit">Look it up on Open Food Facts</button></form>'
+            '</dialog>')
 
 
 def _item(f: dict, d: dict, csrf: str) -> str:

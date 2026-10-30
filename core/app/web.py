@@ -16,7 +16,7 @@ from starlette.concurrency import run_in_threadpool
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 
-from . import (auth, foodpage, habitspage, healthpage, ideaspage, labspage, logbook, privatepage, recentpage, searchpage, settingspage, todaypage,
+from . import (auth, foodpage, habitspage, healthpage, ideaspage, insightspage, labspage, logbook, privatepage, recentpage, searchpage, settingspage, todaypage,
                trendspage, usagepage, webactions, weekpage, webentry, webfood, webideas, weblabs, webprivate, webhabits, websettings, webquestions,
                webpush, webundo)
 from .ai.provider import ProviderError
@@ -35,11 +35,11 @@ _HEADERS = {"Cache-Control": "no-store", "X-Frame-Options": "DENY", "Referrer-Po
             "Content-Security-Policy": "default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self'; "
                                        "form-action 'self'; frame-ancestors 'none'; base-uri 'none'; manifest-src 'self'"}
 # Where a form on the entry box or the reply may send the browser back to: any signed-in page of the app, with its query.
-BACK_ANY = re.compile(r"/web(/(questions|food(/catalogue|/usual|/trends)?|ideas(/todoist)?|health|habits|week|search|private|usage|labs(/tests|/meds)?|settings|recent))?/?"
+BACK_ANY = re.compile(r"/web(/(questions|food(/catalogue|/usual|/trends)?|ideas(/todoist)?|health|habits|week|search|private|usage|labs(/tests|/meds)?|settings|recent|insights))?/?"
                       r"(\?[A-Za-z0-9=&._%+-]*)?")
 _STATIC_DIR = pathlib.Path(__file__).resolve().parent / "static"
 _STATIC = {"app.css": "text/css; charset=utf-8", "app.js": "text/javascript; charset=utf-8", "theme.js": "text/javascript; charset=utf-8",
-           "inter.woff2": "font/woff2",
+           "inter.woff2": "font/woff2", "zxing.min.js": "text/javascript; charset=utf-8",  # zxing: the barcode reader, loaded only when scanning
            "manifest.webmanifest": "application/manifest+json", "icon.svg": "image/svg+xml", "icon-192.png": "image/png",
            "icon-512.png": "image/png", "apple-touch-icon.png": "image/png"}
 _STATIC_V = hashlib.sha256(b"".join((_STATIC_DIR / n).read_bytes() for n in sorted(_STATIC))).hexdigest()[:10]
@@ -122,7 +122,7 @@ def shell(session, body: str, status: int = 200, active: str = "") -> HTMLRespon
     open_q = webquestions.count()
     links = [("today", "/web/", "Today"), ("food", "/web/food", "Food"), ("ideas", "/web/ideas", "Ideas and tasks"), ("health", "/web/health", "Health"),
              ("habits", "/web/habits", "Habits"), ("week", "/web/week", "Week"), ("questions", "/web/questions", "Questions"),
-             ("recent", "/web/recent", "Recent"), ("private", "/web/private", "Private"), ("usage", "/web/usage", "Usage"),
+             ("recent", "/web/recent", "Recent"), ("insights", "/web/insights", "Insights"), ("private", "/web/private", "Private"), ("usage", "/web/usage", "Usage"),
              ("labs", "/web/labs", "Labs and medication"), ("search", "/web/search", "Search"), ("settings", "/web/settings", "Settings")]
     current = ' aria-current="page"'
     badge = f'<span class="badge">{open_q}<span class="sr"> open</span></span>'
@@ -462,6 +462,34 @@ def add_routes(mcp) -> None:
         out = [{"n": r["name"], "b": r["basis"], "w": list(r["aliases"] or []), "a": float(r["amount"]) if r["amount"] is not None else None,
                 "c": r["n"]} for r in rows]
         return JSONResponse(out, headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"})
+
+    @mcp.custom_route("/web/insights", methods=["GET"])
+    async def insights_page(request: Request) -> Response:
+        if (r := hidden(request)) is not None:
+            return r
+        session = current_session(request)
+        if not session:
+            return RedirectResponse("/web/login", status_code=302, headers={"Cache-Control": "no-store"})
+        return shell(session, insightspage.render(session["csrf"]), active="insights")
+
+    @mcp.custom_route("/web/foods/barcode.json", methods=["GET"])
+    async def food_by_barcode(request: Request) -> Response:
+        """The scanner on Today: the catalogue's food with this barcode (and the amount eaten last), or null."""
+        if (r := hidden(request)) is not None:
+            return r
+        if not current_session(request):
+            return Response("Not found", status_code=404)
+        code = re.sub(r"\D", "", request.query_params.get("code", ""))[:14]
+        food = None
+        if len(code) >= 8:
+            same = {code, code.zfill(13) if len(code) == 12 else code, code[1:] if len(code) == 13 and code[0] == "0" else code}  # UPC-A = EAN-13 with a 0
+            with connect() as c:
+                r = c.execute("""SELECT f.id, f.name, f.basis, (SELECT e.amount FROM food_entries e WHERE e.food_id = f.id
+                                                               ORDER BY e.eaten_at DESC, e.id DESC LIMIT 1) AS amount
+                                 FROM foods f WHERE f.active AND f.barcode = ANY(%s) ORDER BY f.id LIMIT 1""", (list(same),)).fetchone()
+            if r:
+                food = {"id": r["id"], "name": r["name"], "basis": r["basis"], "amount": float(r["amount"]) if r["amount"] is not None else 100.0}
+        return JSONResponse({"code": code, "food": food}, headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"})
 
     @mcp.custom_route("/web/sw.js", methods=["GET"])
     async def service_worker(request: Request) -> Response:
