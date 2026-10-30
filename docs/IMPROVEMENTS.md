@@ -7,10 +7,16 @@ Before building one, plan it in the doc first (with a clickable mockup for a new
 
 Size: S = about an hour, M = about half a day, L = a day or more. Rough guesses.
 
-## Status (29.10.2026, end of the first build run; details in `docs/reports/web-app-2026-10-29.md`)
+## Status (31.10.2026; the first build run of 29.10. is described in `docs/reports/web-app-2026-10-29.md`)
+
+- **31.10.2026, the three "frictionless" rounds (details in HANDOVER section 000):** the whole web app restyled (Inter, soft cards, icons, light/dark switch, phone tab bar with the entry box pinned above it); Today for any day (date picker, earlier days read-only) with the macro donut and share table; Undo bar; food entries change at once (no "Yes" question); food editor in place on Today; Again chips; food suggestions in the entry box; a 2-line entry box on the PC; the Recent page; notifications ("nudges") through web push (Settings > Notifications); voice input (microphone in the entry box); the barcode scanner (zxing) with Open Food Facts look-up and **photos of nutrition labels read by Claude**; the Insights page. Item 17 (barcode by camera) is done by this.
+- **Open ideas after those rounds:** section 8 below (items 35 to 51). The user's answers on 31.10. are in the private artifact https://claude.ai/artifact/9rHgvRxZWG7tV2LdXxdQhg (swipe: not needed; sleep hours and mood/energy: "save it for the next version").
+- **Not yet checked on the user's real iPhone:** a real notification (needs Logger on the home screen, iOS 16.4+), the microphone in the home-screen app. The barcode scanner and the label photo were tried by the user and work.
+
+## Status (29.10.2026, end of the first build run)
 
 - **Done and deployed:** 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 19, 22, 23, 26 (the unknown-page screen; the error page is not done), 27 (titles, skip link, labelled menus), 30, 31, 32, 33, 34.
-- **Open:** 16 (lab upload on the web), 17 (barcode by camera), 18 (link thoughts): no answers yet. 25 (one helper for the host check) and the error page of 26 are code tidying, not started.
+- **Open:** 16 (lab upload on the web), 18 (link thoughts): no answers yet. (17, barcode by camera, was built on 31.10.) 25 (one helper for the host check) and the error page of 26 are code tidying, not started.
 - **Habits page, 30.10.2026:** the page lists every habit with a Track switch, Retire / Bring back, Delete (never-used only) and a New habit form; Wake-up and Bedtime are times, not habits (migration 017; Health card "Now" button). See `docs/reports/habits-page-2026-10-30.md`.
 - **On the core list, not here:** 20, 21, 24, 28, 29 (see `docs/CORE-IMPROVEMENTS.md`).
 
@@ -87,6 +93,30 @@ Size: S = about an hour, M = about half a day, L = a day or more. Rough guesses.
 |---|---|---|---|
 | 28 | Check that prompt caching works (it is switched on, but the audit log cannot show whether it is used; see `docs/CORE-IMPROVEMENTS.md` items 3 to 6 for AI cost) | Each AI call sends about 7,000 input tokens, mostly the same prompt every time; input is about 98% of the tokens | S |
 | 29 | Token counts for food lookups and lab reports on the Usage page | Known gap: only model and cost are recorded for them | S |
+
+## 8. Open ideas after the 31.10.2026 rounds
+
+Collected from the user's list of 30.10.2026 and the answers on 31.10.2026. Nothing here is started. Plan each one in the doc first (a clickable mockup for a new page).
+
+| # | Idea | Notes | Size |
+|---|---|---|---|
+| 35 | Swipe left/right to change the day on Today and the Food log (phone) | The user answered "not needed" on 31.10.; parked. Today already has arrows and a date field | S |
+| 36 | Sleep hours: from Bed to Woke up, on the Today Health card ("7 h 35 min"), as a Health page chart with a 7-day average (amber under 7 h, red under 6 h, like the Sheet), and on the Week page | User: "save it for the next version". The data exists (bed and wake events; the Health page already shows the bed time of the night before) | M |
+| 37 | Mood and energy check-in: 1 to 5 buttons in a small card on Today and in chat ("mood 4, energy 3") | User: "next version". Undecided: which scales (mood and energy, or also stress), once in the evening or morning and evening. Would feed the Insights page and could be a nudge | M |
+| 38 | Minutes for practices (Shoonya, meditation, study) as minutes, not only a tick | A twice-a-day count already works as a habit target | M |
+| 39 | Activity: steps or walk minutes, typed or from the phone health export | The `health-export` channel already carried 23 messages | M |
+| 40 | Water as its own daily target with a bar on Today | Drinks are logged already; needs a target per day | S |
+| 41 | Weight trend: 7-day average, weekly change, an optional goal weight | Smooths day-to-day jumps; the Health chart already has a 7-day average line | S-M |
+| 42 | Lab report upload with trends (item 16): photo or PDF read by Claude, shown to check, then saved | The label-photo flow (`labelread.py`, `webfood.label_add`) is the pattern: read, check, add | L |
+| 43 | Medication schedule: dose and time with a reminder | The nudge code (`nudges.py`, web push) can carry it | M |
+| 44 | A photo attached to a food entry (a memory aid when the amount was a guess) | Needs somewhere to keep photos (disk is at about 82%) | M-L |
+| 45 | A daily or weekly digest, and an export of everything logged (CSV or JSON) | Same as core items 17 and 19 | M |
+| 46 | One-tap usual meals: a tap logs the meal with its saved weights, the editor stays for changes | Today has "+ meal" buttons that open an editor first | S |
+| 47 | Phone home-screen shortcuts that open straight at Log food or Weight | iOS limits what a web app can offer; check what works | S |
+| 48 | "All look right" on the review box | One button for a whole list of items that are fine | S |
+| 49 | More nudges: evening blood pressure (offered, not chosen), a question open for a day, a habit-specific time; Telegram as a second channel (core item 18) | Today's nudges: no weight, habits open, nothing logged for N hours, all counted from the wake-up time | S-M |
+| 50 | Insights: more questions as the data grows (mood, steps, sleep once item 36 exists), and a longer range | Today's three cards need about 4 days in each group; the user's data had 1 day with a long gap after food | M |
+| 51 | Voice without the browser's speech recognition (record on the phone, convert on the server) if Safari's recognition is missing in the home-screen app | Only if the microphone button does not show or does not work there | M-L |
 
 ## Suggested order
 

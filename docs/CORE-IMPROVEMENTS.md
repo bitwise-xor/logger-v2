@@ -8,6 +8,12 @@ The v1 files (`v1_*.py`) are copied unchanged on purpose and are left as they ar
 
 Size: S = about an hour, M = about half a day, L = a day or more. Rough guesses.
 
+## Status (31.10.2026)
+
+- **18 (reminders) is done on the web app side:** web-push nudges counted from the wake-up time (no weight, habits still open, nothing logged for N hours; quiet before waking, after bed, 16 hours after waking), set in Settings > Notifications, checked by cron every 5 minutes (`app.nudges`). **Telegram as a second channel and 17 (digest), 19 (export), 20 (food look-up) are still open.** Not yet verified on the user's iPhone.
+- **New on the core side (31.10.):** `labelread.py` (a photo of a nutrition label read by Claude, model claude-sonnet-5-5, one call per photo, cost in `audit_log` as `label_photo`), `ai/provider.py` `image_json`, `webpush.py` and `nudges.py` (web push without new packages), `webundo.py`. Migrations 018 (undo) and 019 (push). The VAPID signing key is the env var `VAPID_PRIVATE_KEY` in `/opt/stacks/logger-v2/.env`.
+- **Still open from before:** 17, 19, 20 (decisions), 24 (a page of learned words); 1 and 2 left alone on purpose.
+
 ## Status (29.10.2026, first build run; details in `docs/reports/core-2026-10-29.md`)
 
 - **Done and deployed:** 3 (preparation only: the audit log now records what the second read did), 4, 5, 7, 8, 10, 11, 14, 21, 22, 23. 15 (GitHub Actions) is written but has never run.
@@ -76,6 +82,13 @@ data was fixed the same day (word moved from N138 to N244).
 
 Already on other lists, not repeated here: Telegram, the exchange log of the chat, the chat saving a usual meal,
 token counts for food look-ups and lab reports (web list 21, 20, 29).
+
+## 7. New after 31.10.2026
+
+| # | Idea | Why | Size |
+|---|---|---|---|
+| 25 | Telegram as a second channel for the nudges, a digest and replies (links items 17 and 18; speech-to-text there is on the "decide later" list) | Notifications now reach only the phone that turned them on; Telegram would also work away from the home network and Tailscale | M-L |
+| 26 | Show the cost of label photos and push messages on the Usage page | `label_photo` rows are in `audit_log`; the Usage page does not list them as a kind yet | S |
 
 ## Suggested order
 
