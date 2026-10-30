@@ -39,6 +39,8 @@ def entry_form(csrf: str, text: str = "") -> str:
             f'<textarea id="entry-text" name="text" rows="1" maxlength="{MAX_TEXT}" required aria-label="Log something"{" autofocus" if text else ""} '
             'placeholder="Log something: 150 g skyr, weight 82.4, took meds ...  (Enter to send, Shift+Enter for a new line)">'
             f'{esc(text)}</textarea>'
+            # the microphone shows only where the browser can turn speech into text (app.js); the words land in the box to check first
+            f'<button class="iconbtn mic" type="button" data-mic hidden aria-pressed="false" aria-label="Speak instead of typing">{icon("mic")}</button>'
             '<button class="primary" type="submit">Log</button></form>')
 
 
@@ -121,6 +123,7 @@ ICONS = {
     "habits": '<circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/>',
     "ideas": '<path d="M9 18h6M10 21.5h4M12 2.5a6.5 6.5 0 0 0-4 11.6V16h8v-1.9a6.5 6.5 0 0 0-4-11.6z"/>',
     "week": '<rect x="3.5" y="5" width="17" height="15.5" rx="3"/><path d="M3.5 10h17M8 3v4M16 3v4"/>',
+    "mic": '<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21M8.5 21h7"/>',
     "recent": '<path d="M3.5 12a8.5 8.5 0 1 0 2.6-6.1L3.5 8.4"/><path d="M3.5 3.8v4.6h4.6M12 7.5V12l3 2"/>',
     "questions": '<circle cx="12" cy="12" r="9"/><path d="M9.6 9.4a2.5 2.5 0 1 1 3.4 2.4c-.6.3-1 .8-1 1.5v.4M12 17h.01"/>',
     "private": '<rect x="4.5" y="10.5" width="15" height="10" rx="2.5"/><path d="M8 10.5v-3a4 4 0 0 1 8 0v3"/>',

@@ -18,7 +18,7 @@ from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse, Re
 
 from . import (auth, foodpage, habitspage, healthpage, ideaspage, labspage, logbook, privatepage, recentpage, searchpage, settingspage, todaypage,
                trendspage, usagepage, webactions, weekpage, webentry, webfood, webideas, weblabs, webprivate, webhabits, websettings, webquestions,
-               webundo)
+               webpush, webundo)
 from .ai.provider import ProviderError
 from .config import APP_HOST
 from .db import connect
@@ -462,6 +462,38 @@ def add_routes(mcp) -> None:
         out = [{"n": r["name"], "b": r["basis"], "w": list(r["aliases"] or []), "a": float(r["amount"]) if r["amount"] is not None else None,
                 "c": r["n"]} for r in rows]
         return JSONResponse(out, headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"})
+
+    @mcp.custom_route("/web/sw.js", methods=["GET"])
+    async def service_worker(request: Request) -> Response:
+        """The service worker for the nudges (static/sw.js), served under /web/ so it may show notifications for the app."""
+        if (r := hidden(request)) is not None:
+            return r
+        return Response((_STATIC_DIR / "sw.js").read_bytes(), media_type="text/javascript; charset=utf-8",
+                        headers={"Cache-Control": "no-cache", "X-Content-Type-Options": "nosniff"})
+
+    @mcp.custom_route("/web/push/subscribe", methods=["POST"])
+    async def push_subscribe(request: Request) -> Response:
+        """Settings > Notifications on a device: keep its push address (only of a known push service) and keys."""
+        if (r := hidden(request)) is not None:
+            return r
+        session = current_session(request)
+        if not session or not _origin_ok(request) or not hmac.compare_digest(request.headers.get("x-csrf", ""), session["csrf"]):
+            return JSONResponse({"ok": False}, status_code=403)
+        try:
+            body = await request.json()
+            endpoint, keys = str(body.get("endpoint", ""))[:1000], body.get("keys") or {}
+            p256dh, auth_key = str(keys.get("p256dh", ""))[:200], str(keys.get("auth", ""))[:100]
+        except (ValueError, AttributeError):
+            return JSONResponse({"ok": False, "reason": "Unreadable request."}, status_code=400)
+        if not webpush.allowed(endpoint) or not webpush.valid_keys(p256dh, auth_key):
+            return JSONResponse({"ok": False, "reason": "Not a known push service."}, status_code=400)
+        with connect() as c:
+            c.execute("""INSERT INTO push_subscriptions (endpoint, p256dh, auth, user_agent, session_sid) VALUES (%s, %s, %s, %s, %s)
+                         ON CONFLICT (endpoint) DO UPDATE SET p256dh = EXCLUDED.p256dh, auth = EXCLUDED.auth,
+                           user_agent = EXCLUDED.user_agent, session_sid = EXCLUDED.session_sid, failures = 0""",
+                      (endpoint, p256dh, auth_key, request.headers.get("user-agent", "")[:300], session["sid"]))
+            logbook._audit(c.cursor(), "web_change", "changed", {"what": "notifications on"}, logbook.WEB)
+        return JSONResponse({"ok": True})
 
     @mcp.custom_route("/web/answer", methods=["POST"])
     async def answer_question(request: Request) -> Response:

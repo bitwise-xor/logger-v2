@@ -4,7 +4,7 @@ import re
 from datetime import date
 from typing import Optional
 
-from . import logbook, settingspage, uiprefs
+from . import logbook, nudges, settingspage, uiprefs
 from .db import connect
 
 SID = re.compile(r"[0-9a-f-]{36}")
@@ -147,4 +147,39 @@ def today_reset(form, key: Optional[str], session) -> dict:
     return {"outcome": "changed", "head": "The Today page shows everything again, in the default order."}
 
 
-ACTIONS = {"device": device, "others": others, "targets": targets, "habit": habit, "habit_new": habit_new, "today": today, "today_reset": today_reset}
+# ---- notifications ---------------------------------------------------------------------------------
+
+def _hours(s, lo: float, hi: float, default: float) -> float:
+    ok, v = _number(s)
+    return default if not ok or v is None else round(min(hi, max(lo, v)) * 2) / 2  # half hours
+
+
+def nudge_settings(form, key: Optional[str], session) -> dict:
+    d = nudges.DEFAULTS
+    values = {"on": form.get("on") == "1", "weight": form.get("weight") == "1", "habits": form.get("habits") == "1",
+              "idle": form.get("idle") == "1", "weight_after": _hours(form.get("weight_after"), 0.5, 12, d["weight_after"]),
+              "habits_after": _hours(form.get("habits_after"), 1, 20, d["habits_after"]), "idle_hours": _hours(form.get("idle_hours"), 1, 12, d["idle_hours"])}
+    nudges.save(values)
+    with connect() as conn, conn.cursor() as cur:
+        logbook._audit(cur, "web_change", "changed", {"what": "nudges"}, logbook.WEB)
+    return {"outcome": "changed", "head": "Saved. Nudges are on." if values["on"] else "Saved. Nudges are off."}
+
+
+def nudge_test(form, key: Optional[str], session) -> dict:
+    n = nudges.deliver({"title": "Logger", "body": "A test notification. Nudges will look like this.", "url": "/web/settings?tab=notify", "tag": "test"})
+    if not n:
+        return _rejected("No device took the test notification. Turn notifications on again on the phone, then try once more.")
+    return {"outcome": "changed", "head": f"Test notification sent to {n} device{'' if n == 1 else 's'}."}
+
+
+def push_off(form, key: Optional[str], session) -> dict:
+    pid = str(form.get("id", ""))
+    if not pid.isdigit():
+        return _rejected("Unknown device.")
+    with connect() as c:
+        gone = c.execute("DELETE FROM push_subscriptions WHERE id = %s RETURNING id", (int(pid),)).fetchone()
+    return {"outcome": "changed", "head": "Notifications are off for that device."} if gone else _rejected("That device is not there any more.")
+
+
+ACTIONS = {"device": device, "others": others, "targets": targets, "habit": habit, "habit_new": habit_new, "today": today, "today_reset": today_reset,
+           "nudges": nudge_settings, "nudge_test": nudge_test, "push_off": push_off}

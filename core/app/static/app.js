@@ -40,6 +40,31 @@ document.addEventListener("DOMContentLoaded", () => {
     document.documentElement.dataset.theme = t;
     try { localStorage.setItem("theme", t); } catch (e) { /* private mode: only this page */ }
   }));
+
+  // Voice (31.10.2026): the microphone turns speech into text in the entry box (where the browser can); you check it and send
+  const mic = document.querySelector("button[data-mic]"), Speech = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (mic && box && Speech) {
+    mic.hidden = false;
+    let rec = null;
+    mic.addEventListener("click", () => {
+      if (rec) { rec.stop(); return; }
+      rec = new Speech();
+      rec.lang = navigator.language || "en-US"; rec.interimResults = true; rec.continuous = false;
+      const before = box.value ? box.value.replace(/\s*$/, " ") : "";
+      rec.onresult = e => {
+        box.value = before + [...e.results].map(r => r[0].transcript).join("");
+        box.dispatchEvent(new Event("input", {bubbles: true}));
+      };
+      rec.onerror = e => { mic.title = e.error === "not-allowed" ? "The microphone is not allowed for this app" : "No speech heard"; };
+      rec.onend = () => { rec = null; mic.classList.remove("on"); mic.setAttribute("aria-pressed", "false"); box.focus(); };
+      mic.classList.add("on"); mic.setAttribute("aria-pressed", "true");
+      try { rec.start(); } catch (e) { rec.onend(); }
+    });
+  }
+
+  // Notifications (Settings > Notifications): this device asks for permission, subscribes, and the server keeps its address
+  const push = document.querySelector("[data-push]");
+  if (push) setupPush(push);
   document.addEventListener("submit", () => document.body.classList.add("busy"));
   window.addEventListener("pageshow", () => document.body.classList.remove("busy"));
 
@@ -111,6 +136,39 @@ document.addEventListener("DOMContentLoaded", () => {
   let resized;
   window.addEventListener("resize", () => { clearTimeout(resized); resized = setTimeout(drawAll, 150); });
 });
+
+function setupPush(box) {
+  const btn = box.querySelector("[data-push-on]"), msg = box.querySelector("[data-push-msg]");
+  const say = t => { msg.textContent = t; };
+  if (!("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) {
+    btn.disabled = true;
+    say(/iPhone|iPad/.test(navigator.userAgent)
+      ? "Open Logger from the home screen first (Share, then Add to Home Screen), then turn notifications on there."
+      : "This browser cannot show notifications from the app.");
+    return;
+  }
+  if (Notification.permission === "denied") say("Notifications are blocked for this app in the device's settings.");
+  btn.addEventListener("click", async () => {
+    btn.disabled = true; say("Asking…");
+    try {
+      if ((await Notification.requestPermission()) !== "granted") { say("Notifications were not allowed."); btn.disabled = false; return; }
+      const reg = await navigator.serviceWorker.register("/web/sw.js", {scope: "/web/"});
+      await navigator.serviceWorker.ready;
+      const k = box.dataset.key.replace(/-/g, "+").replace(/_/g, "/"), raw = atob(k + "=".repeat((4 - k.length % 4) % 4));
+      const sub = (await reg.pushManager.getSubscription())
+        || await reg.pushManager.subscribe({userVisibleOnly: true, applicationServerKey: Uint8Array.from(raw, c => c.charCodeAt(0))});
+      const j = sub.toJSON();
+      const r = await fetch("/web/push/subscribe", {method: "POST", credentials: "same-origin",
+        headers: {"Content-Type": "application/json", "X-CSRF": box.dataset.csrf}, body: JSON.stringify({endpoint: j.endpoint, keys: j.keys})});
+      if (!r.ok) throw new Error("the server did not keep it (" + r.status + ")");
+      say("Notifications are on for this device.");
+      setTimeout(() => location.reload(), 800);
+    } catch (e) {
+      say("That did not work: " + (e && e.message ? e.message : e));
+      btn.disabled = false;
+    }
+  });
+}
 
 // Food suggestions in the entry box (31.10.2026): after 2 letters of the part being typed (after the last comma or
 // "and"), foods of the catalogue that match, most eaten first; picking one puts in its name and the amount eaten last.

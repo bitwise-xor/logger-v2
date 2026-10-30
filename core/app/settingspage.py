@@ -1,15 +1,16 @@
 """The web app's Settings page (decided 29.10.2026). Tabs: Food targets (the day's targets, new ones start on a date and the old ones
 stay as history), Habits (label, daily count, order, active; add a habit), Today page (what shows on Today and in which order),
-Devices (the signed-in devices). The forms post to websettings.py; this module only reads."""
+Devices (the signed-in devices), Notifications (31.10.2026: turn nudges on per device, pick them and their times).
+The forms post to websettings.py; this module only reads."""
 import re
 from urllib.parse import urlencode
 
-from . import rules, uiprefs
+from . import nudges, rules, uiprefs, webpush
 from .db import connect
 from .todaypage import HEALTH_ROWS, _plain
 from .webentry import esc, hidden
 
-TABS = (("targets", "Food targets"), ("habits", "Habits"), ("today", "Today page"), ("devices", "Devices"))
+TABS = (("targets", "Food targets"), ("habits", "Habits"), ("today", "Today page"), ("devices", "Devices"), ("notify", "Notifications"))
 BACK = re.compile(r"/web/settings(\?[A-Za-z0-9=&._%+-]*)?")
 TARGET_FIELDS = (("kcal", "Calories", "kcal"), ("protein", "Protein", "g"), ("fat", "Fat", "g"), ("sat_fat", "Saturated fat", "g"),
                  ("carbs", "Carbs", "g"), ("fibre", "Fibre", "g"), ("sugar_added", "Added sugar", "g"), ("sodium_mg", "Sodium", "mg"))
@@ -144,7 +145,45 @@ def _devices(session, csrf: str) -> str:
             'The Sign out button at the top ends this device only.</p></div>')
 
 
+# ---- notifications ---------------------------------------------------------------------------------
+
+def _notify(session, csrf: str) -> str:
+    with connect() as c, c.cursor() as cur:
+        s = nudges.load(cur)
+        subs = cur.execute("SELECT id, user_agent, created_at, last_ok FROM push_subscriptions ORDER BY created_at").fetchall()
+    key = webpush.public_key()
+    base = hidden("csrf", csrf) + hidden("back", url(tab="notify"))
+    turn_on = (f'<div class="pushbox" data-push data-key="{esc(key)}" data-csrf="{esc(csrf)}">'
+               '<button class="primary" type="button" data-push-on>Turn on notifications on this device</button>'
+               '<p class="small" data-push-msg aria-live="polite"></p></div>' if key else
+               '<p class="small">Notifications are not set up on the server yet (no key).</p>')
+    devices = "".join(
+        f'<div class="dev"><div><b>{esc(device_name(r["user_agent"]))}</b><span class="small">on since {r["created_at"].astimezone(rules.BERLIN):%d.%m.%Y}'
+        + (f' · last delivered {r["last_ok"].astimezone(rules.BERLIN):%d.%m. %H:%M}' if r["last_ok"] else " · nothing delivered yet") + '</span></div>'
+        f'<form method="post" action="/web/settings/push_off">{base}{hidden("id", str(r["id"]))}'
+        '<button class="ghost sm bad" type="submit">Turn off</button></form></div>' for r in subs)
+    test = (f'<form class="row" method="post" action="/web/settings/nudge_test">{base}'
+            '<button class="ghost" type="submit">Send a test notification</button></form>' if subs else "")
+    box = lambda k: " checked" if s[k] else ""  # noqa: E731
+    num = lambda k, lo, hi: (f'<input type="number" name="{k}" id="n-{k}" min="{lo}" max="{hi}" step="0.5" inputmode="decimal" '  # noqa: E731
+                             f'value="{_plain(s[k])}" aria-label="Hours">')
+    form = (f'<form method="post" action="/web/settings/nudges">{base}'
+            f'<label class="row nrow"><input type="checkbox" name="on" value="1"{box("on")}> <b>Send nudges</b></label>'
+            f'<label class="row nrow"><input type="checkbox" name="weight" value="1"{box("weight")}> No weight yet, {num("weight_after", 0.5, 12)} hours after waking</label>'
+            f'<label class="row nrow"><input type="checkbox" name="habits" value="1"{box("habits")}> Habits still open, {num("habits_after", 1, 20)} hours after waking</label>'
+            f'<label class="row nrow"><input type="checkbox" name="idle" value="1"{box("idle")}> Nothing logged for {num("idle_hours", 1, 12)} hours</label>'
+            '<p class="row"><button class="primary" type="submit">Save</button></p></form>')
+    return (f'<div class="grid2"><div class="card"><h2>This device</h2>{turn_on}'
+            '<p class="small hint">On an iPhone (iOS 16.4 or later): add Logger to the home screen first (Share, then Add to Home Screen), '
+            'open it from there, then turn notifications on here. A tap on a notification opens the app (at home or with Tailscale on).</p>'
+            f'<h3>Devices with notifications · {len(subs)}</h3>{devices or "<p class=empty>None yet.</p>"}{test}</div>'
+            f'<div class="card"><h2>Nudges</h2>{form}'
+            '<p class="small hint">Times count from the time you woke up (the Woke up value). Quiet hours: nothing before you log waking up, '
+            f'nothing after a bed time is logged, nothing later than {nudges.AWAKE_HOURS} hours after waking. Each nudge comes at most once a day; '
+            'the check runs every 5 minutes.</p></div></div>')
+
+
 def render(session, q) -> str:
     tab = q.get("tab") if q.get("tab") in dict(TABS) else TABS[0][0]
     csrf = session["csrf"]
-    return _tabs(tab) + {"targets": _targets, "habits": _habits, "today": _today_tab, "devices": _devices}[tab](session, csrf)
+    return _tabs(tab) + {"targets": _targets, "habits": _habits, "today": _today_tab, "devices": _devices, "notify": _notify}[tab](session, csrf)

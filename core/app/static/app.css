@@ -586,3 +586,15 @@ details.again[open]{flex-basis:100%}
 .rc-saved .pill{margin-right:.35rem}
 .rc-none{margin:0 0 .55rem}
 .rc .row{gap:.4rem}
+
+/* Round 2 (31.10.2026): the microphone in the entry box, Settings > Notifications */
+.entry .mic{width:2.75rem;height:2.75rem;flex:none}
+.entry .mic.on{background:var(--bad-soft);color:var(--bad)}
+.entry .mic.on svg{animation:listen 1.1s ease-in-out infinite}
+@keyframes listen{50%{transform:scale(1.18)}}
+@media (prefers-reduced-motion:reduce){.entry .mic.on svg{animation:none}}
+.pushbox{display:flex;flex-direction:column;align-items:flex-start;gap:.4rem;margin-bottom:.4rem}
+.pushbox p{margin:0}
+.nrow{padding:.55rem 0;border-top:1px solid var(--line);gap:.5rem}
+.nrow:first-of-type{border-top:0}
+.nrow input[type=number]{width:4.2rem;text-align:right}
