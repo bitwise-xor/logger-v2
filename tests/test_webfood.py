@@ -110,11 +110,12 @@ def test_copying_a_meal_to_today_makes_no_ai_call(web, fake):
     o, s = oats(), food("Test skyr", 63, 11, 0.2, 4)
     eat_on(y, "08:00", o, 60)
     eat_on(y, "08:05", s, 150)
-    page = act(web, "/web/food/copy", day=y.isoformat(), meal="1", time="12:30", key="c1")
+    t = datetime.now(BERLIN).strftime("%H:%M")  # the minute that just started: a bare time more than an hour ahead of now means yesterday
+    page = act(web, "/web/food/copy", day=y.isoformat(), meal="1", time=t, key="c1")
     assert fake.calls == [], page.text
     today = owner_sql("""SELECT f.name, e.amount, to_char(e.eaten_at AT TIME ZONE 'Europe/Berlin', 'HH24:MI') AS t FROM food_entries e
                          JOIN foods f ON f.id = e.food_id WHERE e.day = %s ORDER BY f.name""", d)
-    assert [(r["name"], float(r["amount"]), r["t"]) for r in today] == [("Test oats", 60, "12:30"), ("Test skyr", 150, "12:30")]
+    assert [(r["name"], float(r["amount"]), r["t"]) for r in today] == [("Test oats", 60, t), ("Test skyr", 150, t)]
     assert owner_sql("SELECT channel FROM raw_inbox WHERE channel <> 'test'") == [{"channel": "web"}]
 
 

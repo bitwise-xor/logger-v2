@@ -9,8 +9,11 @@ from test_web import client, web  # noqa: F401
 
 
 def call(tool, ai, days_ago=0, **detail):
+    # N days earlier on the Berlin wall clock: a plain "now() - interval 'N days'" is N x 24 hours, which is an hour off over a clock
+    # change (25.10.2026) and then puts the call on the wrong logging day when the test runs within an hour of 05:00
     owner_sql(f"""INSERT INTO audit_log (tool, outcome, client, detail, at)
-                  VALUES (%s, 'saved', 'mcp', %s::jsonb, now() - interval '{int(days_ago)} days')""", tool, json.dumps({"ai": ai, **detail}))
+                  VALUES (%s, 'saved', 'mcp', %s::jsonb, (now() AT TIME ZONE 'Europe/Berlin' - interval '{int(days_ago)} days') AT TIME ZONE 'Europe/Berlin')""",
+              tool, json.dumps({"ai": ai, **detail}))
 
 
 def raw(content):
