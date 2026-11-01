@@ -5,11 +5,12 @@ import time
 from dataclasses import dataclass
 from typing import Protocol
 
-# USD per million tokens: input, output, cache read, cache write. Estimates for the cost log, not a bill.
+# USD per million tokens: input, output, cache read, cache write (the 1-hour cache: twice the input price). Estimates for
+# the cost log, not a bill.
 PRICES = {
-    "claude-haiku-5-5": (0.10, 0.50, 0.01, 0.125),
-    "claude-sonnet-5-5": (2.00, 10.00, 0.20, 2.50),
-    "claude-opus-5-5": (4.00, 20.00, 0.20, 5.00),
+    "claude-haiku-5-5": (0.10, 0.50, 0.01, 0.20),
+    "claude-sonnet-5-5": (2.00, 10.00, 0.20, 4.00),
+    "claude-opus-5-5": (4.00, 20.00, 0.20, 8.00),
 }
 
 
@@ -59,7 +60,9 @@ class AnthropicProvider:
         r = self.client.messages.create(
             model=model,
             max_tokens=max_tokens,
-            system=[{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}],
+            # The instructions stay cached for an hour (02.11.2026): messages mostly come more than 5 minutes apart, so the
+            # default 5-minute cache was used by about 1 read in 20; a cached read is about 0.7 s faster.
+            system=[{"type": "text", "text": system, "cache_control": {"type": "ephemeral", "ttl": "1h"}}],
             messages=[{"role": "user", "content": user}],
             output_config={"effort": self.effort, "format": {"type": "json_schema", "schema": schema}},
         )

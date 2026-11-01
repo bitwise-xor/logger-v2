@@ -7,6 +7,7 @@ import logging
 import os
 import re
 import secrets
+import time
 from datetime import datetime, timedelta
 from typing import Any, Optional
 
@@ -160,6 +161,7 @@ def read_held(hid: int, background: bool = False) -> dict[str, Any]:
     fails, the words stay kept, "not read yet", for the next try. A message read again later keeps its own time.
     background: the cron job's try, with nobody watching the reply: a message the logger refuses or will not log stays
     kept (marked "needs you", no more automatic tries) instead of being dropped."""
+    started = time.monotonic()
     row = held.claim(hid)
     if row is None:
         return _public({"outcome": "rejected", "reason": "That message is no longer waiting: it was saved or deleted."})
@@ -176,7 +178,7 @@ def read_held(hid: int, background: bool = False) -> dict[str, Any]:
                 cur.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))", (key,))
             sent = todos.retry(cur, provider(), now)  # to-dos that waited because Todoist was down
             r = record.best(cur, preds, now)
-            out = _save(cur, text, now, r, usages + sent["usages"], len(preds) > 1, channel, prev, sent, row["tries"])
+            out = _save(cur, text, now, r, usages + sent["usages"], len(preds) > 1, channel, prev, sent, row["tries"], started)
             if background and out["outcome"] in ("rejected", "not_logged"):  # nothing was saved: keep the words for the owner
                 why = out.get("reason") or ("it reads as a question or a request, not an entry" if out["outcome"] == "not_logged" else "")
                 held.needs_you(cur, hid, why)
@@ -223,15 +225,17 @@ def _read(text: str, now: datetime, prev: list, meals: list) -> tuple[list[dict]
 def _process(cur, text: str, now: datetime, pred: Optional[dict] = None, channel: str = CHANNEL) -> dict:
     """Read, save and audit one message in the caller's transaction (a quick button's ready answer, or a repeated message
     the user confirmed); the caller makes it public."""
+    started = time.monotonic()
     prev, meals = _context(cur, now)
     sent = todos.retry(cur, provider(), now)  # to-dos that waited because Todoist was down
     r, usages, escalated = record.read(cur, provider(), text, now, prev, meals, pred=pred)
-    return _save(cur, text, now, r, usages + sent["usages"], escalated, channel, prev, sent)
+    return _save(cur, text, now, r, usages + sent["usages"], escalated, channel, prev, sent, started=started)
 
 
 def _save(cur, text: str, now: datetime, r: record.Reading, usages: list, escalated: bool, channel: str, prev: list,
-          sent: dict, tries: int = 0) -> dict:
-    """Save one read message with everything that follows from it (to-dos, look-ups, changes) and its audit row."""
+          sent: dict, tries: int = 0, started: Optional[float] = None) -> dict:
+    """Save one read message with everything that follows from it (to-dos, look-ups, changes) and its audit row.
+    started: when the work on it began (time.monotonic), so the audit row shows how long the message took ("secs")."""
     out = record.save(cur, r, text, channel, now)
     if r.pred.get("todos") and out.get("raw_id"):  # to-dos and shopping go to Todoist (v1's rules, in todos.py)
         t = todos.apply(cur, provider(), r.pred["todos"], out["raw_id"], now, text)
@@ -262,11 +266,12 @@ def _save(cur, text: str, now: datetime, r: record.Reading, usages: list, escala
     _audit(cur, "log", out["outcome"], {"raw_id": out.get("raw_id"), "private_id": out.get("private_id"),
                                         "questions": [q["pending_id"] for q in out.get("questions", [])], "escalated": escalated,
                                         "escalation": r.escalation, **({"tries": tries} if tries > 1 else {}),
+                                        **({"secs": round(time.monotonic() - started, 2)} if started is not None else {}),
                                         "steps": out.get("steps") or out.get("command", {}).get("steps"),
                                         # "in" is all input tokens; the cached share is kept apart to show whether prompt caching is used
                                         "ai": [{"model": u.model, "in": u.input_tokens + u.cache_read_tokens + u.cache_write_tokens,
                                                 "out": u.output_tokens, "cache_read": u.cache_read_tokens, "cache_write": u.cache_write_tokens,
-                                                "usd": round(u.usd, 6)} for u in usages]}, channel)
+                                                "usd": round(u.usd, 6), "s": round(u.seconds, 2)} for u in usages]}, channel)
     return out
 
 
