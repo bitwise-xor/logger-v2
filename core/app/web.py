@@ -17,8 +17,8 @@ from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 
 from . import (auth, foodpage, habitspage, healthpage, ideaspage, insightspage, labelread, labspage, logbook, privatepage, recentpage, searchpage, settingspage, todaypage,
-               trendspage, usagepage, webactions, weekpage, webentry, webfood, webideas, weblabs, webprivate, webhabits, websettings, webquestions,
-               webpush, webundo)
+               trendspage, usagepage, webactions, weekpage, webentry, webfood, webheld, webideas, weblabs, webprivate, webhabits, websettings,
+               webquestions, webpush, webundo)
 from .ai.provider import ProviderError
 from .config import APP_HOST
 from .db import connect
@@ -161,17 +161,22 @@ def shell(session, body: str, status: int = 200, active: str = "") -> HTMLRespon
 def home(session, asked=None) -> HTMLResponse:
     csrf = session["csrf"]
     day, today = todaypage.pick_day(asked)
-    questions = webquestions.today_section(csrf) if day == today else ""  # open questions belong to today
+    # unread messages and open questions belong to today
+    questions = webheld.section(csrf) + webquestions.today_section(csrf) if day == today else ""
     return shell(session, questions + todaypage.render(csrf, day), active="today")
 
 
 async def _run(work) -> dict:
-    """Run one logger call (it may wait for the AI) off the event loop."""
+    """Run one logger call (it may wait for the AI) off the event loop. A typed message is kept before the AI reads it
+    (held.py), so an error here means nothing was kept or changed: the reply says so (the kind of error goes to the log)."""
     try:
         return await run_in_threadpool(work)
     except ProviderError as e:
         log.warning("the AI service did not answer (%s)", type(e).__name__)
         return {"outcome": "rejected", "reason": "The AI service did not answer. Nothing was saved; try again in a moment."}
+    except Exception as e:  # noqa: BLE001 - one line with the kind only, never what the user typed
+        log.error("a web action failed: %s", type(e).__name__)
+        return {"outcome": "rejected", "reason": "Something went wrong (the database or a service did not answer). Nothing was saved; try again in a moment."}
 
 
 def add_routes(mcp) -> None:
@@ -416,6 +421,7 @@ def add_routes(mcp) -> None:
         resp = await _run(lambda: logbook.log(text, key, channel=logbook.WEB))
         if resp.get("outcome") == "rejected" and text:
             resp = {**resp, "retry_text": text}  # nothing was saved: the words come back in the box
+        # "held": the words are kept and shown under "Not read yet" on Today; not put back in the box, so they are not sent twice
         # An open question is shown on Today and on Questions only, so a message that asks one goes to Today.
         return done(session, resp, "/web/" if resp.get("questions") else back_any(form))
 
@@ -445,7 +451,20 @@ def add_routes(mcp) -> None:
         session = current_session(request)
         if not session:
             return RedirectResponse("/web/login", status_code=302, headers={"Cache-Control": "no-store"})
-        return shell(session, recentpage.render(session["csrf"]), active="recent")
+        csrf = session["csrf"]
+        return shell(session, recentpage.render(csrf, webheld.section(csrf, "/web/recent")), active="recent")
+
+    def held_form(fn):
+        """Try again or Delete on a message not read yet (webheld.ACTIONS), back to the page it came from."""
+        async def handler(request: Request) -> Response:
+            session, form = await post_form(request)
+            if form is None:
+                return session
+            return done(session, await _run(lambda: fn(form, form_key(form))), back_any(form))
+        return handler
+
+    for _name, _fn in webheld.ACTIONS.items():
+        mcp.custom_route(f"/web/held/{_name}", methods=["POST"])(held_form(_fn))
 
     @mcp.custom_route("/web/foods.json", methods=["GET"])
     async def foods_json(request: Request) -> Response:

@@ -65,7 +65,7 @@ def test_a_look_up_shows_its_result_escaped(web, fake, skyr):
     assert "Found." in page.text and "<i>natural</i>" not in page.text and "&lt;i&gt;natural&lt;/i&gt;" in page.text
 
 
-def test_an_ai_failure_says_nothing_was_saved(web, skyr):
+def test_an_ai_failure_keeps_the_words_and_saves_nothing(web, skyr):
     class Down:
         def json(self, *a, **k):
             raise ProviderError("down")
@@ -74,5 +74,6 @@ def test_an_ai_failure_says_nothing_was_saved(web, skyr):
         page = act(web, "/web/log", text="150 g skyr, weight 82.4", key="w11")
     finally:
         logbook.PROVIDER = None
-    assert "Nothing saved." in page.text and "did not answer" in page.text
+    assert "Not read yet, but kept." in page.text and "did not answer" in page.text  # since 01.11.2026 (held.py)
     assert n("SELECT count(*) AS n FROM food_entries") == 0
+    assert [r["content"] for r in owner_sql("SELECT content FROM private.incoming")] == ["150 g skyr, weight 82.4"]

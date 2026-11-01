@@ -67,7 +67,8 @@ def _day_head(d: date, today: date) -> str:
     return f"{d:%a %d.%m.}"
 
 
-def render(csrf: str) -> str:
+def render(csrf: str, waiting: str = "") -> str:
+    """waiting: the messages not read yet (webheld.section), shown above the list."""
     d = load()
     out, last = [], None
     for m in d["msgs"]:
@@ -88,4 +89,4 @@ def render(csrf: str) -> str:
                    f'<p class="rc-text">{esc(m["content"])}</p>{lines}<div class="row">{acts}</div></article>')
     body = "".join(out) or '<p class="empty">No messages yet.</p>'
     return (f'<div class="head"><h1>Recent</h1><span class="small">The last {LIMIT} messages from the web app and Claude</span></div>'
-            f'<div class="card recent">{body}</div>')
+            f'{waiting}<div class="card recent">{body}</div>')

@@ -3,6 +3,7 @@ adds what a live call needs: the connection, the AI provider, the context (earli
 the idempotency key, the audit log (ids, outcomes and AI usage only, never health values) and a short reply text."""
 import hashlib
 import json
+import logging
 import os
 import re
 import secrets
@@ -11,7 +12,8 @@ from typing import Any, Optional
 
 from psycopg.types.json import Jsonb
 
-from . import commands, labs, lookup, record, todos
+from . import commands, held, labs, lookup, record, todos
+from .ai import parser
 from .ai.provider import AnthropicProvider, Provider, ProviderError
 from .db import connect
 from .v1_food import _food_cat, _types
@@ -22,6 +24,7 @@ CHANNEL = "mcp"  # the chat apps (MCP connector)
 WEB = "web"  # the web app
 LIVE_CHANNELS = [CHANNEL, WEB]  # the repeat guard looks across these
 PROVIDER: Optional[Provider] = None  # created on first use; tests put a fake here
+_LOG = logging.getLogger("logger.log")
 # A confirmation counts when the reply starts with a yes ("yes, it is correct ..."); only a clear no cancels.
 YES = re.compile(r"^\s*(yes|y|ok|okay|confirm(ed)?|correct|right|ja|jawohl|stimmt|richtig)\b", re.I)
 # The questions `answer` takes (the web app's Questions page lists these).
@@ -47,10 +50,11 @@ def _audit(cur, tool: str, outcome: str, detail: dict, client: str = CHANNEL) ->
 
 
 def _context(cur, now: datetime) -> tuple[list, list]:
-    """The parser's context: the last few messages of the last 6 hours, and what was eaten and drunk today."""
-    cur.execute("""SELECT received_at, content FROM raw_inbox WHERE received_at > %s - interval '6 hours'
+    """The parser's context: the last few messages of the 6 hours before `now`, and what was eaten and drunk that day.
+    `now` is a kept message's own time when it is read again later, so later messages are left out."""
+    cur.execute("""SELECT received_at, content FROM raw_inbox WHERE received_at > %s - interval '6 hours' AND received_at <= %s
                    AND channel <> 'catalogue' AND content NOT LIKE 'add food: %%' AND NOT (metadata ? 'lab_report')
-                   ORDER BY received_at DESC LIMIT 4""", (now,))  # the logger's own catalogue rows are not messages
+                   ORDER BY received_at DESC LIMIT 4""", (now, now))  # the logger's own catalogue rows are not messages
     prev = [(r["received_at"].astimezone(BERLIN).replace(tzinfo=None), r["content"]) for r in reversed(cur.fetchall())]
     cur.execute("""SELECT e.day, e.meal, e.is_drink, e.eaten_at, f.name FROM food_entries e JOIN foods f ON f.id = e.food_id
                    WHERE e.time_known AND e.eaten_at <= %s AND e.eaten_at > %s - interval '18 hours' ORDER BY e.eaten_at, e.id""",
@@ -72,7 +76,9 @@ def _message(out: dict) -> str:
             "not_logged": "Not logged: this reads as a question or command for you, so answer the user yourself.",
             "needs_confirmation": "Nothing saved yet: please confirm.", "rejected": "Nothing saved.",
             "cancelled": "Skipped.", "replayed": "Already saved earlier (same message).",
-            "answered": "Found.", "changed": "Changed."}.get(o, o)
+            "answered": "Found.", "changed": "Changed.",
+            "held": "Not read yet, but kept: the logger has the words and reads them again by itself. Do not send this "
+                    "message again; tell the user in one line."}.get(o, o)
     if o == "rejected" and out.get("steps"):  # a command that matched nothing
         head = "Nothing changed."
     if o == "not_logged" and out.get("intent") == "command":
@@ -100,7 +106,9 @@ def _public(out: dict) -> dict:
 
 
 def log(text: str, idempotency_key: Optional[str] = None, pred: Optional[dict] = None, channel: str = CHANNEL) -> dict[str, Any]:
-    """pred: a ready parser answer (the web app's quick buttons); the AI then does not read the text.
+    """pred: a ready parser answer (the web app's quick buttons); the AI then does not read the text and the message is
+    saved at once. Without one, the words are kept first (held.py) and then read and saved by read_held, so an AI or save
+    failure cannot lose them (01.11.2026).
     channel: where the message came from (CHANNEL or WEB), stored with it and in the audit log."""
     now = clock()
     if not text or not text.strip():
@@ -117,34 +125,113 @@ def log(text: str, idempotency_key: Optional[str] = None, pred: Optional[dict] =
                     return {"outcome": "rejected", "message": "This idempotency key was already used for a different message."}
                 _audit(cur, "log", "replayed", {}, channel)
                 return {**row["response"], "replayed": True}
-        cur.execute("""SELECT received_at FROM raw_inbox WHERE channel = ANY(%s) AND lower(content) = lower(%s)
-                       AND received_at > %s - interval '30 minutes' AND NOT (metadata ? 'unprocessed')
-                       ORDER BY received_at DESC LIMIT 1""", (LIVE_CHANNELS, text, now))
-        same = cur.fetchone()
-        if same:  # the same words again within 30 minutes: ask before saving twice
-            pid = "p" + secrets.token_hex(4)
-            at = same["received_at"].astimezone(BERLIN).strftime("%H:%M")
-            cur.execute("INSERT INTO pending (id, tool, payload, reason, expires_at) VALUES (%s, 'log_repeat', %s, %s, %s)",
-                        (pid, Jsonb({"text": text, "now": now.isoformat()}), f"same message already logged at {at}",
-                         now + timedelta(hours=record.QUESTION_HOURS)))
-            resp = _public({"outcome": "needs_confirmation", "reason": f"This exact message was already logged at {at}.",
-                            "questions": [{"pending_id": pid, "question": "Log it again (yes) or not (no)?"}]})
-            _audit(cur, "log", "needs_confirmation", {"why": "repeat", "questions": [pid]}, channel)
-            return resp
-        out = _process(cur, text, now, pred, channel)
-        resp = _public(out)
-        if idempotency_key:
-            cur.execute("INSERT INTO idempotency_keys (key, tool, request_hash, response) VALUES (%s, 'log', %s, %s)",
-                        (idempotency_key, req_hash, Jsonb(resp)))
+        hid = held.find(cur, idempotency_key) if pred is None else None  # sent again while it waits: read the kept one
+        if hid is None:
+            cur.execute("""SELECT received_at FROM raw_inbox WHERE channel = ANY(%s) AND lower(content) = lower(%s)
+                           AND received_at > %s - interval '30 minutes' AND NOT (metadata ? 'unprocessed')
+                           ORDER BY received_at DESC LIMIT 1""", (LIVE_CHANNELS, text, now))
+            same = cur.fetchone()
+            waiting = held.waiting_same(cur, text, now) if pred is None and not same else None
+            if same or waiting:  # the same words again within 30 minutes: ask before saving twice
+                pid = "p" + secrets.token_hex(4)
+                at = (same["received_at"] if same else waiting).astimezone(BERLIN).strftime("%H:%M")
+                why = f"already logged at {at}" if same else f"already waiting to be read (sent at {at})"
+                cur.execute("INSERT INTO pending (id, tool, payload, reason, expires_at) VALUES (%s, 'log_repeat', %s, %s, %s)",
+                            (pid, Jsonb({"text": text, "now": now.isoformat()}), f"same message {why}",
+                             now + timedelta(hours=record.QUESTION_HOURS)))
+                resp = _public({"outcome": "needs_confirmation", "reason": f"This exact message was {why}.",
+                                "questions": [{"pending_id": pid, "question": "Log it again (yes) or not (no)?"}]})
+                _audit(cur, "log", "needs_confirmation", {"why": "repeat", "questions": [pid]}, channel)
+                return resp
+            if pred is not None:
+                out = _process(cur, text, now, pred, channel)
+                resp = _public(out)
+                if idempotency_key:
+                    cur.execute("INSERT INTO idempotency_keys (key, tool, request_hash, response) VALUES (%s, 'log', %s, %s)",
+                                (idempotency_key, req_hash, Jsonb(resp)))
+                return resp
+            hid = held.keep(cur, text, channel, idempotency_key, now)
+    return read_held(hid)
+
+
+def read_held(hid: int, background: bool = False) -> dict[str, Any]:
+    """Read a kept message with the AI and save it (core items 1 and 2). The AI reads with no transaction or connection
+    open; the save, its audit row, the idempotency key and the removal of the kept words are one transaction. Whatever
+    fails, the words stay kept, "not read yet", for the next try. A message read again later keeps its own time.
+    background: the cron job's try, with nobody watching the reply: a message the logger refuses or will not log stays
+    kept (marked "needs you", no more automatic tries) instead of being dropped."""
+    row = held.claim(hid)
+    if row is None:
+        return _public({"outcome": "rejected", "reason": "That message is no longer waiting: it was saved or deleted."})
+    if row == "busy":
+        return _public({"outcome": "held", "held_id": hid, "reason": "It is being read right now."})
+    text, channel, key = row["content"], row["channel"], row["idempotency_key"]
+    now = row["received_at"].astimezone(BERLIN)
+    try:
+        with connect() as conn, conn.cursor() as cur:
+            prev, meals = _context(cur, now)
+        preds, usages = _read(text, now, prev, meals)
+        with connect() as conn, conn.cursor() as cur:
+            if key:
+                cur.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))", (key,))
+            sent = todos.retry(cur, provider(), now)  # to-dos that waited because Todoist was down
+            r = record.best(cur, preds, now)
+            out = _save(cur, text, now, r, usages + sent["usages"], len(preds) > 1, channel, prev, sent, row["tries"])
+            if background and out["outcome"] in ("rejected", "not_logged"):  # nothing was saved: keep the words for the owner
+                why = out.get("reason") or ("it reads as a question or a request, not an entry" if out["outcome"] == "not_logged" else "")
+                held.needs_you(cur, hid, why)
+                return _public({**out, "held_id": hid})
+            resp = _public(out)
+            if key:
+                cur.execute("""INSERT INTO idempotency_keys (key, tool, request_hash, response) VALUES (%s, 'log', %s, %s)
+                               ON CONFLICT (key) DO NOTHING""", (key, hashlib.sha256(text.encode()).hexdigest(), Jsonb(resp)))
+            asked = [q["question_id"] for q in resp.get("questions", [])]
+            if asked:  # read again days later: its questions still get their full time to be answered
+                cur.execute("UPDATE pending SET expires_at = greatest(expires_at, now() + make_interval(hours => %s)) WHERE id = ANY(%s)",
+                            (record.QUESTION_HOURS, asked))
+            held.done(cur, hid)
         return resp
+    except Exception as e:  # noqa: BLE001 - whatever failed, the words stay kept for the next try
+        kind = type(e).__name__
+        _LOG.warning("message %s not read yet: %s", hid, kind)  # the kind only, never the words
+        try:
+            with connect() as conn, conn.cursor() as cur:
+                held.failed(cur, hid, kind)
+                _audit(cur, "log", "held", {"held_id": hid, "error": kind, "tries": row["tries"]}, channel)
+        except Exception:  # noqa: BLE001 - the database is down too: the 10-minute lease frees the message by itself
+            pass
+        reason = ("The AI service did not answer." if isinstance(e, ProviderError) or "anthropic" in type(e).__module__
+                  else "Something went wrong while saving it.")
+        return _public({"outcome": "held", "held_id": hid,
+                        "reason": f"{reason} Your words are kept: the logger tries again by itself every 5 minutes for "
+                                  f"{held.AUTO_HOURS} hours, and Today has a Try again button."})
+
+
+def _read(text: str, now: datetime, prev: list, meals: list) -> tuple[list[dict], list]:
+    """The AI's reading, with no transaction open: the small model, and the larger model's re-read when the first reading
+    leaves a question (checked in a short look at the catalogue). -> (parser answers, usages)."""
+    naive = now.replace(tzinfo=None)
+    pred, u = parser.parse(provider(), text, naive, prev, meals)
+    with connect() as conn, conn.cursor() as cur:
+        unsettled = bool(record.best(cur, [pred], now).questions)
+    if not unsettled:
+        return [pred], [u]
+    pred2, u2 = parser.parse(provider(), text, naive, prev, meals, model=record.ESCALATION_MODEL)
+    return [pred, pred2], [u, u2]
 
 
 def _process(cur, text: str, now: datetime, pred: Optional[dict] = None, channel: str = CHANNEL) -> dict:
-    """Read, save and audit one message; the caller makes it public."""
+    """Read, save and audit one message in the caller's transaction (a quick button's ready answer, or a repeated message
+    the user confirmed); the caller makes it public."""
     prev, meals = _context(cur, now)
     sent = todos.retry(cur, provider(), now)  # to-dos that waited because Todoist was down
     r, usages, escalated = record.read(cur, provider(), text, now, prev, meals, pred=pred)
-    usages += sent["usages"]
+    return _save(cur, text, now, r, usages + sent["usages"], escalated, channel, prev, sent)
+
+
+def _save(cur, text: str, now: datetime, r: record.Reading, usages: list, escalated: bool, channel: str, prev: list,
+          sent: dict, tries: int = 0) -> dict:
+    """Save one read message with everything that follows from it (to-dos, look-ups, changes) and its audit row."""
     out = record.save(cur, r, text, channel, now)
     if r.pred.get("todos") and out.get("raw_id"):  # to-dos and shopping go to Todoist (v1's rules, in todos.py)
         t = todos.apply(cur, provider(), r.pred["todos"], out["raw_id"], now, text)
@@ -174,7 +261,7 @@ def _process(cur, text: str, now: datetime, pred: Optional[dict] = None, channel
         out["questions"] = out.get("questions", []) + sub.get("questions", [])
     _audit(cur, "log", out["outcome"], {"raw_id": out.get("raw_id"), "private_id": out.get("private_id"),
                                         "questions": [q["pending_id"] for q in out.get("questions", [])], "escalated": escalated,
-                                        "escalation": r.escalation,
+                                        "escalation": r.escalation, **({"tries": tries} if tries > 1 else {}),
                                         "steps": out.get("steps") or out.get("command", {}).get("steps"),
                                         # "in" is all input tokens; the cached share is kept apart to show whether prompt caching is used
                                         "ai": [{"model": u.model, "in": u.input_tokens + u.cache_read_tokens + u.cache_write_tokens,

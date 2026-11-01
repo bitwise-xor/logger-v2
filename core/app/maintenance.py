@@ -1,11 +1,13 @@
 """Housekeeping: rows that only matter for a short time are removed once a day, so the tables do not grow for ever.
 - idempotency keys older than 30 days (a retry of the same message comes within minutes)
 - questions (pending) that were answered or expired more than 30 days ago
+- unread messages deleted on the web app more than a day ago (held.py; until then Undo brings one back)
 Everything else (entries, the audit log, the change log) is history and stays."""
 import logging
 import threading
 import time
 
+from . import held
 from .db import connect
 
 log = logging.getLogger("logger.maintenance")
@@ -21,7 +23,8 @@ def cleanup() -> dict:
         keys = c.execute("DELETE FROM idempotency_keys WHERE created_at < now() - make_interval(days => %s)", (KEY_DAYS,)).rowcount
         pend = c.execute("""DELETE FROM pending WHERE coalesce(resolved_at, expires_at) < now() - make_interval(days => %s)
                             AND (resolved_at IS NOT NULL OR expires_at < now())""", (PENDING_DAYS,)).rowcount
-    return {"idempotency_keys": keys, "pending": pend}
+        unread = held.purge(c.cursor())
+    return {"idempotency_keys": keys, "pending": pend, "deleted_unread": unread}
 
 
 def _loop() -> None:

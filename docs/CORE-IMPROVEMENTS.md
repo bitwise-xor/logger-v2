@@ -8,11 +8,16 @@ The v1 files (`v1_*.py`) are copied unchanged on purpose and are left as they ar
 
 Size: S = about an hour, M = about half a day, L = a day or more. Rough guesses.
 
+## Status (01.11.2026)
+
+- **1 (never lose a message) is done, and 2 in part** (deploy 34; the plan and the owner's answers are in the doc "Logger v2: status and web app plan", section "Core: never lose a message"). A typed message is kept word for word in `private.incoming` (migration 020, private schema) before the AI reads it; the AI reads with no transaction or connection open; the save, its audit row, the idempotency key and the removal of the kept words are one transaction (`logbook.read_held`, `held.py`). When the AI or the save fails, the words stay "not read yet": cron reads them again every 5 minutes for 2 hours (`docker exec logger-v2-core python -m app.held`), then the phone is told once (no words in the notification); Today and Recent show them with Try again and Delete (Undo). A retry keeps the message's own time. Kept until read or deleted; a deleted one goes for good after a day (daily clean-up).
+- **Still inside the save transaction (the rest of 2, left on purpose, owner's answer):** Todoist, the food look-up (USDA, Open Food Facts) and change commands. If one of them fails, the save is rolled back but the kept words stay, so nothing is lost. The quick buttons (ticks, health values, usual meals, Again chips) keep the old one-transaction path: they need no AI read.
+
 ## Status (31.10.2026)
 
 - **18 (reminders) is done on the web app side:** web-push nudges counted from the wake-up time (no weight, habits still open, nothing logged for N hours; quiet before waking, after bed, 16 hours after waking), set in Settings > Notifications, checked by cron every 5 minutes (`app.nudges`). **Telegram as a second channel and 17 (digest), 19 (export), 20 (food look-up) are still open.** Not yet verified on the user's iPhone.
 - **New on the core side (31.10.):** `labelread.py` (a photo of a nutrition label read by Claude, model claude-sonnet-5-5, one call per photo, cost in `audit_log` as `label_photo`), `ai/provider.py` `image_json`, `webpush.py` and `nudges.py` (web push without new packages), `webundo.py`. Migrations 018 (undo) and 019 (push). The VAPID signing key is the env var `VAPID_PRIVATE_KEY` in `/opt/stacks/logger-v2/.env`.
-- **Still open from before:** 17, 19, 20 (decisions), 24 (a page of learned words); 1 and 2 left alone on purpose.
+- **Still open from before:** 17, 19, 20 (decisions), 24 (a page of learned words); 1 and 2 left alone on purpose (done on 01.11., see above).
 
 ## Status (29.10.2026, first build run; details in `docs/reports/core-2026-10-29.md`)
 

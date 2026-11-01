@@ -128,24 +128,33 @@ def read(cur, provider: Provider, text: str, now: datetime, previous=(), meals=(
     """Parse with the small model (or take a given answer), settle it, and when something stays open, read the message
     once more with the larger model and keep whichever reading leaves fewer questions.
     -> (reading, usages, escalated)."""
-    cat, (_, types) = _food_cat(cur), _types(cur)
     naive = now.replace(tzinfo=None)
     usages = []
     if pred is None:
         pred, u = parser.parse(provider, text, naive, previous, meals)
         usages.append(u)
-    r = settle(cur, cat, types, pred, now)
+    r = best(cur, [pred], now)
     if not (escalate and r.questions):
         return r, usages, False
     pred2, u2 = parser.parse(provider, text, naive, previous, meals, model=ESCALATION_MODEL)
     usages.append(u2)
-    r2 = settle(cur, cat, types, pred2, now)
+    return best(cur, [pred, pred2], now, r), usages, True
+
+
+def best(cur, preds: list[dict], now: datetime, first: Optional[Reading] = None) -> Reading:
+    """Settle the parser's answer; with a second answer (the larger model's re-read), keep whichever reading leaves fewer
+    questions. Split from read() so a message can be read by the AI with no transaction open and settled afterwards (01.11.2026)."""
+    cat, (_, types) = _food_cat(cur), _types(cur)
+    r = first or settle(cur, cat, types, preds[0], now)
+    if len(preds) < 2:
+        return r
+    r2 = settle(cur, cat, types, preds[1], now)
     kept = r2 if len(r2.questions) < len(r.questions) else r
     # Only the kinds of question (food, amount, time, type), never the words: a week of these shows whether the larger model's
     # second read ever settles anything the first read could not (core list item 3).
     kept.escalation = {"before": [q["kind"] for q in r.questions], "after": [q["kind"] for q in r2.questions],
                        "kept": "second" if kept is r2 else "first"}
-    return kept, usages, True
+    return kept
 
 
 def _ask(cur, raw_id: int, questions: list[dict], now: datetime) -> list[dict]:

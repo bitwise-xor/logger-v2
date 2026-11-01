@@ -159,10 +159,10 @@ def test_the_daily_clean_up_removes_only_old_short_lived_rows():
                  ('p-new-done', 'log', '{}', 'x', now() - interval '3 days', now() + interval '1 day', now() - interval '2 days', 'cancelled'),
                  ('p-open', 'log', '{}', 'x', now() - interval '1 day', now() + interval '2 days', NULL, NULL),
                  ('p-exp-recent', 'log', '{}', 'x', now() - interval '10 days', now() - interval '5 days', NULL, NULL)""")
-    assert maintenance.cleanup() == {"idempotency_keys": 1, "pending": 2}
+    assert maintenance.cleanup() == {"idempotency_keys": 1, "pending": 2, "deleted_unread": 0}
     assert [r["key"] for r in owner_sql("SELECT key FROM idempotency_keys")] == ["new"]
     assert sorted(r["id"] for r in owner_sql("SELECT id FROM pending")) == ["p-exp-recent", "p-new-done", "p-open"]
-    assert maintenance.cleanup() == {"idempotency_keys": 0, "pending": 0}
+    assert maintenance.cleanup() == {"idempotency_keys": 0, "pending": 0, "deleted_unread": 0}
 
 
 def test_the_provider_gives_up_after_three_tries_not_five():

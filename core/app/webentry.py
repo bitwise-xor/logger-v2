@@ -11,7 +11,7 @@ _HEAD = {"saved": "Saved.", "partly_saved": "Saved what was clear. A question is
          "not_logged": "Not logged: this reads as a question for the assistant, not an entry.",
          "needs_confirmation": "Nothing saved yet: please confirm.", "rejected": "Nothing saved.", "cancelled": "Skipped.",
          "replayed": "Already saved earlier (same message).", "answered": "Found.", "changed": "Changed.",
-         "removed": "Removed.", "unchanged": "Nothing changed."}
+         "removed": "Removed.", "unchanged": "Nothing changed.", "held": "Not read yet, but kept."}
 
 
 def esc(x) -> str:
@@ -109,7 +109,7 @@ def reply_html(resp: dict, csrf: str) -> str:
                   f'<a class="ghost dim" href="{esc(c.get("no", "/web/"))}">{esc(c.get("no_label", "No"))}</a></form>')
     if resp.get("retry_text"):
         extra += '<p class="small">Your message is back in the box above.</p>'
-    warn = " warn" if resp["outcome"] in ("rejected", "needs_confirmation", "needs_choice", "not_logged") else ""
+    warn = " warn" if resp["outcome"] in ("rejected", "needs_confirmation", "needs_choice", "not_logged", "held") else ""
     return f'<section class="reply{warn}" aria-live="polite"><b>{esc(head)}</b>{_body(resp)}{extra}</section>'
 
 

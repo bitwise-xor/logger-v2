@@ -7,7 +7,7 @@ from typing import Optional
 
 from psycopg.types.json import Jsonb
 
-from . import logbook
+from . import held, logbook
 from .db import connect
 
 TABLES = {"f": "food_entries", "m": "measurements", "e": "events"}
@@ -31,6 +31,8 @@ def snapshot(refs: list[str]) -> list[dict]:
 
 def record(resp: dict, rows: Optional[list] = None) -> Optional[dict]:
     """What the Undo bar offers after this reply, or None (then the bar goes away)."""
+    if resp.get("held_undo"):  # an unread message deleted on Today or Recent (held.py)
+        return {"token": secrets.token_urlsafe(12), "head": resp.get("head") or "Deleted.", "held": int(resp["held_undo"])}
     if resp.get("outcome") == "changed" and rows:
         return {"token": secrets.token_urlsafe(12), "head": resp.get("head") or "Changed.", "rows": rows}
     if resp.get("raw_id") and resp.get("outcome") in ("saved", "partly_saved") and not resp.get("replayed"):
@@ -45,6 +47,10 @@ def apply(rec: dict) -> dict:
     if rec.get("raw_id"):
         from .webactions import undo  # here, not at the top: webactions imports this module
         return undo(str(rec["raw_id"]))
+    if rec.get("held"):
+        if held.restore(int(rec["held"])):
+            return {"outcome": "changed", "head": "The unread message is back."}
+        return {"outcome": "rejected", "head": "Nothing undone.", "reason": "That message is gone for good."}
     days, ids = set(), []
     with connect() as conn, conn.cursor() as cur:
         for item in rec.get("rows") or []:

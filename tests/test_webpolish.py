@@ -4,8 +4,7 @@ Today's food rows, the Gratitude date picker and the limit lines on the Health c
 from datetime import timedelta
 import re
 
-from app import logbook
-from app.ai.provider import ProviderError
+from app import held
 from conftest import owner_sql
 from test_log import fake, off, skyr  # noqa: F401 - fixtures reused
 from test_web import ORIGIN, act, client, n, web  # noqa: F401
@@ -26,15 +25,13 @@ def test_the_entry_box_learns_which_page_it_is_on(web):
     assert re.search(r'<form class="entry".*?name="back" value="/web/" data-here>', page, re.S)
 
 
-def test_a_message_that_was_not_saved_comes_back_in_the_box(web, skyr):
-    class Down:
-        def json(self, *a, **k):
-            raise ProviderError("down")
-    logbook.PROVIDER = Down()
-    try:
-        page = act(web, "/web/log", text="150 g skyr, weight 82.4 <b>", key="p1", back="/web/")
-    finally:
-        logbook.PROVIDER = None
+def test_a_message_that_was_not_saved_comes_back_in_the_box(web, skyr, monkeypatch):
+    # Since 01.11.2026 an AI failure keeps the words (held.py, test_held); they come back in the box when not even that
+    # worked, here the database refusing to keep them.
+    def broken(*a, **k):
+        raise RuntimeError("database down")
+    monkeypatch.setattr(held, "keep", broken)
+    page = act(web, "/web/log", text="150 g skyr, weight 82.4 <b>", key="p1", back="/web/")
     assert "Nothing saved." in page.text and "back in the box" in page.text
     assert re.search(r'<textarea id="entry-text"[^>]* autofocus [^>]*>150 g skyr, weight 82.4 &lt;b&gt;</textarea>', page.text)
     assert web[0].get("/web/").text.count("autofocus") == 0  # the text is shown once, not on the next page
