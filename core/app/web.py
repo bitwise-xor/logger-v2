@@ -468,18 +468,20 @@ def add_routes(mcp) -> None:
 
     @mcp.custom_route("/web/foods.json", methods=["GET"])
     async def foods_json(request: Request) -> Response:
-        """The catalogue for the entry box's suggestions: active foods, how often each was eaten and its last amount."""
+        """The catalogue for the entry box's suggestions: active foods, how often each was eaten, its last amount and when
+        it was eaten last (t, seconds since 1970; the most recent come first since 02.11.2026)."""
         if (r := hidden(request)) is not None:
             return r
         if not current_session(request):
             return Response("Not found", status_code=404)
         with connect() as c:
-            rows = c.execute("""SELECT f.name, f.basis, f.aliases, x.amount, coalesce(x.n, 0) AS n FROM foods f
-                                LEFT JOIN (SELECT food_id, count(*) AS n, (array_agg(amount ORDER BY eaten_at DESC, id DESC))[1] AS amount
+            rows = c.execute("""SELECT f.name, f.basis, f.aliases, x.amount, x.last, coalesce(x.n, 0) AS n FROM foods f
+                                LEFT JOIN (SELECT food_id, count(*) AS n, (array_agg(amount ORDER BY eaten_at DESC, id DESC))[1] AS amount,
+                                                  max(eaten_at) AS last
                                            FROM food_entries GROUP BY food_id) x ON x.food_id = f.id
                                 WHERE f.active ORDER BY n DESC, f.name""").fetchall()
         out = [{"n": r["name"], "b": r["basis"], "w": list(r["aliases"] or []), "a": float(r["amount"]) if r["amount"] is not None else None,
-                "c": r["n"]} for r in rows]
+                "c": r["n"], "t": int(r["last"].timestamp()) if r["last"] else 0} for r in rows]
         return JSONResponse(out, headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"})
 
     @mcp.custom_route("/web/insights", methods=["GET"])

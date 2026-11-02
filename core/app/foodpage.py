@@ -280,13 +280,14 @@ def _food_list(cur, text: str, flt: str, sort: str = "eaten"):
     where.append({"drinks": "f.is_drink", "new": "f.created_at > now() - interval '14 days'", "review": "f.needs_review"}.get(flt, "true"))
     order = next((o for k, _l, o in SORTS if k == sort), SORTS[0][2])
     cur.execute(f"""SELECT f.id, f.name, f.basis, f.kcal, f.protein, f.fat, f.carbs, f.is_drink, f.needs_review, f.created_at,
-                           count(e.id) AS n, max(e.day) AS last
+                           f.aliases, count(e.id) AS n, max(e.day) AS last
                     FROM foods f LEFT JOIN food_entries e ON e.food_id = f.id WHERE {" AND ".join(where)}
                     GROUP BY f.id ORDER BY {order} LIMIT %s""", args + [LIST_LIMIT])  # where and order: fixed texts only
     return cur.fetchall()
 
 
-def _food_detail(cur, csrf: str, fid: int, back: str) -> str:
+def _food_detail(cur, csrf: str, fid: int, back: str, close: str = "") -> str:
+    """close: the catalogue's link without this food open (the box's Close buttons, 02.11.2026)."""
     cur.execute("SELECT * FROM foods WHERE id = %s", (fid,))
     f = cur.fetchone()
     if not f:
@@ -307,8 +308,9 @@ def _food_detail(cur, csrf: str, fid: int, back: str) -> str:
               f'<span class="small">{esc(f["review_reason"] or "")}</span><button class="ghost sm" type="submit">Looks right</button></form>'
               if f["needs_review"] else "")
     src = " · ".join(x for x in (f["source"], f["brand"], f["source_note"]) if x)
-    return (f'<div class="fbox stack"><p class="small">Source: {esc(src)} · added {f["created_at"]:%d.%m.%Y} · eaten {use["n"]} times'
-            f'{f", last " + use["b"].strftime("%d.%m.%Y") if use["b"] else ""} · values per 100 {esc(f["basis"])}</p>{review}'
+    shut = f'<a class="ghost sm" href="{esc(close)}#N{fid}" aria-label="Close {esc(f["name"])}">Close</a>' if close else ""
+    return (f'<div class="fbox stack"><div class="row between"><p class="small">Source: {esc(src)} · added {f["created_at"]:%d.%m.%Y} · eaten {use["n"]} times'
+            f'{f", last " + use["b"].strftime("%d.%m.%Y") if use["b"] else ""} · values per 100 {esc(f["basis"])}</p>{shut}</div>{review}'
             f'<form method="post" action="/web/food/values">{base}<div class="fields">{vals}</div>{past}'
             '<p class="row"><button class="primary sm" type="submit">Save</button><span class="small">You see the change first, then Yes. '
             'Without the tick only new entries use the new values.</span></p></form>'
@@ -318,7 +320,7 @@ def _food_detail(cur, csrf: str, fid: int, back: str) -> str:
             f'<div class="grid2"><div><p class="small">Units</p>{"<br>".join(f"1 {esc(u["unit"])} = {_plain(u["grams"])} {esc(f["basis"])}" for u in units) or "<span class=empty>none</span>"}</div>'
             f'<form method="post" action="/web/food/barcode">{base}<p class="small">Barcode</p><div class="row">'
             f'<input name="barcode" value="{esc(f["barcode"] or "")}" inputmode="numeric" maxlength="14" placeholder="type or paste" aria-label="Barcode">'
-            '<button class="primary sm" type="submit">Save</button></div></form></div></div>')
+            f'<button class="primary sm" type="submit">Save</button></div></form></div>{f"<p class=row>{shut}</p>" if shut else ""}</div>')
 
 
 def _usual_meals(cur, csrf: str, um, back: str) -> str:
@@ -375,12 +377,15 @@ def render_catalogue(csrf: str, q) -> str:
             open_ = sel == nid
             link = url("/web/food/catalogue", q=text, f="" if flt == "all" else flt, s=s_q, food="" if open_ else nid)
             flags = (' <span class="pill warn">review</span>' if r["needs_review"] else "") + (' <span class="pill">drink</span>' if r["is_drink"] else "")
-            body.append(f'<tr class="click{" sel" if open_ else ""}" id="{nid}"><td><a href="{esc(link)}#{nid}"><span class="small">{nid}</span> {esc(r["name"])}</a>{flags}</td>'
+            # the words the logger knows it by, under the name (02.11.2026)
+            words = f'<span class="small words">{esc(", ".join(r["aliases"]))}</span>' if r["aliases"] else ""
+            body.append(f'<tr class="click{" sel" if open_ else ""}" id="{nid}"><td><a href="{esc(link)}#{nid}"><span class="small">{nid}</span> {esc(r["name"])}</a>{flags}{words}</td>'
                         + "".join(f"<td>{_n(r[k], 1) if r[k] is not None and float(r[k]) % 1 else _n(r[k])}</td>" for k in ("kcal", "protein", "fat", "carbs"))
                         + f'<td class="hide-sm">{r["n"]}</td><td class="hide-sm">{r["last"].strftime("%d.%m.") if r["last"] else "–"}</td>'
                         + f'<td class="hide-sm">{r["created_at"].astimezone(rules.BERLIN).strftime("%d.%m.%y")}</td></tr>')
             if open_ and m:
-                body.append(f'<tr class="panel"><td colspan="8">{_food_detail(cur, csrf, int(m[1]), back)}</td></tr>')
+                close = url("/web/food/catalogue", q=text, f="" if flt == "all" else flt, s=s_q)
+                body.append(f'<tr class="panel"><td colspan="8">{_food_detail(cur, csrf, int(m[1]), back, close)}</td></tr>')
     chips = "".join(f'<a class="chip{" on" if k == flt else ""}" href="{esc(url("/web/food/catalogue", q=text, f="" if k == "all" else k, s=s_q))}">{lbl}</a>'
                     for k, lbl in FILTERS)
     sort_opts = "".join(f'<option value="{k}"{" selected" if k == srt else ""}>{lbl}</option>' for k, lbl, _o in SORTS)

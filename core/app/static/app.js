@@ -287,6 +287,8 @@ function setupPush(box) {
 
 // Food suggestions in the entry box (31.10.2026): after 2 letters of the part being typed (after the last comma or
 // "and"), foods of the catalogue that match, most eaten first; picking one puts in its name and the amount eaten last.
+const fold = s => s.toLowerCase().replace(/ä/g, "ae").replace(/ö/g, "oe").replace(/ü/g, "ue").replace(/ß/g, "ss");
+
 function suggestFoods(box) {
   let foods = null, shown = [], sel = -1, skip = false;
   const list = document.createElement("ul");
@@ -323,20 +325,27 @@ function suggestFoods(box) {
   });
   box.addEventListener("input", () => {
     if (skip) { skip = false; return; }
-    const {q} = part();
+    const q = fold(part().q);
     if (!foods || q.length < 2) { close(); return; }
-    const score = f => {
-      const name = f.n.toLowerCase(), words = (name + " " + (f.w || []).join(" ").toLowerCase());
-      if (name.startsWith(q)) return 3;
-      if (words.split(/[\s,()/-]+/).some(w => w.startsWith(q))) return 2;
-      return words.includes(q) ? 1 : 0;
+    // 02.11.2026: ü, ö, ä, ß match ue, oe, ae, ss both ways (also inside longer words: "Knuspermüsli" for "muesli");
+    // a food found by one of its words shows that word; the most recently eaten come first
+    const match = f => {
+      const name = fold(f.n), cut = s => s.split(/[\s,()/-]+/);
+      if (name.startsWith(q)) return {s: 3};
+      if (cut(name).some(w => w.startsWith(q))) return {s: 2};
+      if (name.includes(q)) return {s: 1};
+      const word = (f.w || []).find(w => cut(fold(w)).some(x => x.startsWith(q))) || (f.w || []).find(w => fold(w).includes(q));
+      return word ? {s: 1, word} : null;
     };
-    shown = foods.map(f => [score(f), f]).filter(x => x[0]).sort((a, b) => b[0] - a[0] || b[1].c - a[1].c).slice(0, 6).map(x => x[1]);
+    const found = foods.map(f => [match(f), f]).filter(x => x[0]);
+    shown = found.sort((a, b) => (b[1].t || 0) - (a[1].t || 0) || b[0].s - a[0].s || b[1].c - a[1].c).slice(0, 6);
     if (!shown.length) { close(); return; }
+    shown = shown.map(([m, f]) => ({...f, word: m.word}));
     list.replaceChildren(...shown.map((f, i) => {
       const li = document.createElement("li"), b = document.createElement("b"), s = document.createElement("span");
       li.id = "ac-" + i; li.setAttribute("role", "option");
       b.textContent = f.n; s.textContent = amount(f);
+      if (f.word) { const w = document.createElement("span"); w.className = "w"; w.textContent = f.word; b.append(w); }
       li.append(b, s);
       li.addEventListener("mousedown", e => { e.preventDefault(); pick(f); });
       return li;

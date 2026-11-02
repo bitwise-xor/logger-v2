@@ -8,7 +8,8 @@ from .db import connect
 from .webentry import esc, hidden, icon, key
 
 REVIEW_LIMIT = 20
-AGAIN = 8  # Again chips: the latest different foods
+AGAIN = 12  # Again chips: the latest different foods (02.11.2026: 12 on the PC; phones show the first AGAIN_PHONE)
+AGAIN_PHONE = 8
 MACROS = (("kcal", "Calories", "kcal"), ("protein", "Protein", "g"), ("fat", "Fat", "g"), ("carbs", "Carbs", "g"))
 THOUGHT_TYPES = ("idea", "question", "task", "project", "note", "journal", "reading", "progress")
 AREAS = ("health", "projects", "finance", "immigration", "learning", "personal")
@@ -32,6 +33,12 @@ def _plain(x) -> str:
 
 def _hm(ts) -> str:
     return ts.astimezone(rules.BERLIN).strftime("%H:%M")
+
+
+def _hours(span: timedelta) -> str:
+    """A length of time as "7 h 05 min"."""
+    h, m = divmod(round(span.total_seconds() / 60), 60)
+    return f"{h} h {m:02d} min"
 
 
 def pick_day(raw=None) -> tuple:
@@ -87,6 +94,11 @@ def load(asked: date | None = None) -> dict:
         b = cur.fetchone()
         if b:
             health["bed"] = {"id": f"e{b['id']}", "v": [_hm(b["event_at"])], "at": ""}
+        if w:  # hours slept, shown with Woke up (02.11.2026): the Health page's pairing (v_sleep: the last bed in the 24 h before)
+            cur.execute("SELECT bed_at FROM v_sleep WHERE wake_at = %s", (w["event_at"],))
+            s = cur.fetchone()
+            if s:
+                health["wake"]["slept"] = "slept " + _hours(w["event_at"] - s["bed_at"])
         cur.execute("""SELECT * FROM (
                          SELECT 't' || t.id AS ref, 'thought' AS kind, t.summary AS what, (t.logged_at AT TIME ZONE 'Europe/Berlin')::date AS day,
                                 t.review_reason AS reason, t.logged_at AS at, t.thought_type AS a, t.area AS b, NULL::numeric AS v1, NULL::numeric AS v2, NULL AS unit
@@ -234,13 +246,14 @@ def _again_section(d: dict, csrf: str) -> str:
         return ""
     now = _hm(datetime.now(rules.BERLIN))
     chips = "".join(
-        f'<details class="usual again"><summary>+ {esc(a["name"])} <span class="small num">{_plain(a["amount"])} {a["basis"]}</span></summary>'
+        f'<details class="usual again{" more" if i >= AGAIN_PHONE else ""}"><summary>+ {esc(a["name"])} '
+        f'<span class="small num">{_plain(a["amount"])} {a["basis"]}</span></summary>'
         f'<form class="again-form" method="post" action="/web/food/again">{hidden("csrf", csrf)}{hidden("key", key())}{hidden("food", str(a["id"]))}'
         f'<label>Amount <input type="number" name="amount" id="ag-a-{a["id"]}" min="0" max="5000" step="any" inputmode="decimal" '
         f'value="{_plain(a["amount"])}"> {a["basis"]}</label>'
         f'<label>Time <input type="time" name="time" id="ag-t-{a["id"]}" value="{now}"></label>'
         '<button class="primary sm" type="submit">Log</button></form></details>'
-        for a in d["again"])
+        for i, a in enumerate(d["again"]))
     return f'<div class="usual-row again-row"><span class="small">Again:</span>{chips}</div>'
 
 
@@ -318,7 +331,7 @@ def _health_section(d: dict, csrf: str) -> str:
         else:
             a = _plain(cur["v"][0]) if cur else ""
             fields = (f'<input type="number" name="v1" id="h-{k}" step="any" inputmode="decimal" value="{a}" data-orig="{a}" placeholder="–" aria-label="{label}">')
-        small = " · ".join(x for x in (sub, unit, cur["at"] if cur else "") if x)
+        small = " · ".join(x for x in (sub, unit, cur["at"] if cur else "", (cur or {}).get("slept", "")) if x)
         if d["past"]:
             said = "–" if not cur else cur["v"][0] if k in ("wake", "bed") else "/".join(_plain(v) for v in cur["v"] if v is not None)
             rows.append(f'<div class="hrow ro"><span class="lbl">{label}{f"<span class=small>{esc(small)}</span>" if small else ""}</span>'

@@ -132,8 +132,12 @@ def _charts(d: dict) -> str:
     pts = [[idx(day), round(float(r["hours"]), 2), f"Night to {_dm(day)}: bed {_hm(r['bed_at'])}, up {_hm(r['wake_at'])}, {hm(float(r['hours']))}"]
            for day, r in nights]
     slstat = f'avg <b>{hm(_avg([float(r["hours"]) for _, r in nights]))}</b> · {len(nights)} nights' if nights else "no nights with bed and wake-up"
-    sleep = _chart("c-sleep", d, [{"mark": "bar", "cls": "a", "pts": pts}], label="Sleep in hours", min=0, unit=" h",
-                   lines=[[7, "w", "7 h"], [6, "r", "6 h"]])
+    # the 7-day average of the nights in the week up to each night (02.11.2026), like the weight's
+    good = {k: float(r["hours"]) for k, r in d["sleep"].items() if 0 < float(r["hours"]) < 24}
+    avg7 = [[idx(day), round(a, 2), f"7-day average to {_dm(day)}: {hm(a)}"]
+            for day, _r in nights for a in [_avg([h for k, h in good.items() if day - timedelta(days=6) <= k <= day])]]
+    sleep = _chart("c-sleep", d, [{"mark": "bar", "cls": "a", "pts": pts}, {"mark": "line", "cls": "b", "pts": avg7}],
+                   label="Sleep in hours", min=0, unit=" h", lines=[[7, "w", "7 h"], [6, "r", "6 h"]])
     card = lambda title, stat, chart, legend="": (f'<div class="card"><h2>{title}</h2><p class="stat">{stat}</p>{chart}'
                                                  + (f'<p class="legend">{legend}</p>' if legend else "") + "</div>")
     return ('<div class="grid2">'
@@ -143,7 +147,8 @@ def _charts(d: dict) -> str:
                    '<i class="key ref"></i>amber from 130/80 <i class="key ref r"></i>red from 140/90')
             + card('Blood sugar <span class="small">fasted, mg/dL</span>', sstat, sugar,
                    '<i class="key ref"></i>amber from 100 <i class="key ref r"></i>red from 126')
-            + card("Sleep", slstat, sleep, 'Hours from bed to wake-up; point at or tap a bar for the times · '
+            + card("Sleep", slstat, sleep, '<i class="key a"></i>night <i class="key line b"></i>7-day average · '
+                   'hours from bed to wake-up; point at or tap a bar for the times · '
                    '<i class="key ref"></i>amber under 7 h <i class="key ref r"></i>red under 6 h')
             + "</div>")
 

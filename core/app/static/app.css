@@ -631,3 +631,10 @@ dialog.scan{max-height:calc(100dvh - 1.5rem);overflow-y:auto}
 .ibar .fill.a{fill:var(--accent)}
 .ibar .fill.b{fill:var(--c2)}
 @media (max-width:560px){.ib{grid-template-columns:1fr auto}.ib .ibar{grid-column:1/-1;grid-row:2}}
+/* 02.11.2026: a food's words under its name in the catalogue, the Close button of a food's box, the word a suggestion was
+   found by, and 12 Again chips on the PC but the first 8 on phones (the phone layout starts at 1080 px, like the tab bar) */
+.ft .words{display:block;font-weight:400;overflow-wrap:anywhere}
+.row.between{justify-content:space-between;align-items:flex-start;flex-wrap:nowrap}
+.row.between>p{flex:1 1 auto;min-width:0}
+.ac li b .w{margin-left:.45rem;font-size:.85em;font-weight:400;color:var(--dim)}
+@media (max-width:1080px){details.again.more{display:none}}
