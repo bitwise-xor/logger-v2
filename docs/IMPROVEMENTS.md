@@ -9,8 +9,9 @@ Size: S = about an hour, M = about half a day, L = a day or more. Rough guesses.
 
 ## Status (31.10.2026; the first build run of 29.10. is described in `docs/reports/web-app-2026-10-29.md`)
 
+- **02.11.2026 (deploy 36, commit a35becf):** 12 Again chips on the PC (8 on phones); a food's words under its name in the catalogue and a Close button on the open food's box; suggestions treat ü/ö/ä/ß as ue/oe/ae/ss, show the word a food was found by, most recently eaten first; **36 (sleep hours) done in part:** "slept 7 h 05 min" with Woke up on Today and a 7-day average line on the Health Sleep chart (no colours, no target: the owner's choice; the Week page already had the average night). **41 (weight trend) dropped:** the Health page already has the 7-day average. Answers: artifact https://claude.ai/artifact/9pxSQY2DD55er5y51jMm51 (db `answers`).
 - **31.10.2026, the three "frictionless" rounds (details in HANDOVER section 000):** the whole web app restyled (Inter, soft cards, icons, light/dark switch, phone tab bar with the entry box pinned above it); Today for any day (date picker, earlier days read-only) with the macro donut and share table; Undo bar; food entries change at once (no "Yes" question); food editor in place on Today; Again chips; food suggestions in the entry box; a 2-line entry box on the PC; the Recent page; notifications ("nudges") through web push (Settings > Notifications); voice input (microphone in the entry box); the barcode scanner (zxing) with Open Food Facts look-up and **photos of nutrition labels read by Claude**; the Insights page. Item 17 (barcode by camera) is done by this.
-- **Open ideas after those rounds:** section 8 below (items 35 to 51). The user's answers on 31.10. are in the private artifact https://claude.ai/artifact/9rHgvRxZWG7tV2LdXxdQhg (swipe: not needed; sleep hours and mood/energy: "save it for the next version").
+- **Open ideas after those rounds:** section 8 below (items 35 to 52; 52 = coaching, added 02.11.2026). The user's answers on 31.10. are in the private artifact https://claude.ai/artifact/9rHgvRxZWG7tV2LdXxdQhg (swipe: not needed; sleep hours and mood/energy: "save it for the next version").
 - **Not yet checked on the user's real iPhone:** a real notification (needs Logger on the home screen, iOS 16.4+), the microphone in the home-screen app. The barcode scanner and the label photo were tried by the user and work.
 
 ## Status (29.10.2026, end of the first build run)
@@ -117,6 +118,26 @@ Collected from the user's list of 30.10.2026 and the answers on 31.10.2026. Noth
 | 49 | More nudges: evening blood pressure (offered, not chosen), a question open for a day, a habit-specific time; Telegram as a second channel (core item 18) | Today's nudges: no weight, habits open, nothing logged for N hours, all counted from the wake-up time | S-M |
 | 50 | Insights: more questions as the data grows (mood, steps, sleep once item 36 exists), and a longer range | Today's three cards need about 4 days in each group; the user's data had 1 day with a long gap after food | M |
 | 51 | Voice without the browser's speech recognition (record on the phone, convert on the server) if Safari's recognition is missing in the home-screen app | Only if the microphone button does not show or does not work there | M-L |
+| 52 | Coaching: "Coach me" on Today (any day of the date picker) and "Review this week" on the Week page, by Claude Opus 5.5 at high effort, on demand | The user's idea of 02.11.2026; details below. The chat can already coach when asked; this makes it one tap and keeps each coaching | M |
+
+### 52. Coaching (02.11.2026, not started; plan in the doc and a clickable mockup first)
+
+- **Day coach** (button on Today, for the day shown): what went well, what to improve, the next meal (from foods the user actually eats,
+  fitted to the protein, carbs, fat and kcal left against that day's targets, and the time of day), and gaps in the log (no weight yet, ...).
+- **Week review** (button on the Week page): the week against the targets, trends in weight, blood pressure, fasting sugar and sleep,
+  habits kept and missed, best and hardest days, one or two focus points for next week. It may also read that week's daily coachings.
+- **Model:** claude-opus-5-5, effort high (the user's choice), only when a button is pressed. Estimates, not measured: 20 to 60 s per
+  coaching (show "Coaching..." while it works; the provider's 60 s timeout needs to be longer for this), about 5 to 20 cents a day coaching,
+  10 to 40 cents a week review. Cost shown on the Usage page as its own kind (audit_log).
+- **Saved:** each coaching kept in a new table (day or week, text, model, cost, time), shown again without a new call; "Coach me again" asks
+  for a fresh one.
+- **Health caution:** comment only on what was logged, no medical advice; say when something is worth raising with the doctor.
+- **Goals:** a short "My goals" text in Settings that the coach reads every time (without it, it can only coach against the targets).
+- **Undecided (ask the user):** (1) buttons on Today and Week, or a Coach page under More with all past coachings; (2) whether the coach sees
+  thoughts and ideas (private and gratitude entries left out by default); (3) on demand only, or also a Sunday-evening week review as a
+  notification (that would also cover the digest, item 45 / core 17); (4) the user's goals, or the Settings field for them.
+- **Data to give it:** the day's (or week's) food entries by meal with macros and targets, habits, health values (weight, BP, sugar, bed and
+  wake times), the last 7 days for context, the catalogue's frequently eaten foods for the next-meal suggestion.
 
 ## Suggested order
 
