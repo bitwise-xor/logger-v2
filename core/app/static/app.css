@@ -146,6 +146,18 @@ details.usual>summary:hover{border-color:var(--line2);background:var(--bar)}
 details.usual>summary::-webkit-details-marker{display:none}
 details.usual[open]{flex-basis:100%}
 details.usual[open]>summary{background:var(--ink);border-color:var(--ink);color:var(--card)}
+/* One-tap usual meals (02.11.2026): "+ name" logs at once, the pencil next to it opens the editor; the two look like one chip */
+form.uq{margin:0;display:inline-flex}
+form.uq>button{display:inline-flex;align-items:center;min-height:2.3rem;border:1px solid var(--line);border-right:0;background:var(--field);color:var(--ink);
+      border-radius:2rem 0 0 2rem;padding:0 .7rem 0 .95rem;font:inherit;font-size:.9rem;font-weight:500;cursor:pointer}
+form.uq>button:hover{border-color:var(--line2);background:var(--bar)}
+details.uq-edit{margin-left:-.5rem}
+details.uq-edit>summary{border-radius:0 2rem 2rem 0;padding:0 .75rem 0 .55rem;color:var(--dim)}
+details.uq-edit>summary .ic{width:1rem;height:1rem}
+details.uq-edit[open]{margin-left:0}
+details.uq-edit[open]>summary{border-radius:2rem;padding:0 .95rem;gap:.45rem}
+details.uq-edit:not([open]) .uq-n{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+form.uq:has(+details.uq-edit[open])>button{border-right:1px solid var(--line);border-radius:2rem;padding-right:.95rem}
 .editor{margin-top:.7rem;border:1px solid var(--line);border-radius:14px;padding:.9rem 1rem;background:var(--field)}
 .editor .foot{display:flex;flex-wrap:wrap;gap:.6rem;align-items:center;justify-content:space-between;margin-top:.7rem;border-top:1px solid var(--line);padding-top:.7rem}
 

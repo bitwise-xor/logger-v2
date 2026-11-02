@@ -96,6 +96,23 @@ def test_a_usual_meal_refuses_bad_input(web, fake, breakfast):
     assert n("SELECT count(*) AS n FROM food_entries") == 0
 
 
+def test_a_usual_meal_in_one_tap(web, fake, breakfast):
+    """Web item 46 (02.11.2026): "+ name" on Today logs the meal as saved, now; the pencil still opens the editor."""
+    mid, _, _ = breakfast
+    page = web[0].get("/web/").text
+    tap = page[page.index('<form class="uq"'):]
+    tap = tap[:tap.index("</form>")]
+    assert f'name="meal" value="{mid}"' in tap and 'name="quick" value="1"' in tap and "+ usual breakfast</button>" in tap
+    assert 'class="usual uq-edit"' in page and "Change usual breakfast<span class=\"sr\"> before logging" in page and 'name="on_' in page
+    done = act(web, "/web/usual", meal=str(mid), key="u6", quick="1")
+    assert "Saved." in done.text and fake.calls == [] and 'action="/web/undo"' in done.text  # a mistaken tap is one Undo away
+    assert [float(r["amount"]) for r in owner_sql("SELECT amount FROM food_entries ORDER BY id")] == [60, 200, 10]
+    assert owner_sql("SELECT content FROM raw_inbox ORDER BY id DESC LIMIT 1")[0]["content"] == "my usual usual breakfast"
+    assert n("SELECT count(*) AS n FROM food_entries WHERE abs(extract(epoch FROM eaten_at - now())) < 300") == 3  # logged now
+    again = act(web, "/web/usual", meal=str(mid), key="u6", quick="1")  # a double tap: the same key saves once
+    assert n("SELECT count(*) AS n FROM food_entries") == 3 and "Already saved" in again.text
+
+
 # ---- health
 
 def test_a_new_weight_from_the_health_card(web, fake):

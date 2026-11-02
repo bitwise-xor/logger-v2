@@ -274,8 +274,12 @@ def _usual_section(d: dict, csrf: str) -> str:
             + "".join(f'<td class="m">{_n(float(i[k]) * float(i["grams"]) / 100)}</td>' for k, _, _ in MACROS) + "</tr>"
             for i in its)
         tot = [sum(float(i[k]) * float(i["grams"]) / 100 for i in its) for k, _, _ in MACROS]
+        # One tap logs the meal as saved, now (web item 46, 02.11.2026); the pencil opens the editor for changes first
         out.append(
-            f'<details class="usual"><summary>+ {esc(name)}</summary><div class="editor">'
+            f'<form class="uq" method="post" action="/web/usual">{hidden("csrf", csrf)}{hidden("key", key())}{hidden("meal", str(mid))}'
+            f'{hidden("quick", "1")}<button type="submit" title="Log {esc(name)} now, as saved">+ {esc(name)}</button></form>'
+            f'<details class="usual uq-edit"><summary title="Change {esc(name)} before logging">{icon("edit")}'
+            f'<span class="uq-n">Change {esc(name)}<span class="sr"> before logging</span></span></summary><div class="editor">'
             f'<form class="usual-edit" method="post" action="/web/usual">{hidden("csrf", csrf)}{hidden("key", key())}{hidden("meal", str(mid))}'
             f'<div class="tablewrap"><table class="ft">{_head()}<tbody>{rows}'
             f'<tr class="sum"><td>This meal</td>{"".join(f"<td class=m>{_n(v)}</td>" for v in tot)}</tr></tbody></table></div>'

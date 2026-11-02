@@ -139,6 +139,9 @@ def usual(meal_id: str, form, key: Optional[str]) -> dict:
                              WHERE i.meal_id = %s ORDER BY i.sort_order, i.id""", (int(meal_id),)).fetchall() if meal else []
     if not meal or not items:
         return _rejected("Unknown usual meal.")
+    if form.get("quick") == "1":  # one tap on Today (web item 46): every item with its saved amount, now; Undo is on the reply
+        return logbook.log(f"my usual {meal['name']}", key, _pred(usual_meals=[{"name": meal["name"], "skip": [], "changes": [], "when": None}]),
+                           channel=logbook.WEB)
     skip, changes, said = [], [], []
     for i in items:
         if not form.get(f"on_{i['id']}"):
