@@ -109,22 +109,30 @@ def test_a_failure_while_saving_saves_nothing_and_keeps_the_words(fake, skyr, mo
 
 
 def test_the_ai_reads_with_no_database_transaction_open(fake, skyr, monkeypatch):
-    opened, seen = [], []
+    lent, seen = [], []
 
-    def tracking(*a, **k):
-        c = db.connect(*a, **k)
-        opened.append(c)
-        return c
+    class Tracking:  # a pooled connection (02.11.2026): counted while a `with` block has it
+        def __init__(self, *a, **k):
+            self.cm = db.connect(*a, **k)
+
+        def __enter__(self):
+            c = self.cm.__enter__()
+            lent.append(c)
+            return c
+
+        def __exit__(self, *e):
+            lent.pop()
+            return self.cm.__exit__(*e)
     for mod in (logbook, held):
-        monkeypatch.setattr(mod, "connect", tracking)
+        monkeypatch.setattr(mod, "connect", Tracking)
     real = fake.json
 
     def watching(*a, **k):
-        seen.append([c.info.transaction_status.name for c in opened if not c.closed])
+        seen.append([c.info.transaction_status.name for c in lent])
         return real(*a, **k)
     monkeypatch.setattr(fake, "json", watching)
     assert logbook.log(TEXT, "k8")["outcome"] == "saved"
-    assert seen == [[]]  # every connection was closed while the AI read
+    assert seen == [[]]  # no connection was lent, so no transaction was open, while the AI read
 
 
 def test_cron_tries_for_two_hours_then_tells_the_phone_once_without_the_words(fake, skyr, monkeypatch, device):

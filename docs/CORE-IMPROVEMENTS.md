@@ -15,12 +15,13 @@ The combined ranking with the web list is at the top of `docs/IMPROVEMENTS.md`. 
 1. **27 Disk headroom** (S, quick win): **done 02.11.2026**, see section 8.
 2. **5 Shorter AI wait** (S, quick win): **done 02.11.2026, deploy 42** (commit 9d5b17e): a live read of a kept message gets 20 s and one retry per AI call (`provider.LIVE`, set by `logbook.read_held`); cron's reads keep 60 s and 2 retries. Measured before: a read takes about 2 s, a whole message at most 7.5 s.
 3. **26 Usage page complete** (S, quick win): label photos as a kind; token counts for food look-ups and lab reports (web 29).
-4. **28 Faster test run, then 15 tests on GitHub** (M): **in progress 02.11.2026**, see section 8. **15 was already working:** GitHub runs all tests on every push to main (27 runs since 29.10., about 3 minutes each, the recent ones green); 4 runs failed, all between about 03:00 and 06:00 Berlin time (likely tests around the 05:00 day change; to look into).
+4. **28 Faster test run, then 15 tests on GitHub** (M): **done 02.11.2026: 15 min → 3 min 14 s** (step 1 test-only settings, step 2 the connection pool, item 9, deploy 45), see section 8. **15 was already working:** GitHub runs all tests on every push to main (27 runs since 29.10., about 3 minutes each, the recent ones green); 4 runs failed, all between about 03:00 and 06:00 Berlin time (likely tests around the 05:00 day change; to look into).
 5. **19 Export** (S-M): with web 45.
 6. **13 Remove the pilot tools** (S-M): 9 hidden tools still in `mcp_app.py`, plus `service.py` and its tests; fewer tests also make runs shorter.
 7. **24 Words review** (S): the catalogue shows each food's words since 02.11.; a list of all learned words by date is still missing.
 8. **3 Second read**: look at the data again around mid-November (owner agreed on 02.11.).
-9. Later: 17 digest (or the coach's week review, web 52), 25 Telegram, 20 food look-up gaps, 9 connection pool, 16 `answer()` handlers, 12 update watch (Diun), 6 shorter prompt (not worth it now).
+9. **9 Connection pool: done 02.11.2026, deploy 45** (owner's yes): `db.connect()` lends a connection from a psycopg-pool `ConnectionPool` (3.3.3; 1 to 8 per role, checked before lending, idle ones closed after 5 minutes, closed at exit for the cron jobs); `with connect() as conn` works as before (commit at the end, rollback after an error). Live page builds about 3× faster (Today 146 → 48 ms, Habits 63 → 12 ms); the full test run 10 min → 3 min 14 s; a database restart is recovered without restarting the app (tried on the test database).
+10. Later: 17 digest (or the coach's week review, web 52), 25 Telegram, 20 food look-up gaps, 16 `answer()` handlers, 12 update watch (Diun), 6 shorter prompt (not worth it now).
 **Done since this list was written:** 1, most of 2 (01.11.), 4 (cache reads recorded, 1-hour cache on 02.11.), 7, 8, 10 (`maintenance.py`), 11, 14, 18 (web push), 21, 22, 23.
 
 ## Status (01.11.2026)
