@@ -15,7 +15,7 @@ from psycopg.types.json import Jsonb
 
 from . import commands, held, labs, lookup, record, todos
 from .ai import parser
-from .ai.provider import AnthropicProvider, Provider, ProviderError
+from .ai.provider import LIVE, AnthropicProvider, Provider, ProviderError
 from .db import connect
 from .v1_food import _food_cat, _types
 from .v1_log import Reject
@@ -160,7 +160,16 @@ def read_held(hid: int, background: bool = False) -> dict[str, Any]:
     open; the save, its audit row, the idempotency key and the removal of the kept words are one transaction. Whatever
     fails, the words stay kept, "not read yet", for the next try. A message read again later keeps its own time.
     background: the cron job's try, with nobody watching the reply: a message the logger refuses or will not log stays
-    kept (marked "needs you", no more automatic tries) instead of being dropped."""
+    kept (marked "needs you", no more automatic tries) instead of being dropped. Any other read is live: the AI gets the
+    shorter wait (provider.LIVE)."""
+    token = LIVE.set(not background)
+    try:
+        return _read_held(hid, background)
+    finally:
+        LIVE.reset(token)
+
+
+def _read_held(hid: int, background: bool) -> dict[str, Any]:
     started = time.monotonic()
     row = held.claim(hid)
     if row is None:

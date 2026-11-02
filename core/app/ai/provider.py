@@ -1,5 +1,6 @@
 """AI providers behind one small interface, so the parser can move to another API or a local model."""
 import base64
+import contextvars
 import json
 import time
 from dataclasses import dataclass
@@ -16,6 +17,15 @@ PRICES = {
 
 class ProviderError(Exception):
     pass
+
+
+# A live read of a kept message (core item 5, 02.11.2026): someone waits for the reply, and the words are safe in
+# private.incoming whatever happens, so each AI call gets 20 s and one retry (about 40 s at worst instead of about
+# 3 minutes); then the message shows "not read yet" and cron reads it again with the full wait. Measured on the live
+# app: a read takes about 2 s, a whole message at most 7.5 s. Set by logbook.read_held.
+LIVE = contextvars.ContextVar("live_read", default=False)
+LIVE_TIMEOUT = 20.0
+LIVE_RETRIES = 1
 
 
 @dataclass
@@ -50,14 +60,16 @@ class Provider(Protocol):
 class AnthropicProvider:
     def __init__(self, api_key: str, effort: str = "low", timeout: float = 60.0, max_retries: int = 2):
         # Three tries of at most 60 s each, so a message waits about three minutes at worst when the AI is down (it was five
-        # tries and five minutes); a long lab report may need most of one try, so the time of one try stays.
+        # tries and five minutes); a long lab report may need most of one try, so the time of one try stays. A live read
+        # of a kept message is shorter (LIVE above).
         import anthropic
         self.client = anthropic.Anthropic(api_key=api_key, max_retries=max_retries, timeout=timeout)
         self.effort = effort
 
     def json(self, system: str, user: str, schema: dict, model: str, max_tokens: int = 4000) -> tuple[dict, Usage]:
         t0 = time.monotonic()
-        r = self.client.messages.create(
+        client = self.client.with_options(timeout=LIVE_TIMEOUT, max_retries=LIVE_RETRIES) if LIVE.get() else self.client
+        r = client.messages.create(
             model=model,
             max_tokens=max_tokens,
             # The instructions stay cached for an hour (02.11.2026): messages mostly come more than 5 minutes apart, so the

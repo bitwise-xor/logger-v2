@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 import pytest
 
 from app import db, held, logbook, nudges
+from app.ai import provider
 from app.ai.provider import ProviderError
 from app.when import BERLIN
 from conftest import owner_sql
@@ -186,6 +187,42 @@ def test_today_and_recent_show_it_with_try_again_delete_and_undo(web, fake, skyr
     logbook.PROVIDER = fake
     done = act(web, "/web/held/retry", id=str(hid))
     assert "Saved." in done.text and "Not read yet ·" not in done.text and n(FOOD) == 1
+
+
+def test_a_live_read_waits_less_than_crons_read(fake, skyr, monkeypatch):
+    """Core item 5 (02.11.2026): someone waits for a live read, and the words are kept anyway, so the AI gets 20 s and one retry."""
+    seen, real = [], fake.json
+
+    def watching(*a, **k):
+        seen.append(provider.LIVE.get())
+        return real(*a, **k)
+    monkeypatch.setattr(fake, "json", watching)
+    assert logbook.log(TEXT, "k16")["outcome"] == "saved"
+    assert seen and all(seen) and provider.LIVE.get() is False  # live while it read, and switched off after
+    keep("grateful for a quiet morning", "k17", fake)
+    owner_sql("UPDATE private.incoming SET last_try_at = now() - interval '5 minutes'")
+    seen.clear()
+    assert held.run()["saved"] == 1 and seen and not any(seen)  # cron: nobody waits, the full wait
+
+    class Client:  # the real provider asks the API client for the shorter wait only while live
+        def __init__(self):
+            self.used = []
+            self.messages = self
+
+        def with_options(self, **o):
+            self.used.append(o)
+            return self
+
+        def create(self, **_):
+            raise ProviderError("stop here")
+    p = provider.AnthropicProvider.__new__(provider.AnthropicProvider)
+    p.client, p.effort = Client(), "low"
+    for live in (False, True):
+        token = provider.LIVE.set(live)
+        with pytest.raises(ProviderError):
+            p.json("s", "u", {}, "claude-haiku-5-5")
+        provider.LIVE.reset(token)
+    assert p.client.used == [{"timeout": 20.0, "max_retries": 1}]
 
 
 def test_a_deleted_message_goes_for_good_after_a_day(fake):
