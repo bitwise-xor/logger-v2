@@ -433,16 +433,19 @@ def health():
     s = Sheet(HE, "Health")
     s.base(hide_lines=True, rows=2, cols=1)
     s.width("A", "A", 92); s.width("B", "B", 46); s.width("C", "D", 72); s.width("E", "H", 64); s.width("I", "I", 104); s.width("J", "L", 62)
-    for a1 in ("C1:D1", "E1:F1", "G1:H1", "J1:L1"):
+    s.width("M", "N", 62)  # mood and energy, the evening check-in (02.11.2026)
+    for a1 in ("C1:D1", "E1:F1", "G1:H1", "J1:L1", "M1:N1"):
         s.merge(a1)
     s.height(1, 1, 36)
-    s.fmt("A1:L1", bold=True, bg=HEAD, halign="CENTER", wrap="WRAP"); s.fmt("A2:L2", bold=True, bg=HEAD, wrap="WRAP"); s.fmt("C2:L2", halign="RIGHT")
-    s.border("A2:L2", "bottom", HEAD_LINE)
-    for col in ("C", "E", "G", "I", "J"):
+    s.fmt("A1:N1", bold=True, bg=HEAD, halign="CENTER", wrap="WRAP"); s.fmt("A2:N2", bold=True, bg=HEAD, wrap="WRAP"); s.fmt("C2:N2", halign="RIGHT")
+    s.border("A2:N2", "bottom", HEAD_LINE)
+    for col in ("C", "E", "G", "I", "J", "M"):
         s.border(f"{col}1:{col}95", "left", HEAD_LINE)
     s.fmt("A3:A", num="dd.mm.yyyy", halign="LEFT"); s.fmt("B3:B", fg=INK2); s.fmt("C3:D", num="0.0"); s.fmt("D3:D", fg=INK2)
-    s.fmt("E3:I", num="0"); s.fmt("J3:K", num="hh:mm"); s.fmt("L3:L", num="0.0")
-    s.cf(["A3:L"], '=AND($A3<>"",ISEVEN(ROW()))', bg=BAND)
+    s.fmt("E3:I", num="0"); s.fmt("J3:K", num="hh:mm"); s.fmt("L3:L", num="0.0"); s.fmt("M3:N", num="0")
+    s.cf(["A3:N"], '=AND($A3<>"",ISEVEN(ROW()))', bg=BAND)
+    s.cf(["M3:N"], "=AND(ISNUMBER(M3),M3>=4)", GOOD)
+    s.cf(["M3:N"], "=AND(ISNUMBER(M3),M3<=2)", BAD)
     for rng_, lo, hi in ((["E3:E", "G3:G"], 130, 140), (["F3:F", "H3:H"], 80, 90), (["I3:I"], 100, 126)):
         a = rng_[0].split(":")[0]
         s.cf(rng_, f"=AND(ISNUMBER({a}),{a}<{lo})", GOOD)

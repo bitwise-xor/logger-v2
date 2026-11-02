@@ -15,8 +15,10 @@ SHOWN_DAYS = 14  # rows before "Show all"
 # The table's columns: key, heading, sub-heading, log type, period, number of values ("t" = a time)
 COLS = (("w", "Weight", "kg", "weight", None, 1), ("bm", "BP", "morning", "bp", "morning", 2),
         ("be", "BP", "evening", "bp", "evening", 2), ("s", "Sugar", "fasted", "blood_sugar", "fasted", 1),
-        ("bed", "Bed", "night before", "bed", None, "t"), ("wake", "Woke up", "", "wake", None, "t"))
-NAMES = {"w": "Weight", "bm": "BP morning", "be": "BP evening", "s": "Sugar", "bed": "Bed", "wake": "Woke up"}
+        ("bed", "Bed", "night before", "bed", None, "t"), ("wake", "Woke up", "", "wake", None, "t"),
+        ("mo", "Mood", "1–5", "mood", None, 1), ("en", "Energy", "1–5", "energy", None, 1))
+NAMES = {"w": "Weight", "bm": "BP morning", "be": "BP evening", "s": "Sugar", "bed": "Bed", "wake": "Woke up", "mo": "Mood", "en": "Energy"}
+MEASURED = {"weight": "w", "blood_sugar": "s", "mood": "mo", "energy": "en"}  # a measurement's column (bp: by its period)
 
 
 def plain(x) -> str:
@@ -38,9 +40,9 @@ def day_values(cur, first: date, last: date) -> dict:
     """{day: {col: {"id": "m12", "v": [values as text]}}} for each day from first to last; the latest entry wins."""
     out: dict = {}
     cur.execute("""SELECT m.id, t.name, m.period, m.value1, m.value2, m.day FROM measurements m JOIN log_types t ON t.id = m.type_id
-                   WHERE m.day BETWEEN %s AND %s AND t.name IN ('weight','bp','blood_sugar') ORDER BY m.event_at, m.id""", (first, last))
+                   WHERE m.day BETWEEN %s AND %s AND t.name IN ('weight','bp','blood_sugar','mood','energy') ORDER BY m.event_at, m.id""", (first, last))
     for m in cur.fetchall():
-        col = {"weight": "w", "blood_sugar": "s"}.get(m["name"]) or ("be" if m["period"] == "evening" else "bm")
+        col = MEASURED.get(m["name"]) or ("be" if m["period"] == "evening" else "bm")
         vals = [plain(m["value1"])] + ([plain(m["value2"])] if m["name"] == "bp" else [])
         out.setdefault(m["day"], {})[col] = {"id": f"m{m['id']}", "v": vals}
     cur.execute("""SELECT e.id, e.day, e.event_at FROM events e JOIN log_types t ON t.id = e.type_id
@@ -138,6 +140,13 @@ def _charts(d: dict) -> str:
             for day, _r in nights for a in [_avg([h for k, h in good.items() if day - timedelta(days=6) <= k <= day])]]
     sleep = _chart("c-sleep", d, [{"mark": "bar", "cls": "a", "pts": pts}, {"mark": "line", "cls": "b", "pts": avg7}],
                    label="Sleep in hours", min=0, unit=" h", lines=[[7, "w", "7 h"], [6, "r", "6 h"]])
+    # mood and energy, 1 to 5 (the evening check-in, 02.11.2026)
+    feel = {t: [(day, float(d["vals"][day][col]["v"][0])) for day in days if d["vals"].get(day, {}).get(col)] for t, col in (("mood", "mo"), ("energy", "en"))}
+    fpts = lambda t, cls: [{"mark": "line", "cls": cls, "pts": [[idx(day), v] for day, v in feel[t]]},
+                           {"mark": "dot", "cls": cls, "pts": [[idx(day), v, f"{_dm(day)}: {t} {v:g}"] for day, v in feel[t]]}]
+    fstat = (" · ".join(f'{t} avg <b>{_avg([v for _, v in feel[t]]):.1f}</b>' for t in ("mood", "energy") if feel[t])
+             + f' · {len({day for t in feel for day, _ in feel[t]})} evenings') if feel["mood"] or feel["energy"] else "no check-ins in this range"
+    mood = _chart("c-mood", d, fpts("mood", "a") + fpts("energy", "b"), label="Mood and energy, 1 to 5", min=1, max=5)
     card = lambda title, stat, chart, legend="": (f'<div class="card"><h2>{title}</h2><p class="stat">{stat}</p>{chart}'
                                                  + (f'<p class="legend">{legend}</p>' if legend else "") + "</div>")
     return ('<div class="grid2">'
@@ -150,6 +159,8 @@ def _charts(d: dict) -> str:
             + card("Sleep", slstat, sleep, '<i class="key a"></i>night <i class="key line b"></i>7-day average · '
                    'hours from bed to wake-up; point at or tap a bar for the times · '
                    '<i class="key ref"></i>amber under 7 h <i class="key ref r"></i>red under 6 h')
+            + card('Mood and energy <span class="small">1 to 5</span>', fstat, mood,
+                   '<i class="key a"></i>mood <i class="key b"></i>energy · from the evening check-in on Today')
             + "</div>")
 
 

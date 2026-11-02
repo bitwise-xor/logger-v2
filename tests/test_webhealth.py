@@ -78,7 +78,8 @@ def test_one_row_per_day_with_the_bed_time_of_the_evening_before(web, fake):
     event("wake", d, "06:50")
     page = web[0].get("/web/health")
     assert 'href="/web/health" aria-current="page">Health' in page.text
-    assert row(page, y) == {"w": "82.4", "bm1": "124", "bm2": "81", "be1": "130", "be2": "85", "s": "", "bed": "23:10", "wake": "06:40"}
+    assert row(page, y) == {"w": "82.4", "bm1": "124", "bm2": "81", "be1": "130", "be2": "85", "s": "", "bed": "23:10", "wake": "06:40",
+                            "mo": "", "en": ""}
     assert (row(page, d)["bed"], row(page, d)["wake"]) == ("00:20", "06:50")
     first = hours(y - timedelta(days=1), "23:10", y, "06:40")  # real elapsed time: 8.5 h across the end of summer time
     shown = lambda h: f"{int(h)} h {round(h % 1 * 60):02d}"
@@ -116,7 +117,8 @@ def test_values_added_to_an_empty_day_go_to_that_day_without_an_ai_call(web, fak
     page = save(web, y, w="81.9", bm1="120", bm2="80", s="92", wake="6:30", bed="23:15")
     assert fake.calls == [], page.text
     assert weights() == [(y, 81.9)]
-    assert row(page, y) == {"w": "81.9", "bm1": "120", "bm2": "80", "be1": "", "be2": "", "s": "92", "bed": "23:15", "wake": "06:30"}
+    assert row(page, y) == {"w": "81.9", "bm1": "120", "bm2": "80", "be1": "", "be2": "", "s": "92", "bed": "23:15", "wake": "06:30",
+                            "mo": "", "en": ""}
     bed = owner_sql("""SELECT to_char(e.event_at AT TIME ZONE 'Europe/Berlin', 'DD.MM. HH24:MI') AS t FROM events e
                        JOIN log_types t ON t.id = e.type_id WHERE t.name = 'bed'""")[0]["t"]
     assert bed == f"{y - timedelta(days=1):%d.%m.} 23:15"

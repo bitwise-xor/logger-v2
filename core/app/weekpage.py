@@ -93,6 +93,16 @@ def _health(cur, start: date, end: date, ndays: int) -> str:
         items.append(("Fasting sugar", f'{_avg(sugar):.0f} mg/dL <span class="small">average of {len(sugar)}</span>'))
     if sleep is not None:
         items.append(("Sleep", f'{int(sleep)} h {round((sleep % 1) * 60):02d} <span class="small">average night</span>'))
+    # mood and energy from the evening check-in (02.11.2026): the day's latest of each, averaged
+    cur.execute("""SELECT DISTINCT ON (t.name, m.day) t.name, m.value1 FROM measurements m JOIN log_types t ON t.id = m.type_id
+                   WHERE t.name IN ('mood','energy') AND m.day BETWEEN %s AND %s ORDER BY t.name, m.day, m.event_at DESC, m.id DESC""", (start, end))
+    feel: dict = {}
+    for r in cur.fetchall():
+        feel.setdefault(r["name"], []).append(float(r["value1"]))
+    if feel:
+        said = " · ".join(f'{t} {_avg(feel[t]):.1f}' for t in ("mood", "energy") if t in feel)
+        n = max(len(v) for v in feel.values())
+        items.append(("Mood · energy", f'{said} <span class="small">average of {n} evening{"" if n == 1 else "s"}, 1 to 5</span>'))
     if habits and ndays:
         items.append(("Habits", f'{full / (habits * ndays) * 100:.0f}% <span class="small">of habit-days done ({full} of {habits * ndays})</span>'))
     # gym days (02.11.2026, Gym step c; the owner's answer: on the Week page only, not in the Sheet), once there is a gym list

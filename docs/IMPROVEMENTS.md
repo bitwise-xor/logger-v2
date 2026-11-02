@@ -18,7 +18,7 @@ Nothing here is decided: plan each one in the doc first.
 **Claude's recommendations (most value next):**
 
 1. **52 Coaching** (M-L): the data is now rich enough (food, health, sleep, habits, gym) to say something useful each day and week. Needs the owner's answers to its 4 open questions first.
-2. **37 Mood and energy check-in** (M): the one daily signal still missing; it feeds Insights (50) and the coach (52). Decide the scales and the time of day.
+2. **37 Mood and energy check-in** (M, **done 02.11.2026, deploy 44**; answers in the doc, section "Mood and energy check-in"): mood and energy 1 to 5, once a day in the evening. Today: a "How was today?" card from 17:00 until 05:00 or until both are answered (`todaypage._checkin_section`, POST `/web/checkin`); typed in the chat ("mood 4, energy 3", "mood good"; parser.md); stored as measurements (migration 023, log types `mood` and `energy`, range 1 to 5); Health page chart `c-mood` and two columns in the day rows; Week page row "Mood · energy"; Sheet Health tab columns M and N (green 4 to 5, red 1 to 2). Not done (owner: later): a 21:00 reminder; Insights questions on mood (50).
 3. **Core 28 Faster test run, and core 15 tests on GitHub** (M): a full run takes about 15 minutes before every deploy; most of that is waiting. Faster runs make every later item cheaper.
 4. **45 Export of everything** (with core 19) (S-M): your data in an open form, apart from the Sheet and the encrypted backup; useful before a mini PC move.
 

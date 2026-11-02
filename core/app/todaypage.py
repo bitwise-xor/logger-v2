@@ -17,6 +17,16 @@ AREAS = ("health", "projects", "finance", "immigration", "learning", "personal")
 HEALTH_ROWS = (("bed", "Bed", "night before", "bed", None, ""), ("wake", "Woke up", "", "wake", None, ""), ("weight", "Weight", "", "weight", None, "kg"),
                ("sugar", "Blood sugar", "fasted", "blood_sugar", "fasted", "mg/dL"),
                ("bp_morning", "Blood pressure", "morning", "bp", "morning", "mmHg"), ("bp_evening", "Blood pressure", "evening", "bp", "evening", "mmHg"))
+# The evening check-in (02.11.2026, web item 37; the owner's answers in the doc): mood and energy from 1 to 5, once a day.
+# The card shows from CHECKIN_FROM until the logging day ends (05:00) and goes once both are answered.
+CHECKIN = (("mood", "Mood", ("very low", "low", "okay", "good", "great")),
+           ("energy", "Energy", ("drained", "tired", "okay", "good", "full of energy")))
+CHECKIN_FROM = 17
+
+
+def clock() -> datetime:
+    """Now, in Berlin (the tests set it to see the evening card)."""
+    return datetime.now(rules.BERLIN)
 
 
 def _n(x, digits: int = 0) -> str:
@@ -94,6 +104,9 @@ def load(asked: date | None = None) -> dict:
         b = cur.fetchone()
         if b:
             health["bed"] = {"id": f"e{b['id']}", "v": [_hm(b["event_at"])], "at": ""}
+        cur.execute("""SELECT DISTINCT ON (t.name) t.name, m.value1 FROM measurements m JOIN log_types t ON t.id = m.type_id
+                       WHERE m.day = %s AND t.name IN ('mood','energy') ORDER BY t.name, m.event_at DESC, m.id DESC""", (day,))
+        checkin = {r["name"]: round(float(r["value1"])) for r in cur.fetchall()}  # the latest of the day wins
         if w:  # hours slept, shown with Woke up (02.11.2026): the Health page's pairing (v_sleep: the last bed in the 24 h before)
             cur.execute("SELECT bed_at FROM v_sleep WHERE wake_at = %s", (w["event_at"],))
             s = cur.fetchone()
@@ -120,7 +133,7 @@ def load(asked: date | None = None) -> dict:
             again = cur.fetchall()
         prefs = uiprefs.load(cur)
     return {"day": day, "food": food, "foods": foods, "usual": usual, "habits": habits, "last_tick": last_tick,
-            "health": health, "review": review, "prefs": prefs, "today": today, "past": day < today, "again": again}
+            "health": health, "review": review, "prefs": prefs, "today": today, "past": day < today, "again": again, "checkin": checkin}
 
 
 # ---- food -----------------------------------------------------------------------------------------
@@ -315,6 +328,26 @@ def _habit_section(d: dict, csrf: str) -> str:
             f'{hint}</div>')
 
 
+def _checkin_section(d: dict, csrf: str) -> str:
+    """How was today? Mood and energy, one tap each (1 to 5). Shown in the evening (or once one of the two is in) until both are."""
+    got = d["checkin"]
+    hour = clock().hour
+    if d["past"] or len(got) == len(CHECKIN) or not (got or hour >= CHECKIN_FROM or hour < 5):
+        return ""
+    rows = []
+    for t, label, words in CHECKIN:
+        if t in got:
+            v = got[t]
+            rows.append(f'<div class="ci done"><span class="ci-l">{label}</span><span class="ci-v">{icon("check")}{v} · {esc(words[v - 1])}</span></div>')
+            continue
+        btns = "".join(f'<button type="submit" name="value" value="{n}" aria-label="{label} {n}, {w}"><b>{n}</b><span>{esc(w)}</span></button>'
+                       for n, w in enumerate(words, 1))
+        rows.append(f'<form class="ci" method="post" action="/web/checkin">{hidden("csrf", csrf)}{hidden("key", key())}{hidden("type", t)}'
+                    f'<span class="ci-l">{label}</span><div class="ci-b">{btns}</div></form>')
+    return (f'<div class="card checkin"><h2>How was today?</h2>{"".join(rows)}'
+            '<p class="small hint">One tap saves it; Undo is on the reply. Typing "mood 4, energy 3" works too.</p></div>')
+
+
 def _health_section(d: dict, csrf: str) -> str:
     rows = []
     prefs = d["prefs"]
@@ -459,7 +492,7 @@ def render(csrf: str, asked: date | None = None) -> str:
             'Click a food to change it on the Food page.</p>' if d["past"] else "")
     review = "" if d["past"] else _review_section(d, csrf)
     return (f'{_daybar(d["day"], d["today"])}{note}<div class="grid"><section>{_food_section(d, csrf)}</section>'
-            f'<aside>{_habit_section(d, csrf)}{"" if d["past"] else gympage.today_card()}{_health_section(d, csrf)}{review}'
+            f'<aside>{_checkin_section(d, csrf)}{_habit_section(d, csrf)}{"" if d["past"] else gympage.today_card()}{_health_section(d, csrf)}{review}'
             '<p class="small"><a href="/web/settings?tab=today">Customize this page</a></p></aside></div>')
 
 

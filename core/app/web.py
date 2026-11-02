@@ -660,6 +660,13 @@ def add_routes(mcp) -> None:
             return session
         return done(session, await _run(lambda: webactions.usual(str(form.get("meal", "")), form, form_key(form))))
 
+    @mcp.custom_route("/web/checkin", methods=["POST"])
+    async def checkin(request: Request) -> Response:
+        session, form = await post_form(request)
+        if form is None:
+            return session
+        return done(session, await _run(lambda: webactions.checkin(form, form_key(form))))
+
     @mcp.custom_route("/web/health", methods=["POST"])
     async def health(request: Request) -> Response:
         session, form = await post_form(request)

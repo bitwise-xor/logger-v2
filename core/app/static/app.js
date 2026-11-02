@@ -396,7 +396,7 @@ function drawChart(el, o) {
   const W = Math.max(260, el.clientWidth), H = 190, L = 42, R = 8, T = 8, B = 22;
   const refs = o.lines || [];  // reference lines: [value, class (w = amber, r = red), label]
   const ys = pts.map(p => p[1] + (p[3] || 0)).concat((o.band || []).filter(v => v != null), refs.map(l => l[0]));
-  const ticks = niceTicks(o.min ?? Math.min(...ys), Math.max(...ys), 4), y0 = ticks[0], y1 = ticks[ticks.length - 1];
+  const ticks = niceTicks(o.min ?? Math.min(...ys), o.max ?? Math.max(...ys), 4), y0 = ticks[0], y1 = ticks[ticks.length - 1];  // max: a fixed top (mood 1 to 5)
   const bars = o.series.some(s => s.mark === "bar"), inset = bars ? 8 : 0;
   const x = i => L + inset + (o.days === 1 ? 0.5 : i / (o.days - 1)) * (W - L - R - 2 * inset);
   const y = v => T + (1 - (v - y0) / (y1 - y0)) * (H - T - B);

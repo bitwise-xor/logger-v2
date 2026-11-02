@@ -1,4 +1,5 @@
 import json
+import re
 from datetime import datetime, timedelta
 
 from app import service
@@ -247,4 +248,5 @@ def test_audit_has_no_values_for_bp_and_amend():
     r = service.record_bp(123, 77, "morning", "2026-10-20T07:30")
     service.amend(r["receipt"]["id"], systolic=457)
     blob = json.dumps([x["detail"] for x in rows("SELECT detail FROM audit_log")])
-    assert "123" not in blob and "457" not in blob and "77" not in blob
+    # whole numbers only: a random question id like "pfc18ec77" may contain the digits (02.11.2026)
+    assert not re.search(r"(?<![0-9a-z])(123|457|77)(?![0-9a-z])", blob)

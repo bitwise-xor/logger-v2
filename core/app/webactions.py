@@ -8,11 +8,12 @@ from typing import Optional
 
 from . import commands, habitspage, healthpage, logbook, webundo
 from .db import connect
-from .todaypage import AREAS, HEALTH_ROWS, THOUGHT_TYPES
+from .todaypage import AREAS, CHECKIN, HEALTH_ROWS, THOUGHT_TYPES
 from .v1_log import Reject, _words_in
 from .when import BERLIN
 
 TIME = re.compile(r"^([01]?\d|2[0-3]):([0-5]\d)$")
+CHECKIN_TYPES = {t for t, _l, _w in CHECKIN}
 
 
 def _pred(**kw) -> dict:
@@ -166,6 +167,20 @@ def usual(meal_id: str, form, key: Optional[str]) -> dict:
     return logbook.log(text, key, pred, channel=logbook.WEB)
 
 
+# ---- the evening check-in --------------------------------------------------------------------------
+
+def checkin(form, key: Optional[str]) -> dict:
+    """One tap on Today's "How was today?" card: mood or energy, 1 to 5 (web item 37, 02.11.2026)."""
+    kind = str(form.get("type", ""))
+    if kind not in CHECKIN_TYPES:
+        return _rejected("Unknown check-in.")
+    v = _num(form.get("value", ""))
+    if v not in (1, 2, 3, 4, 5):
+        return _rejected("Pick 1 to 5.")
+    item = {"type": kind, "value": int(v), "value2": None, "period": None, "session": None, "when": None}
+    return logbook.log(f"{kind} {int(v)}", key, _pred(health=[item]), channel=logbook.WEB)
+
+
 # ---- health ----------------------------------------------------------------------------------------
 
 _ROWS = {k: (label, sub, t, period) for k, label, sub, t, period, _u in HEALTH_ROWS}
@@ -217,7 +232,7 @@ def health(row: str, ref: str, form, key: Optional[str]) -> dict:
 
 # ---- health page: one day's row --------------------------------------------------------------------
 
-_FIELDS = ("w", "bm1", "bm2", "be1", "be2", "s", "bed", "wake")
+_FIELDS = ("w", "bm1", "bm2", "be1", "be2", "s", "bed", "wake", "mo", "en")
 
 
 def _when(day: date, col: str, t: str) -> str:
@@ -280,7 +295,7 @@ def health_day(day_s: str, r: str, form, key: Optional[str]) -> dict:
             items.append({"type": ltype, "value": nums[0] if nums else None, "value2": nums[1] if kind == 2 else None,
                           "period": period, "session": None, "when": when})
             words.append({"weight": f"weight {shown}", "bp": f"bp {shown} {period}", "blood_sugar": f"sugar {shown} fasted",
-                          "wake": f"woke up {new[0]}", "bed": f"went to bed {new[0]}"}[ltype]
+                          "wake": f"woke up {new[0]}", "bed": f"went to bed {new[0]}", "mood": f"mood {shown}", "energy": f"energy {shown}"}[ltype]
                          + ("" if kind == "t" or day == today else f" on {day:%d.%m.%Y}"))
             said.append(f"{name} {shown} added")
     if not steps and not items:

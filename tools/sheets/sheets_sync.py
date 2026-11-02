@@ -33,8 +33,9 @@ DAILY_HEAD = ["Date", "Row", "Items", "kcal", "Protein (g)", "Fat (g)", "Sat fat
               "Sugar total (g)", "Sugar added (g)", "Sodium (mg)", "Caffeine (mg)"]
 DAYROWS_HEAD = ["Date", "Time", "Meal", "Food", "Amount", "Unit", "kcal", "Protein (g)", "Fat (g)", "Sat fat (g)", "Carbs (g)",
                 "Fibre (g)", "Sugar total (g)", "Sugar added (g)", "Sodium (mg)", "Caffeine (mg)", "Kind"]
-HEALTH_GROUPS = ["", "", "Weight (kg)", "", "Blood pressure morning", "", "Blood pressure evening", "", "Glucose", "Sleep", "", ""]
-HEALTH_HEAD = ["Date", "Day", "Weight", "7-day avg", "Sys", "Dia", "Sys", "Dia", "Fasting (mg/dL)", "Bed", "Wake", "Hours"]
+HEALTH_GROUPS = ["", "", "Weight (kg)", "", "Blood pressure morning", "", "Blood pressure evening", "", "Glucose", "Sleep", "", "",
+                 "Check-in (1 to 5)", ""]
+HEALTH_HEAD = ["Date", "Day", "Weight", "7-day avg", "Sys", "Dia", "Sys", "Dia", "Fasting (mg/dL)", "Bed", "Wake", "Hours", "Mood", "Energy"]
 STATS_ROWS = ["Protein target streak (days)", "Days within 10% of kcal target, last 30", "Days logged, last 30",
               "Entries last 90 days", "Entries estimated, last 90 days", "Entries needing review, last 90 days"]
 # Stats!B1 = the time of this run; B2.. = STATS_ROWS in order
@@ -248,6 +249,8 @@ def build_health(data):
             r[f"bp_{m['period']}"] = (m["value1"], m["value2"])
         elif m["type"] == "blood_sugar":
             r["glucose"] = m["value1"]
+        elif m["type"] in ("mood", "energy"):  # the evening check-in (02.11.2026); the day's latest wins
+            r[m["type"]] = (m["event_at"], m["value1"]) if m["event_at"] >= r.get(m["type"], ("", None))[0] else r[m["type"]]
     for s in data["sleep"]:
         r = days.setdefault(d(s["wake_day"]), {})
         r["bed"], r["wake"], r["hours"] = ts_frac(s["bed_at"]), ts_frac(s["wake_at"]), s["hours"]
@@ -259,7 +262,8 @@ def build_health(data):
         bm, be = r.get("bp_morning", ("", "")), r.get("bp_evening", ("", ""))
         rows.append([serial(day), day.strftime("%a"), round(weight[day], 1) if day in weight else "",
                      round(sum(week) / len(week), 1) if week else "", num(bm[0]), num(bm[1]), num(be[0]), num(be[1]),
-                     num(r.get("glucose")), r.get("bed", ""), r.get("wake", ""), num(r.get("hours"))])
+                     num(r.get("glucose")), r.get("bed", ""), r.get("wake", ""), num(r.get("hours")),
+                     num(r.get("mood", ("", None))[1]), num(r.get("energy", ("", None))[1])])
     return rows
 
 
