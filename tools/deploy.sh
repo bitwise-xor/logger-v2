@@ -34,7 +34,7 @@ EOF
 echo "== pages render against the live data (read only)"
 docker exec -i -w /srv logger-v2-core python - </dev/null <<'EOF'
 import traceback
-from app import foodpage, habitspage, healthpage, ideaspage, labspage, privatepage, searchpage, settingspage, todaypage, trendspage, usagepage, web, weekpage, webheld
+from app import foodpage, habitspage, healthpage, ideaspage, labspage, privatepage, searchpage, settingspage, todaypage, trendspage, usagepage, web, weekpage, webheld, gympage
 sess = {"csrf": "x", "token_hash": "none", "sid": "00000000-0000-0000-0000-000000000000"}
 checks = {
   "today": lambda: todaypage.render("x"), "health": lambda: healthpage.render("x", 30), "food log": lambda: foodpage.render_log("x", {}),
@@ -46,6 +46,7 @@ checks = {
   "search": lambda: searchpage.render("x", {"q": "salmon"}), "settings today": lambda: settingspage.render(sess, {"tab": "today"}),
   "shell": lambda: web.shell(sess, "<p>x</p>", active="today").body.decode(),
   "not read yet": lambda: webheld.section("x") or "(none waiting)",
+  "gym": lambda: gympage.render_workout("x"), "gym exercises": lambda: gympage.render_exercises("x"), "gym card": gympage.today_card,
 }
 for name, f in checks.items():
     try:

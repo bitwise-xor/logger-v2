@@ -638,3 +638,38 @@ dialog.scan{max-height:calc(100dvh - 1.5rem);overflow-y:auto}
 .row.between>p{flex:1 1 auto;min-width:0}
 .ac li b .w{margin-left:.45rem;font-size:.85em;font-weight:400;color:var(--dim)}
 @media (max-width:1080px){details.again.more{display:none}}
+/* Gym (02.11.2026): today's exercises with a round tick like the habit chips, the − / + editor, the 4-week grid, the Today card */
+.gx-list{display:flex;flex-direction:column}
+.gx{display:flex;gap:.75rem;align-items:flex-start;padding:.7rem 0;border-top:1px solid var(--line)}
+.gx:first-child{border-top:0}
+.gx>form{flex:none}
+.gtick{display:grid;place-items:center;width:2.75rem;height:2.75rem;border:0;background:none;padding:0;cursor:pointer;color:var(--dim)}
+.gtick .box{width:1.6rem;height:1.6rem;border:1.5px solid var(--dim);border-radius:50%;display:grid;place-items:center;color:transparent}
+.gtick .box svg{width:.95rem;height:.95rem;stroke-width:2.8}
+.gtick.done .box{background:var(--accent);border-color:var(--accent);color:var(--card)}
+.gtick.off{cursor:default;opacity:.45}
+.gedit{flex:1;min-width:0}
+.gedit>summary{list-style:none;cursor:pointer;display:flex;flex-direction:column;gap:.1rem;padding:.25rem 0}
+.gedit>summary::-webkit-details-marker{display:none}
+.gname{font-weight:600}
+.gval{font-variant-numeric:tabular-nums}
+.gx.done .gval{color:var(--accent);font-weight:500}
+.pill.up{margin-left:.35rem}
+.gform{margin-top:.5rem}
+.gstep{display:inline-flex;flex-direction:column;gap:.2rem}
+.stepper{display:inline-flex;align-items:center;gap:.25rem}
+.stepper input[type=number]{width:4.5rem;text-align:center}
+.stepper .ghost.sm{min-width:2.5rem;min-height:2.5rem;font-size:1.1rem;padding:0}
+.gline{display:flex;gap:.5rem;align-items:center;justify-content:space-between;font-size:.9rem;padding:.2rem 0}
+.wk4{display:grid;grid-template-columns:5.5rem repeat(7,minmax(0,1fr)) 1.5rem;gap:.3rem;align-items:center;margin-top:.3rem}
+.wk4.head .dh{text-align:center;font-size:.75rem;color:var(--dim)}
+.wk4 .num{text-align:right}
+.gd{display:block;height:1.4rem;border-radius:6px;background:var(--field);border:1px solid var(--line)}
+.gd.on{background:var(--accent);border-color:var(--accent)}
+.gd.today{border:2px solid var(--ink)}
+.gd.later{opacity:.35}
+.gdays{display:grid;grid-template-columns:repeat(14,minmax(0,1fr));gap:4px;margin:.2rem 0 .6rem}
+.gdays .gd{height:1.25rem}
+.gymcard h2 svg.ic{color:var(--accent);margin-right:.35rem}
+.gymcard .gopen{display:flex;justify-content:center;margin-top:.7rem}
+.hm.retired .hm-main{color:var(--dim)}

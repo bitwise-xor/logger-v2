@@ -121,6 +121,7 @@ ICONS = {
     "food": '<path d="M3 12h18a9 9 0 0 1-18 0z"/><path d="M8 3.5v4M12 3v5M16 3.5v4"/>',
     "health": '<path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8z"/>',
     "habits": '<circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/>',
+    "gym": '<path d="M6 7v10M3 9.5v5M18 7v10M21 9.5v5M6 12h12"/>',
     "ideas": '<path d="M9 18h6M10 21.5h4M12 2.5a6.5 6.5 0 0 0-4 11.6V16h8v-1.9a6.5 6.5 0 0 0-4-11.6z"/>',
     "week": '<rect x="3.5" y="5" width="17" height="15.5" rx="3"/><path d="M3.5 10h17M8 3v4M16 3v4"/>',
     "insights": '<path d="M4 19.5h16"/><path d="m5 15 4.5-4.5 3.5 3.5L19 7.5"/><path d="M15 7.5h4v4"/>',

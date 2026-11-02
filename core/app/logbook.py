@@ -54,7 +54,7 @@ def _context(cur, now: datetime) -> tuple[list, list]:
     """The parser's context: the last few messages of the 6 hours before `now`, and what was eaten and drunk that day.
     `now` is a kept message's own time when it is read again later, so later messages are left out."""
     cur.execute("""SELECT received_at, content FROM raw_inbox WHERE received_at > %s - interval '6 hours' AND received_at <= %s
-                   AND channel <> 'catalogue' AND content NOT LIKE 'add food: %%' AND NOT (metadata ? 'lab_report')
+                   AND channel <> 'catalogue' AND content NOT LIKE 'add food: %%' AND NOT (metadata ? 'lab_report') AND NOT (metadata ? 'gym')
                    ORDER BY received_at DESC LIMIT 4""", (now, now))  # the logger's own catalogue rows are not messages
     prev = [(r["received_at"].astimezone(BERLIN).replace(tzinfo=None), r["content"]) for r in reversed(cur.fetchall())]
     cur.execute("""SELECT e.day, e.meal, e.is_drink, e.eaten_at, f.name FROM food_entries e JOIN foods f ON f.id = e.food_id

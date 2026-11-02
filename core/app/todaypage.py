@@ -3,7 +3,7 @@ habit toggles, the Health card (edited in place) and items to review. web.py wra
 import math
 from datetime import date, datetime, timedelta
 
-from . import healthpage, rules, uiprefs
+from . import gympage, healthpage, rules, uiprefs
 from .db import connect
 from .webentry import esc, hidden, icon, key
 
@@ -455,7 +455,7 @@ def render(csrf: str, asked: date | None = None) -> str:
             'Click a food to change it on the Food page.</p>' if d["past"] else "")
     review = "" if d["past"] else _review_section(d, csrf)
     return (f'{_daybar(d["day"], d["today"])}{note}<div class="grid"><section>{_food_section(d, csrf)}</section>'
-            f'<aside>{_habit_section(d, csrf)}{_health_section(d, csrf)}{review}'
+            f'<aside>{_habit_section(d, csrf)}{"" if d["past"] else gympage.today_card()}{_health_section(d, csrf)}{review}'
             '<p class="small"><a href="/web/settings?tab=today">Customize this page</a></p></aside></div>')
 
 

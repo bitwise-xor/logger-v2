@@ -34,6 +34,17 @@ document.addEventListener("DOMContentLoaded", () => {
   document.querySelectorAll("details.more").forEach(more =>
     document.addEventListener("click", e => { if (more.open && !more.contains(e.target)) more.open = false; }));
 
+  // Gym (02.11.2026): − and + beside a number change it by the button's step (sets and reps 1, kg 2.5, km 0.1), within its limits
+  document.querySelectorAll("button[data-step]").forEach(b => b.addEventListener("click", () => {
+    const i = document.getElementById(b.dataset.for);
+    if (!i) return;
+    const lo = parseFloat(i.min), hi = parseFloat(i.max);
+    let v = Math.round(((parseFloat(String(i.value).replace(",", ".")) || 0) + parseFloat(b.dataset.step)) * 100) / 100;
+    if (!isNaN(lo)) v = Math.max(lo, v);
+    if (!isNaN(hi)) v = Math.min(hi, v);
+    i.value = String(v);
+  }));
+
   // Light or dark: the button switches and this device remembers it (theme.js applies it before the next page paints)
   document.querySelectorAll("[data-theme-toggle]").forEach(b => b.addEventListener("click", () => {
     const t = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
