@@ -15,6 +15,10 @@ watch data waits for the owner's watch. What is missing most is the *meaning* of
 daily frictions. The core list (`docs/CORE-IMPROVEMENTS.md`) has its own ranking; the two together give the order below.
 Nothing here is decided: plan each one in the doc first.
 
+**High priority, in the next major build (owner, 03.11.2026):**
+
+- **53 One calorie total on Today** (S): see the table in section 8. Decided: the pie's centre shows the Calories card's total; the table under the pie keeps its total from the macros, labelled as such.
+
 **Claude's recommendations (most value next):**
 
 1. **52 Coaching** (M-L): the data is now rich enough (food, health, sleep, habits, gym) to say something useful each day and week. Needs the owner's answers to its 4 open questions first.
@@ -146,6 +150,7 @@ Collected from the user's list of 30.10.2026 and the answers on 31.10.2026. Noth
 | 50 | Insights: more questions as the data grows (mood, steps, sleep once item 36 exists), and a longer range | Today's three cards need about 4 days in each group; the user's data had 1 day with a long gap after food | M |
 | 51 | Voice without the browser's speech recognition (record on the phone, convert on the server) if Safari's recognition is missing in the home-screen app | Only if the microphone button does not show or does not work there | M-L |
 | 52 | Coaching: "Coach me" on Today (any day of the date picker) and "Review this week" on the Week page, by Claude Opus 5.5 at high effort, on demand | The user's idea of 02.11.2026; details below. The chat can already coach when asked; this makes it one tap and keeps each coaching | M |
+| 53 | **High priority, next major build (owner, 03.11.2026).** One calorie total on Today: the macro pie's centre (`todaypage._macro_block`, `_pie(..., middle)`) shows the day's kcal from `v_food_day` (the Calories card's number) instead of the kcal worked out from the macros (4 × protein + 4 × carbs + 9 × fat). The shares stay from the macros. The table's Total row keeps its macro total, labelled "from macros", with a short note that labels count fibre (2 kcal/g in the EU) and rounding differently. A test for both numbers; check at phone width | Found 03.11.2026: the card said 897 kcal and the pie 888 for 02.11. The biggest gaps were high-fibre rolls (label 205, macros 190) and avocado (label 144, macros 161, its carbs apparently counting fibre). The data is right; two ways of counting showed two totals | S |
 
 ### 52. Coaching (02.11.2026, not started; plan in the doc and a clickable mockup first)
 
