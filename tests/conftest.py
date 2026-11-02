@@ -16,6 +16,14 @@ def _schema():
     migrate.run()
 
 
+@pytest.fixture(scope="session", autouse=True)
+def _cheap_password_hash():
+    """Signing in hashes and checks a password with scrypt, about 0.4 s each on purpose; the tests use a tiny cost
+    (core item 28, 02.11.2026). The live app keeps auth.SCRYPT_N."""
+    from app import auth
+    auth.SCRYPT_N = 2 ** 4
+
+
 @pytest.fixture(autouse=True)
 def clean():
     with connect(owner=True) as c:

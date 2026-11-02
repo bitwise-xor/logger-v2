@@ -25,6 +25,7 @@ REQUEST_SECONDS = 600
 MAX_CLIENTS = 50
 MAX_FAILURES = 5
 FAILURE_WINDOW_MIN = 15
+SCRYPT_N = 2 ** 15  # the cost of a new password hash; the tests lower it (conftest.py), a stored hash keeps its own
 
 
 def _now() -> datetime:
@@ -39,7 +40,7 @@ def _h(token: str) -> str:
 
 def hash_password(password: str) -> str:
     salt = secrets.token_bytes(16)
-    n, r, p = 2 ** 15, 8, 1
+    n, r, p = SCRYPT_N, 8, 1
     dk = hashlib.scrypt(password.encode(), salt=salt, n=n, r=r, p=p, maxmem=64 * 1024 * 1024, dklen=32)
     return f"scrypt${n}${r}${p}${salt.hex()}${dk.hex()}"
 
