@@ -7,6 +7,34 @@ Before building one, plan it in the doc first (with a clickable mockup for a new
 
 Size: S = about an hour, M = about half a day, L = a day or more. Rough guesses.
 
+## Priorities (reviewed 02.11.2026, after the Gym section and deploy 41)
+
+Re-ranked against the app as it is now: the daily logging is fast and safe (never lose a message, Again chips, suggestions,
+scanner, label photos), the Gym section is complete (Workout, Plan, Progress, Activity, History, Exercises with rename), the
+watch data waits for the owner's watch. What is missing most is the *meaning* of the data (coaching, mood) and a few small
+daily frictions. The core list (`docs/CORE-IMPROVEMENTS.md`) has its own ranking; the two together give the order below.
+Nothing here is decided: plan each one in the doc first.
+
+**Claude's recommendations (most value next):**
+
+1. **52 Coaching** (M-L): the data is now rich enough (food, health, sleep, habits, gym) to say something useful each day and week. Needs the owner's answers to its 4 open questions first.
+2. **37 Mood and energy check-in** (M): the one daily signal still missing; it feeds Insights (50) and the coach (52). Decide the scales and the time of day.
+3. **Core 28 Faster test run, and core 15 tests on GitHub** (M): a full run takes about 15 minutes before every deploy; most of that is waiting. Faster runs make every later item cheaper.
+4. **42 Lab report upload with trends** (L): lab reports still come only through the chat; the label-photo flow is the pattern (read, check, add).
+5. **45 Export of everything** (with core 19) (S-M): your data in an open form, apart from the Sheet and the encrypted backup; useful before a mini PC move.
+
+**Quick wins (small, about an hour each):**
+
+1. **Core 27 Disk headroom** (S): 86% used; 2.2 GB of Docker build cache can go; each deploy adds a 309 MB image. Prune the build cache in `deploy.sh` and add a disk check to the Kuma push checks.
+2. **Core 5 Shorter AI wait** (S): since 01.11. a typed message is kept and retried by cron, so a live message no longer needs to wait up to 60 s × 3; about 20 s, then "kept, trying again".
+3. **46 One-tap usual meals** (S): a tap logs the meal with its saved weights; the editor stays for changes.
+4. **40 Water target** (S): a daily water bar on Today from the drinks already logged.
+5. **29 + core 26 Usage page complete** (S): label photos and token counts for food look-ups and lab reports; worth having before coaching adds Opus calls.
+
+**Next after those:** 48 "All look right" on the review box (S), 26 error page in the app's layout (S), 38 minutes for practices (M), 43 medication schedule (M, only if wanted), 49 more nudges (S-M), 50 more Insights (M, after 37), 18 link thoughts (M), gym workouts in the Search page (S).
+**Parked or dropped:** 35 swipe (not needed), 41 weight trend (dropped), 44 photo on a food entry (disk), 47 home-screen shortcuts (iOS limits), 51 server-side voice (only if Safari's fails), 20/21 chat usual meal and exchange log (no ask since 29.10.).
+**Done since 31.10.:** 36 in part (sleep hours; no colours, the owner's choice), 39 mostly (watch data and the Gym Activity tab, deploy 40; typed steps not planned), the Gym section (deploys 37 to 41).
+
 ## Status (31.10.2026; the first build run of 29.10. is described in `docs/reports/web-app-2026-10-29.md`)
 
 - **02.11.2026 (deploy 36, commit a35becf):** 12 Again chips on the PC (8 on phones); a food's words under its name in the catalogue and a Close button on the open food's box; suggestions treat ü/ö/ä/ß as ue/oe/ae/ss, show the word a food was found by, most recently eaten first; **36 (sleep hours) done in part:** "slept 7 h 05 min" with Woke up on Today and a 7-day average line on the Health Sleep chart (no colours, no target: the owner's choice; the Week page already had the average night). **41 (weight trend) dropped:** the Health page already has the 7-day average. Answers: artifact https://claude.ai/artifact/9pxSQY2DD55er5y51jMm51 (db `answers`).
@@ -141,7 +169,4 @@ Collected from the user's list of 30.10.2026 and the answers on 31.10.2026. Noth
 
 ## Suggested order
 
-1. Items 1, 2, 3 and 6 together as one small deploy.
-2. The phone menu (8) and tap targets (9).
-3. Food trends (10) and target lines (11).
-4. The Settings page (14).
+Replaced on 02.11.2026 by "Priorities" at the top (the old order, items 1 to 14, is all done).

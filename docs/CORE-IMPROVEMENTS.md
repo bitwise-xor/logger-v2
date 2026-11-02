@@ -8,6 +8,21 @@ The v1 files (`v1_*.py`) are copied unchanged on purpose and are left as they ar
 
 Size: S = about an hour, M = about half a day, L = a day or more. Rough guesses.
 
+## Priorities (reviewed 02.11.2026, after deploy 41)
+
+The combined ranking with the web list is at the top of `docs/IMPROVEMENTS.md`. For the core, in order:
+
+1. **27 Disk headroom** (S, quick win): new, see section 8.
+2. **5 Shorter AI wait** (S, quick win): now safe, because a message is kept and retried (item 1). The client has 60 s and 2 retries today (`ai/provider.py`); for live messages about 20 s and 1 retry, then the kept-message path.
+3. **26 Usage page complete** (S, quick win): label photos as a kind; token counts for food look-ups and lab reports (web 29).
+4. **28 Faster test run, then 15 tests on GitHub** (M): new, see section 8. `.github/workflows/tests.yml` exists but has never been checked.
+5. **19 Export** (S-M): with web 45.
+6. **13 Remove the pilot tools** (S-M): 9 hidden tools still in `mcp_app.py`, plus `service.py` and its tests; fewer tests also make runs shorter.
+7. **24 Words review** (S): the catalogue shows each food's words since 02.11.; a list of all learned words by date is still missing.
+8. **3 Second read**: look at the data again around mid-November (owner agreed on 02.11.).
+9. Later: 17 digest (or the coach's week review, web 52), 25 Telegram, 20 food look-up gaps, 9 connection pool, 16 `answer()` handlers, 12 update watch (Diun), 6 shorter prompt (not worth it now).
+**Done since this list was written:** 1, most of 2 (01.11.), 4 (cache reads recorded, 1-hour cache on 02.11.), 7, 8, 10 (`maintenance.py`), 11, 14, 18 (web push), 21, 22, 23.
+
 ## Status (01.11.2026)
 
 - **1 (never lose a message) is done, and 2 in part** (deploy 34; the plan and the owner's answers are in the doc "Logger v2: status and web app plan", section "Core: never lose a message"). A typed message is kept word for word in `private.incoming` (migration 020, private schema) before the AI reads it; the AI reads with no transaction or connection open; the save, its audit row, the idempotency key and the removal of the kept words are one transaction (`logbook.read_held`, `held.py`). When the AI or the save fails, the words stay "not read yet": cron reads them again every 5 minutes for 2 hours (`docker exec logger-v2-core python -m app.held`), then the phone is told once (no words in the notification); Today and Recent show them with Try again and Delete (Undo). A retry keeps the message's own time. Kept until read or deleted; a deleted one goes for good after a day (daily clean-up).
@@ -95,10 +110,13 @@ token counts for food look-ups and lab reports (web list 21, 20, 29).
 | 25 | Telegram as a second channel for the nudges, a digest and replies (links items 17 and 18; speech-to-text there is on the "decide later" list) | Notifications now reach only the phone that turned them on; Telegram would also work away from the home network and Tailscale | M-L |
 | 26 | Show the cost of label photos and push messages on the Usage page | `label_photo` rows are in `audit_log`; the Usage page does not list them as a kind yet | S |
 
+## 8. New after 02.11.2026
+
+| # | Idea | Why | Size |
+|---|---|---|---|
+| 27 | Disk headroom: `docker builder prune` (keep a little cache) at the end of `tools/deploy.sh`, and a disk-use check (warn above 90%) in `uptime-kuma/push-checks.sh` | The disk is at 86% (5.3 GB free); the build cache holds 2.2 GB that can be reclaimed, and every deploy adds a 309 MB image (three are kept) | S |
+| 28 | A faster test run: find the slowest tests (`pytest --durations=25`), share set-up where tests only read, and look at running in parallel with one test database per worker | A full run takes about 15 to 17 minutes before every deploy; it was about 4 minutes at 223 tests | M |
+
 ## Suggested order
 
-1. Items 7 and 8 together with the Uptime Kuma monitors.
-2. Items 1 and 5 (never lose a message, shorter wait), then 2.
-3. Items 21 and 22 (food matching), soon: they change what gets logged every day.
-4. Items 3 and 4 (cost), measured for a week before changing anything.
-5. Items 13 and 14 (clean-up), then 15.
+Replaced on 02.11.2026 by "Priorities" at the top (the old order is done except 13 and 15).
