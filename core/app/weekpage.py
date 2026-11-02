@@ -95,6 +95,15 @@ def _health(cur, start: date, end: date, ndays: int) -> str:
         items.append(("Sleep", f'{int(sleep)} h {round((sleep % 1) * 60):02d} <span class="small">average night</span>'))
     if habits and ndays:
         items.append(("Habits", f'{full / (habits * ndays) * 100:.0f}% <span class="small">of habit-days done ({full} of {habits * ndays})</span>'))
+    # gym days (02.11.2026, Gym step c; the owner's answer: on the Week page only, not in the Sheet), once there is a gym list
+    cur.execute("""SELECT w.day, d.name FROM workouts w LEFT JOIN workout_days d ON d.id = w.split_day_id
+                   WHERE w.day BETWEEN %s AND %s ORDER BY w.day, w.id""", (start, end))
+    gymdays = cur.fetchall()
+    cur.execute("SELECT EXISTS (SELECT 1 FROM exercises) AS e")
+    if gymdays or cur.fetchone()["e"]:
+        n = len({r["day"] for r in gymdays})
+        when = ", ".join(f'{r["day"]:%a %d.%m.}' + (f' ({esc(r["name"])})' if r["name"] else "") for r in gymdays)
+        items.append(("Gym", f'{n} workout{"" if n == 1 else "s"}' + (f' <span class="small">{when}</span>' if when else "")))
     body = "".join(f"<tr><td>{k}</td><td>{v}</td></tr>" for k, v in items) or '<tr><td class="empty">Nothing logged in this period.</td></tr>'
     return f'<table class="ft plain"><tbody>{body}</tbody></table>'
 

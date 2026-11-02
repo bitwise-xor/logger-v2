@@ -3,14 +3,17 @@ tab (today's list: one tap on the circle logs an exercise with the numbers shown
 them; Add exercise; the last 4 weeks), the Exercises tab (the owner's list with Retire / Bring back and New exercise) and the
 Gym card on Today. Step (b): the Plan tab (the split's days with their exercises, in order, with the plan's sets × reps) and
 today's day on the Workout tab (chips to switch day or pick Free workout) and on the Today card. Without a split, today's list is
-every active exercise in the list's order. The actions are in gym.py."""
+every active exercise in the list's order. Step (c): the Progress tab (one exercise over 8 weeks with an estimated 1-rep max,
+workouts per week, recent sessions) and the History tab (workouts by date). The actions are in gym.py."""
+import json
 from datetime import timedelta
 
 from . import gym, rules
 from .db import connect
 from .webentry import esc, here, hidden, icon, key
 
-TABS = (("workout", "/web/gym", "Workout"), ("plan", "/web/gym/plan", "Plan"), ("exercises", "/web/gym/exercises", "Exercises"))
+TABS = (("workout", "/web/gym", "Workout"), ("plan", "/web/gym/plan", "Plan"), ("progress", "/web/gym/progress", "Progress"),
+        ("history", "/web/gym/history", "History"), ("exercises", "/web/gym/exercises", "Exercises"))
 # The first time an exercise is done there is nothing to repeat: its row opens these numbers to set first
 DEFAULT = {"weights": {"sets": 3, "reps": 8, "kg": None, "minutes": None, "km": None},
            "bodyweight": {"sets": 3, "reps": 10, "kg": None, "minutes": None, "km": None},
@@ -174,7 +177,7 @@ def _split_card(d: dict) -> str:
     return f'<div class="card gsplit"><h2><span>This week’s split</span><a class="small" href="/web/gym/plan">Edit</a></h2>{"".join(rows)}</div>'
 
 
-def render_workout(csrf: str) -> str:
+def render_workout(csrf: str, q=None) -> str:
     with connect() as conn, conn.cursor() as cur:
         d = load(cur)
     sp = d["split"]
@@ -254,7 +257,7 @@ def _plan_day(x: dict, d: dict, csrf: str) -> str:
     return f'<div class="card"><h2><span>{esc(gym.label(sp["days"], x))}</span>{tag}</h2><div class="plist">{body}</div>{add}{edit}</div>'
 
 
-def render_plan(csrf: str) -> str:
+def render_plan(csrf: str, q=None) -> str:
     with connect() as conn, conn.cursor() as cur:
         d = load(cur)
         gone = gym.days(cur, retired=True)
@@ -279,7 +282,7 @@ def render_plan(csrf: str) -> str:
     return _tabs("plan") + how + cards + new + "</div>"
 
 
-def render_exercises(csrf: str) -> str:
+def render_exercises(csrf: str, q=None) -> str:
     with connect() as conn, conn.cursor() as cur:
         d = load(cur)
         cur.execute("SELECT s.exercise_id, max(w.day) AS day, count(DISTINCT w.day) AS n FROM workout_sets s JOIN workouts w ON w.id = s.workout_id GROUP BY 1")
@@ -322,3 +325,125 @@ def today_card() -> str:
             f'<div class="gdays" role="img" aria-label="Last 14 days: {n14} workout{"" if n14 == 1 else "s"}">{sq}</div>'
             f'<p class="small">Last week {say(last_w)} · this week {say(this_w)}</p>'
             '<a class="primary gopen" href="/web/gym">Open today’s workout</a></div>')
+
+
+# Step (c), 02.11.2026: Progress (per exercise over 8 weeks, workouts per week, recent sessions) and History (workouts by date)
+WEEKS = 8
+
+
+def _top(kind: str, rows: list) -> tuple:
+    """A session's best: weights the heaviest set (kg, reps of it), bodyweight the most reps, cardio the longest minutes."""
+    if kind == "weights":
+        r = max(rows, key=lambda r: (float(r["kg"] or 0), r["reps"] or 0))
+        return float(r["kg"] or 0), r["reps"]
+    if kind == "bodyweight":
+        return float(max(r["reps"] or 0 for r in rows)), None
+    return float(max(r["minutes"] or 0 for r in rows)), None
+
+
+def _per_week(today, days: set) -> str:
+    """Workouts per week, the last 8 weeks, as bars drawn on the server (counts above, Mondays below)."""
+    monday = today - timedelta(days=today.weekday())
+    weeks = [monday - timedelta(days=7 * i) for i in range(WEEKS - 1, -1, -1)]
+    counts = [sum(1 for d in days if w <= d < w + timedelta(days=7)) for w in weeks]
+    top = max(3, max(counts))
+    bars = "".join(f'<rect class="gbar{" now" if i == WEEKS - 1 else ""}" x="{8 + i * 40}" y="{round(64 - n / top * 56, 1)}" width="24" '
+                   f'height="{round(n / top * 56, 1)}" rx="3"/><text x="{20 + i * 40}" y="{round(60 - n / top * 56, 1)}" text-anchor="middle">{n}</text>'
+                   for i, n in enumerate(counts))
+    labels = "".join(f'<text x="{20 + i * 40}" y="80" text-anchor="middle">{w:%d.%m.}</text>' for i, w in enumerate(weeks))
+    good = sum(n >= 2 for n in counts)
+    aria = ", ".join(f"week of {w:%d.%m.}: {n}" for w, n in zip(weeks, counts))
+    return (f'<div class="card"><h2><span>Workouts per week</span><span class="small">{good} of {WEEKS} weeks with 2+</span></h2>'
+            f'<svg class="gweeks" viewBox="0 0 320 84" role="img" aria-label="Workouts per week: {aria}"><path class="base" d="M0 64.5H320"/>{bars}{labels}</svg></div>')
+
+
+def render_progress(csrf: str, q=None) -> str:
+    with connect() as conn, conn.cursor() as cur:
+        today = gym._today(cur)
+        first = today - timedelta(days=7 * WEEKS - 1)
+        cur.execute("""SELECT s.*, x.name, x.kind, w.day FROM workout_sets s JOIN workouts w ON w.id = s.workout_id
+                       JOIN exercises x ON x.id = s.exercise_id ORDER BY w.day, s.sort_order, s.id""")
+        rows = cur.fetchall()
+        cur.execute("SELECT DISTINCT day FROM workouts WHERE day >= %s", (first - timedelta(days=7),))
+        wdays = {r["day"] for r in cur.fetchall()}
+    weeks = _per_week(today, wdays)
+    if not rows:
+        return (_tabs("progress") + '<div class="card"><p class="empty">Nothing to show yet: tick exercises on the '
+                '<a href="/web/gym">Workout</a> tab, and your progress shows here.</p></div>' + weeks)
+    by: dict = {}
+    for r in rows:
+        by.setdefault(r["exercise_id"], {}).setdefault(r["day"], []).append(r)
+    last_day = {k: max(v) for k, v in by.items()}
+    order = sorted(by, key=lambda k: last_day[k], reverse=True)  # the most recently done first
+    want = gym._id((q or {}).get("x"))
+    pick = want if want in by else order[0]
+    sessions = by[pick]
+    kind, name = sessions[max(sessions)][0]["kind"], sessions[max(sessions)][0]["name"]
+    chips = "".join(f'<a class="chip{" on" if k == pick else ""}" href="/web/gym/progress?x={k}"'
+                    f'{" aria-current=\"page\"" if k == pick else ""}>{esc(by[k][last_day[k]][0]["name"])}</a>' for k in order)
+    unit = {"weights": "kg", "bodyweight": "reps", "cardio": "min"}[kind]
+    title = {"weights": "top weight", "bodyweight": "most reps in a set", "cardio": "longest session"}[kind]
+    tops = {d: _top(kind, rs) for d, rs in sessions.items()}
+    window = sorted(d for d in tops if d >= first)
+    now_v, now_reps = tops[max(tops)]
+    if window and len(window) > 1:
+        diff = tops[window[-1]][0] - tops[window[0]][0]
+        change = (f'+{_plain(diff)} {unit} since {window[0]:%d.%m.}' if diff > 0 else f'−{_plain(-diff)} {unit} since {window[0]:%d.%m.}' if diff < 0
+                  else f'same as {window[0]:%d.%m.}')
+    else:
+        change = "one session so far" if len(tops) == 1 else "no sessions in the last 8 weeks"
+    sub = (f'Top set {_plain(now_v)} kg × {now_reps} · estimated 1-rep max ≈ {round(now_v * (1 + (now_reps or 1) / 30))} kg'
+           if kind == "weights" and now_v else f"Last session {max(tops):%a %d.%m.}")
+    pts = [[(d - first).days, round(tops[d][0], 1), f'{d:%a %d.%m.}: {gym.fmt(kind, **_best_row(kind, sessions[d]))}'] for d in window]
+    data = {"start": first.isoformat(), "days": 7 * WEEKS, "label": f"{name}: {title} in {unit}", "decimals": 1,
+            "series": [{"mark": "line", "cls": "a", "pts": pts}, {"mark": "dot", "cls": "a", "pts": pts}]}
+    chart = (f'<div class="chart" id="c-gym" data-chart="{esc(json.dumps(data, separators=(",", ":")))}"></div>' if pts else
+             '<p class="small">No sessions in the last 8 weeks.</p>')
+    recent = sorted(sessions, reverse=True)[:6]
+    li = "".join(f'<tr><td>{d:%a %d.%m.}</td><td>{esc(", ".join(gym.row_text(r) for r in sessions[d]))}</td></tr>' for d in recent)
+    return (_tabs("progress") + f'<p class="chips gpick" role="group" aria-label="Exercise">{chips}</p>'
+            f'<div class="card"><h2><span>{esc(name)}: {title}</span><span class="small">8 weeks</span></h2>'
+            f'<p class="gbig"><span class="num">{_plain(now_v)} {unit}</span> <span class="small">{esc(change)}</span></p>'
+            f'<p class="small">{esc(sub)}</p>{chart}</div>{weeks}'
+            f'<div class="card"><h2><span>Recent sessions</span></h2><table class="ft plain"><tbody>{li}</tbody></table></div>')
+
+
+def _best_row(kind: str, rows: list) -> dict:
+    if kind == "weights":
+        r = max(rows, key=lambda r: (float(r["kg"] or 0), r["reps"] or 0))
+    elif kind == "bodyweight":
+        r = max(rows, key=lambda r: r["reps"] or 0)
+    else:
+        r = max(rows, key=lambda r: float(r["minutes"] or 0))
+    return {k: r[k] for k in VALS}
+
+
+def render_history(csrf: str, q=None) -> str:
+    """Workouts by date, newest first, with their day of the split and what was done (the last 60)."""
+    with connect() as conn, conn.cursor() as cur:
+        ds = gym.days(cur)
+        cur.execute("""SELECT w.id, w.day, w.started_at, w.ended_at, d.id AS split_id, d.name AS split_name
+                       FROM workouts w LEFT JOIN workout_days d ON d.id = w.split_day_id ORDER BY w.day DESC, w.id DESC LIMIT 60""")
+        ws = cur.fetchall()
+        cur.execute("""SELECT s.*, x.name, x.kind FROM workout_sets s JOIN exercises x ON x.id = s.exercise_id
+                       WHERE s.workout_id = ANY(%s) ORDER BY s.sort_order, s.id""", ([w["id"] for w in ws],))
+        sets: dict = {}
+        for r in cur.fetchall():
+            sets.setdefault(r["workout_id"], []).append(r)
+    if not ws:
+        return _tabs("history") + '<div class="card"><p class="empty">No workouts yet.</p></div>'
+    cards = []
+    for w in ws:
+        split = (gym.label(ds, {"id": w["split_id"], "name": w["split_name"]}) if w["split_id"] else "Free workout")
+        start = w["started_at"].astimezone(rules.BERLIN)
+        ticks = [r["logged_at"] for r in sets.get(w["id"], [])]
+        end = w["ended_at"] or (max(ticks) if ticks else None)  # no Finish button: the last tick ends it
+        end = end and end.astimezone(rules.BERLIN)
+        when = f"{start:%H:%M}–{end:%H:%M}" if end and f"{end:%H:%M}" != f"{start:%H:%M}" else f"{start:%H:%M}"
+        by: dict = {}
+        for r in sets.get(w["id"], []):
+            by.setdefault(r["exercise_id"], []).append(r)
+        lines = "".join(f'<tr><td>{esc(rs[0]["name"])}</td><td>{esc(", ".join(gym.row_text(r) for r in rs))}</td></tr>' for rs in by.values())
+        cards.append(f'<div class="card"><h2><span>{w["day"]:%a %d.%m.%Y}</span><span class="small">{esc(split)} · {when}</span></h2>'
+                     f'<table class="ft plain"><tbody>{lines or "<tr><td class=empty>Nothing logged.</td></tr>"}</tbody></table></div>')
+    return _tabs("history") + "".join(cards)

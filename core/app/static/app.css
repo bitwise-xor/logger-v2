@@ -690,3 +690,14 @@ details.gmore{margin-top:.4rem}
 .pitem .icon[disabled]{opacity:.3;cursor:default}
 .gtoday{margin:.1rem 0 .5rem;font-weight:600}
 @media (max-width:1080px){.gsplit{display:none}}
+/* Gym step (c), 02.11.2026: five tabs (they scroll sideways on a narrow phone), the Progress tab's big number and the
+   server-drawn bars of workouts per week */
+nav.seg[aria-label="Gym"]{overflow-x:auto;max-width:100%;scrollbar-width:none}
+@media (max-width:1080px){nav.seg[aria-label="Gym"] a{padding:.55rem .5rem;font-size:.86rem}}
+.gbig{margin:.1rem 0 .2rem}
+.gbig .num{font-size:1.6rem;font-weight:700;margin-right:.4rem}
+svg.gweeks{width:100%;height:auto;display:block}
+svg.gweeks .gbar{fill:var(--accent);opacity:.55}
+svg.gweeks .gbar.now{opacity:1}
+svg.gweeks .base{stroke:var(--line);stroke-width:1}
+svg.gweeks text{fill:var(--dim);font-size:9px}
