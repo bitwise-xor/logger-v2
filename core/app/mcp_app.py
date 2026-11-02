@@ -12,7 +12,7 @@ from starlette.responses import JSONResponse
 from . import logbook, service
 from mcp.server.auth.settings import AuthSettings, ClientRegistrationOptions
 
-from . import auth, web
+from . import auth, watch, web
 from .config import EXTRA_ALLOWED_HOSTS, MCP_PATH, PILOT_TOOLS, PUBLIC_URL
 from .db import connect
 
@@ -192,6 +192,7 @@ async def ready(_: Request) -> JSONResponse:
 
 auth.add_login_routes(mcp, provider)
 web.add_routes(mcp)
+watch.add_routes(mcp)
 
 
 def build_app():

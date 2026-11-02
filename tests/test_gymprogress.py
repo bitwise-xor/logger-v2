@@ -22,7 +22,7 @@ def session(days_ago, rows, split=None):
 
 def test_the_tabs_and_the_empty_pages(web):
     page = web[0].get("/web/gym/progress").text
-    assert re.findall(r'<nav class="seg" aria-label="Gym">(.*?)</nav>', page)[0].count("<a ") == 5
+    assert re.findall(r'<nav class="seg" aria-label="Gym">(.*?)</nav>', page)[0].count("<a ") == 6  # Activity came with step (d)
     assert 'href="/web/gym/progress" aria-current="page"' in page and "Nothing to show yet" in page and "Workouts per week" in page
     assert "No workouts yet." in web[0].get("/web/gym/history").text
 

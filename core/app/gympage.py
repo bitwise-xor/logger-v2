@@ -13,7 +13,7 @@ from .db import connect
 from .webentry import esc, here, hidden, icon, key
 
 TABS = (("workout", "/web/gym", "Workout"), ("plan", "/web/gym/plan", "Plan"), ("progress", "/web/gym/progress", "Progress"),
-        ("history", "/web/gym/history", "History"), ("exercises", "/web/gym/exercises", "Exercises"))
+        ("activity", "/web/gym/activity", "Activity"), ("history", "/web/gym/history", "History"), ("exercises", "/web/gym/exercises", "Exercises"))
 # The first time an exercise is done there is nothing to repeat: its row opens these numbers to set first
 DEFAULT = {"weights": {"sets": 3, "reps": 8, "kg": None, "minutes": None, "km": None},
            "bodyweight": {"sets": 3, "reps": 10, "kg": None, "minutes": None, "km": None},

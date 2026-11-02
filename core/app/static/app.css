@@ -701,3 +701,12 @@ svg.gweeks .gbar{fill:var(--accent);opacity:.55}
 svg.gweeks .gbar.now{opacity:1}
 svg.gweeks .base{stroke:var(--line);stroke-width:1}
 svg.gweeks text{fill:var(--dim);font-size:9px}
+/* Gym step (d), 02.11.2026: the Activity tab (watch data): the day with arrows, the tiles, a watch workout matched to the Logger's */
+.wday{display:flex;align-items:center;justify-content:space-between;gap:.5rem;margin:0 0 .8rem}
+.wday h2{margin:0;text-align:center;flex:1}
+.wday .iconbtn{font-size:1.5rem;text-decoration:none;color:var(--ink)}
+.wtiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(9.5rem,1fr));gap:.6rem;margin:0 0 1rem}
+.wtile{display:flex;flex-direction:column;gap:.15rem;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:.7rem .8rem}
+.wtile .wv{font-size:1.25rem;font-weight:700;font-variant-numeric:tabular-nums}
+.wmatch{display:block;color:var(--accent);font-weight:600}
+ol.steps{padding-left:1.2rem;display:grid;gap:.35rem}

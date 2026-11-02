@@ -36,6 +36,7 @@ services:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
       TODOIST_API_TOKEN: ${TODOIST_API_TOKEN}
       VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}  # signs the nudges' notifications (webpush.py); made once, kept in .env
+      WATCH_TOKEN: ${WATCH_TOKEN:-}  # the iPhone app's token for /watch/health (watch.py); typed by the owner into .env
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3).status == 200 else 1)"]
       interval: 30s
