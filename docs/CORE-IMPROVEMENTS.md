@@ -12,7 +12,7 @@ Size: S = about an hour, M = about half a day, L = a day or more. Rough guesses.
 
 The combined ranking with the web list is at the top of `docs/IMPROVEMENTS.md`. For the core, in order:
 
-1. **27 Disk headroom** (S, quick win): new, see section 8.
+1. **27 Disk headroom** (S, quick win): **done 02.11.2026**, see section 8.
 2. **5 Shorter AI wait** (S, quick win): now safe, because a message is kept and retried (item 1). The client has 60 s and 2 retries today (`ai/provider.py`); for live messages about 20 s and 1 retry, then the kept-message path.
 3. **26 Usage page complete** (S, quick win): label photos as a kind; token counts for food look-ups and lab reports (web 29).
 4. **28 Faster test run, then 15 tests on GitHub** (M): new, see section 8. `.github/workflows/tests.yml` exists but has never been checked.
@@ -114,7 +114,7 @@ token counts for food look-ups and lab reports (web list 21, 20, 29).
 
 | # | Idea | Why | Size |
 |---|---|---|---|
-| 27 | Disk headroom: `docker builder prune` (keep a little cache) at the end of `tools/deploy.sh`, and a disk-use check (warn above 90%) in `uptime-kuma/push-checks.sh` | The disk is at 86% (5.3 GB free); the build cache holds 2.2 GB that can be reclaimed, and every deploy adds a 309 MB image (three are kept) | S |
+| 27 | Disk headroom: `docker builder prune` (keep a little cache) at the end of `tools/deploy.sh`, and a disk-use check (warn above 90%) in `uptime-kuma/push-checks.sh`. **Done 02.11.2026:** cleaned up from 86% (5.4 GB free) to 80% (7.4 GB free): build cache trimmed to 1 GB, unused images removed (hello-world and its exited container, traefik/whoami, alpine:3, alpine:latest, python:3.13-slim), three old Claude Code versions in `~/.local/share/claude/versions` (2.1.306-308). `deploy.sh` now ends with a clean-up: it removes `trial-fixes<N-3>` and trims the build cache to 1 GB. The disk check was already in `push-checks.sh` (down above 90%); it alerts only once Kuma has an alert channel (the owner's task). Left: `sudo apt clean` (145 MB) and old journal logs need sudo (the owner) | The disk was at 86% (5.3 GB free); the build cache held 2.2 GB that could be reclaimed, and every deploy adds a 309 MB image (three are kept) | S |
 | 28 | A faster test run: find the slowest tests (`pytest --durations=25`), share set-up where tests only read, and look at running in parallel with one test database per worker | A full run takes about 15 to 17 minutes before every deploy; it was about 4 minutes at 223 tests | M |
 
 ## Suggested order

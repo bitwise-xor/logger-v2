@@ -25,7 +25,7 @@ Nothing here is decided: plan each one in the doc first.
 
 **Quick wins (small, about an hour each):**
 
-1. **Core 27 Disk headroom** (S): 86% used; 2.2 GB of Docker build cache can go; each deploy adds a 309 MB image. Prune the build cache in `deploy.sh` and add a disk check to the Kuma push checks.
+1. **Core 27 Disk headroom** (S, **done 02.11.2026**: now 80% used, 7.4 GB free; deploys clean up after themselves): was 86% used; 2.2 GB of Docker build cache can go; each deploy adds a 309 MB image. Prune the build cache in `deploy.sh` and add a disk check to the Kuma push checks.
 2. **Core 5 Shorter AI wait** (S): since 01.11. a typed message is kept and retried by cron, so a live message no longer needs to wait up to 60 s × 3; about 20 s, then "kept, trying again".
 3. **46 One-tap usual meals** (S): a tap logs the meal with its saved weights; the editor stays for changes.
 4. **40 Water target** (S): a daily water bar on Today from the drinks already logged.

@@ -63,4 +63,11 @@ echo -n "POST /web/log without a session -> "; curl -sk -m 10 -o /dev/null -w "%
 echo -n "static manifest -> "; curl -sk -m 10 -o /dev/null -w "%{http_code} %{content_type}\n" --resolve app.19hospitalroad.fyi:443:127.0.0.1 https://app.19hospitalroad.fyi/web/static/manifest.webmanifest </dev/null
 echo -n "log. host /web/login (must be 404) -> "; curl -s -m 10 -o /dev/null -w "%{http_code}\n" https://log.19hospitalroad.fyi/web/login </dev/null
 echo "== errors in the log since start"; docker logs --since 2m logger-v2-core 2>&1 | grep -iE "error|traceback|exception" | head -n 10 || true; echo "(end of errors)"
+# 02.11.2026 (disk at 86%): keep the last three rollback images (pilot-before-trial and restyle-5035cd8 are never touched) and 1 GB of build cache
+echo "== clean-up"
+if [[ "$N" =~ ^[0-9]+$ ]]; then
+  old="logger-v2-core:trial-fixes$((N - 3))"
+  docker image inspect "$old" >/dev/null 2>&1 && docker rmi "$old" >/dev/null && echo "removed $old (the last three rollback images stay)"
+fi
+docker builder prune -f --reserved-space 1gb </dev/null | tail -n 1 | sed 's/^/build cache freed: /'
 docker images --format '{{.Repository}}:{{.Tag}} {{.Size}}' | grep -E 'logger-v2-core' ; df -h / | tail -n 1
