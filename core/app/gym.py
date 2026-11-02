@@ -263,6 +263,31 @@ def active(form, key=None, session=None) -> dict:
     return {"outcome": "changed", "head": f'{r["name"]} is back in your list.' if on else f'Retired {r["name"]}. Its history stays.'}
 
 
+def rename(form, key=None, session=None) -> dict:
+    """Rename an exercise (owner's ask, 02.11.2026): its past workouts, plan days and progress stay with it, since they point
+    at its id; the old name is kept as one of its other words."""
+    name = _name(form.get("name"))
+    if not name:
+        return _rejected("Type the exercise's name.")
+    with connect() as conn, conn.cursor() as cur:
+        cur.execute("SELECT * FROM exercises WHERE id = %s", (_id(form.get("exercise")),))
+        x = cur.fetchone()
+        if not x:
+            return _rejected("Unknown exercise.")
+        if name == x["name"]:
+            return _rejected(f"It is called {name} already.")
+        cur.execute("SELECT name, active FROM exercises WHERE lower(name) = lower(%s) AND id <> %s", (name, x["id"]))
+        o = cur.fetchone()
+        if o:
+            return _rejected(f'{o["name"]} is already in your list.' if o["active"] else f'A retired exercise is called {o["name"]}.')
+        words = [w for w in x["words"] if w.lower() != name.lower()]
+        if x["name"].lower() != name.lower() and x["name"].lower() not in (w.lower() for w in words):
+            words = words[:9] + [x["name"]]
+        cur.execute("UPDATE exercises SET name = %s, words = %s WHERE id = %s", (name, words, x["id"]))
+        logbook._audit(cur, "gym", "changed", {"what": "exercise renamed"}, logbook.WEB)
+    return {"outcome": "changed", "head": f'Renamed {x["name"]} to {name}. Its history moved with it.'}
+
+
 def _today(cur):
     cur.execute("SELECT log_day(now()) AS d")
     return cur.fetchone()["d"]
@@ -446,5 +471,5 @@ def seed() -> dict:
     return {"made": True, "days": len(STARTER), "exercises": made}
 
 
-ACTIONS = {"tick": tick, "remove": remove, "new": new_exercise, "active": active, "pick": pick, "daynew": day_new, "dayedit": day_edit,
+ACTIONS = {"tick": tick, "remove": remove, "new": new_exercise, "active": active, "rename": rename, "pick": pick, "daynew": day_new, "dayedit": day_edit,
            "dayactive": day_active, "itemadd": item_add, "itemset": item_set, "itemmove": item_move, "itemremove": item_remove}

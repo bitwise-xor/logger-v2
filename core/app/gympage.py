@@ -292,9 +292,14 @@ def render_exercises(csrf: str, q=None) -> str:
         u = use.get(x["id"])
         meta = " · ".join(v for v in (gym.KINDS[x["kind"]], f'also: {", ".join(x["words"])}' if x["words"] else "",
                                       f'{u["n"]} workout{"" if u["n"] == 1 else "s"}, last {u["day"]:%d.%m.}' if u else "not done yet") if v)
+        ren = (f'<details class="hm-pop"><summary class="hm-link">Rename</summary><form method="post" action="/web/gym/rename">'
+               f'{hidden("csrf", csrf)}{hidden("exercise", str(x["id"]))}{here("/web/gym/exercises")}'
+               f'<input name="name" value="{esc(x["name"])}" maxlength="60" required aria-label="New name for {esc(x["name"])}">'
+               '<button class="primary sm" type="submit">Save</button><span class="small">Past workouts move with it.</span></form></details>')
         btn = (f'<form method="post" action="/web/gym/active">{hidden("csrf", csrf)}{hidden("exercise", str(x["id"]))}{hidden("on", "0" if x["active"] else "1")}'
                f'{here("/web/gym/exercises")}<button class="ghost sm" type="submit">{"Retire" if x["active"] else "Bring back"}</button></form>')
-        rows.append(f'<div class="hm{"" if x["active"] else " retired"}"><span class="hm-main">{esc(x["name"])}<span class="small">{esc(meta)}</span></span>{btn}</div>')
+        rows.append(f'<div class="hm{"" if x["active"] else " retired"}"><span class="hm-main">{esc(x["name"])}<span class="small">{esc(meta)}</span></span>'
+                    f'<div class="hm-ctl">{ren}{btn}</div></div>')
     n = sum(1 for x in d["exercises"] if x["active"])
     body = "".join(rows) or '<p class="empty">No exercises yet.</p>'
     return (_tabs("exercises") + f'<div class="card"><h2><span>Your exercises</span><span class="small">{n} active</span></h2>{body}'

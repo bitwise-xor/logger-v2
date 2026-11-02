@@ -99,6 +99,23 @@ def test_retire_and_bring_back(web):
     assert owner_sql("SELECT active FROM exercises")[0]["active"] is True
 
 
+def test_rename_keeps_the_history_and_the_old_name(web):
+    bench, row = ex("Bench press"), ex("Rowing machine", "cardio")
+    act(web, "/web/gym/tick", exercise=str(bench), sets="3", reps="8", kg="60", key="g8")
+    page = web[0].get("/web/gym/exercises").text
+    assert 'action="/web/gym/rename"' in page and f'name="exercise" value="{bench}"' in page
+    done = act(web, "/web/gym/rename", exercise=str(bench), name="Chest  press")
+    assert "Renamed Bench press to Chest press. Its history moved with it." in done.text
+    assert owner_sql("SELECT name, words FROM exercises WHERE id = %s", bench)[0] == {"name": "Chest press", "words": ["Bench press"]}
+    assert [r["name"] for r in sets()] == ["Chest press"]  # today's sets go with it
+    assert "also: Bench press" in web[0].get("/web/gym/exercises").text
+    assert "already in your list" in act(web, "/web/gym/rename", exercise=str(row), name="chest press").text
+    assert "It is called Chest press already." in act(web, "/web/gym/rename", exercise=str(bench), name="Chest press").text
+    act(web, "/web/gym/rename", exercise=str(bench), name="Bench press")  # back again: the old name leaves the other words
+    assert owner_sql("SELECT name, words FROM exercises WHERE id = %s", bench)[0] == {"name": "Bench press", "words": ["Chest press"]}
+    assert "Unknown exercise." in act(web, "/web/gym/rename", exercise="999", name="Squat").text
+
+
 def test_today_card_and_recent(web):
     page = web[0].get("/web/").text
     assert 'class="card gymcard"' in page and "No workouts yet" in page and 'href="/web/gym"' in page
