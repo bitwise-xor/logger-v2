@@ -673,3 +673,20 @@ dialog.scan{max-height:calc(100dvh - 1.5rem);overflow-y:auto}
 .gymcard h2 svg.ic{color:var(--accent);margin-right:.35rem}
 .gymcard .gopen{display:flex;justify-content:center;margin-top:.7rem}
 .hm.retired .hm-main{color:var(--dim)}
+/* Gym step (b), 02.11.2026: today's day as chips (forms with a button each), the Plan tab's rows with up / down / remove,
+   "Other exercises" folded under the day's list, this week's split (the PC only), today's day on the Today card */
+.gpick{margin:.2rem 0 .3rem}
+.gpick form{display:contents}
+button.chip{cursor:pointer;font:inherit;font-size:.88rem;font-weight:500}
+.gwhy{margin:0 0 .4rem}
+details.gmore{margin-top:.4rem}
+.plist{display:flex;flex-direction:column}
+.pitem{display:flex;gap:.25rem;align-items:flex-start;padding:.55rem 0;border-top:1px solid var(--line)}
+.pitem:first-child{border-top:0}
+.pitem .gedit>summary .small{color:var(--dim)}
+.pitem form{flex:none}
+.pitem .icon{min-width:2.5rem;min-height:2.5rem;display:inline-grid;place-items:center}
+.pitem .icon svg.ic{width:1.1rem;height:1.1rem}
+.pitem .icon[disabled]{opacity:.3;cursor:default}
+.gtoday{margin:.1rem 0 .5rem;font-weight:600}
+@media (max-width:1080px){.gsplit{display:none}}

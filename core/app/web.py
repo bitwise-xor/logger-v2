@@ -35,7 +35,7 @@ _HEADERS = {"Cache-Control": "no-store", "X-Frame-Options": "DENY", "Referrer-Po
             "Content-Security-Policy": "default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self'; "
                                        "form-action 'self'; frame-ancestors 'none'; base-uri 'none'; manifest-src 'self'"}
 # Where a form on the entry box or the reply may send the browser back to: any signed-in page of the app, with its query.
-BACK_ANY = re.compile(r"/web(/(questions|food(/catalogue|/usual|/trends)?|ideas(/todoist)?|health|habits|gym(/exercises)?|week|search|private|usage|labs(/tests|/meds)?|settings|recent|insights))?/?"
+BACK_ANY = re.compile(r"/web(/(questions|food(/catalogue|/usual|/trends)?|ideas(/todoist)?|health|habits|gym(/exercises|/plan)?|week|search|private|usage|labs(/tests|/meds)?|settings|recent|insights))?/?"
                       r"(\?[A-Za-z0-9=&._%+-]*)?")
 _STATIC_DIR = pathlib.Path(__file__).resolve().parent / "static"
 _STATIC = {"app.css": "text/css; charset=utf-8", "app.js": "text/javascript; charset=utf-8", "theme.js": "text/javascript; charset=utf-8",
@@ -478,7 +478,7 @@ def add_routes(mcp) -> None:
             return shell(session, render(session["csrf"]), active=active)
         return handler
 
-    for _path, _render in (("/web/gym", gympage.render_workout), ("/web/gym/exercises", gympage.render_exercises)):
+    for _path, _render in (("/web/gym", gympage.render_workout), ("/web/gym/plan", gympage.render_plan), ("/web/gym/exercises", gympage.render_exercises)):
         mcp.custom_route(_path, methods=["GET"])(gym_tab(_render))
 
     def gym_form(fn):
