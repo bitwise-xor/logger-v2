@@ -5,7 +5,7 @@ Source: body-measurements design chat, 02.11.2026. Audience: Claude Code build s
 Read first: `README.md` and `docs/DESIGN.md` (rules and constraints). The owner keeps a longer app brief in the Claude project "Logger v2" (`claude/logger-app-brief.md`, not in this repo); "brief section N" below refers to it. If unavailable, the rules this spec relies on are restated where used. This spec = what and why. Claude Code = how. Plan first, ask the owner the open questions (section 12), build only after approval.
 
 Status: designed, not approved. Owner is reviewing the mockup.
-Mockup: Design canvas "Body measurements mockup", https://claude.ai/artifact/WLWW9tBYYCf5cDjo8ZArLM (private to the owner; 2 phone screens: `Main.dc.html` = Health page card, `Today.dc.html` = due line). Example numbers only. If unreachable, sections 6 to 8 describe every element.
+Mockup: images in `docs/specs/mockups/body-measurements/` (see its README: Health card, form, read-back, Today due line). Example numbers only. Original Design canvas "Body measurements mockup" is private to the owner on claude.ai. Sections 6 to 8 describe every element.
 
 No personal health values in this spec, in code, in tests or in commits. Test fixtures use invented values.
 
