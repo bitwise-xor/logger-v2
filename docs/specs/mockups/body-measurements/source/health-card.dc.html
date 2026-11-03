@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Health page with body measurements</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:#f6f6f4;color:#1c1c1c;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;font-size:16px;line-height:1.35}
+button,input{font:inherit;color:inherit}
+button{cursor:pointer}
+a{color:#2f6f4f}a:hover{color:#1f4f37}
+.dim{color:#6b6b6b}.small{font-size:.82rem}
+.card{background:#fff;border:1px solid #e3e2de;border-radius:.7rem;padding:.9rem 1rem;margin:0 0 .8rem}
+.card h2{margin:0;font-size:1.05rem}
+.chip{border:1px solid #e3e2de;background:#fff;color:#6b6b6b;border-radius:2rem;padding:.35rem .75rem;font-size:.88rem;min-height:40px;white-space:nowrap}
+.chip.on{border-color:#1c1c1c;color:#1c1c1c;font-weight:650}
+.btn{border:1px solid #e3e2de;background:#fff;border-radius:.5rem;padding:.5rem 1rem;min-height:44px}
+.btn.primary{background:#2f6f4f;border-color:#2f6f4f;color:#fff;font-weight:600}
+.fld{border:1px solid #cfcdc7;background:#fbfbfa;border-radius:.45rem;padding:.5rem .6rem;min-height:44px;box-sizing:border-box;width:5.5rem;text-align:right}
+.mrow{display:grid;grid-template-columns:minmax(0,1fr) 4.6rem 4.2rem 4.2rem;gap:.4rem;align-items:baseline;border-top:1px solid #e3e2de;padding:.55rem 0}
+.mrow.head{border-top:0;padding:.2rem 0;font-size:.75rem;letter-spacing:.04em;text-transform:uppercase;color:#6b6b6b;font-weight:650}
+.num{text-align:right;font-variant-numeric:tabular-nums}
+.flash{background:#e3f1e8;border:1px solid #2f6f4f;border-radius:.6rem;padding:.5rem .8rem;margin:0 0 .8rem;font-size:.9rem}
+.ask{background:#fbf0de;border:1px solid #e6cf9f;border-radius:.6rem;padding:.6rem .8rem;margin:.6rem 0 0;font-size:.9rem;color:#5a3600}
+.ghost{background:#fff;border:1px dashed #cfcdc7;border-radius:.7rem;padding:.8rem 1rem;margin:0 0 .8rem;color:#6b6b6b;font-size:.9rem}
+.tabs{display:flex;background:#fff;border-top:1px solid #e3e2de}
+.tabs a{flex:1;display:flex;align-items:center;justify-content:center;min-height:52px;color:#6b6b6b;text-decoration:none;font-size:.85rem}
+.tabs a[aria-current]{color:#1c1c1c;font-weight:650;box-shadow:inset 0 2px 0 #1c1c1c}
+</style>
+</helmet>
+<div style="width: 390px; height: 1240px; display: flex; flex-direction: column; overflow: hidden; background: #f6f6f4">
+  <div style="flex: 1; overflow-y: auto; padding: 14px 14px 18px">
+    <h1 style="margin: 0 0 10px; font-size: 1.5rem">Health</h1>
+    <p class="small dim" style="margin: 0 0 10px">Mockup · example numbers, not yours</p>
+
+    <div class="ghost">Weight, blood pressure, blood sugar, sleep, mood and energy charts (unchanged)</div>
+
+    <sc-if value="{{ hasMsg }}" hint-placeholder-val="{{ false }}"><p class="flash" role="status">{{ msg }}</p></sc-if>
+
+    <section class="card" aria-labelledby="bodyh">
+      <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px">
+        <div>
+          <h2 id="bodyh">Body measurements</h2>
+          <div class="small dim">{{ lastLine }}</div>
+        </div>
+        <button class="btn primary" onClick="{{ openForm }}" aria-expanded="{{ showForm }}">Measure</button>
+      </div>
+
+      <sc-if value="{{ showForm }}" hint-placeholder-val="{{ false }}">
+        <div style="background: #fbfbfa; border: 1px solid #e3e2de; border-radius: 10px; padding: 10px 12px; margin-top: 12px">
+          <p class="small" style="margin: 0 0 8px">Morning, before eating, relaxed, tape level and snug. Right side for arm and thigh. Leave a field empty to skip it.</p>
+          <sc-for list="{{ fields }}" as="f" hint-placeholder-count="5">
+            <label style="display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 5px 0">
+              <span><span style="font-weight: 600">{{ f.label }}</span><br><span class="small dim">{{ f.hint }}</span></span>
+              <span style="display: flex; align-items: center; gap: 6px; flex: none"><input class="fld" inputmode="decimal" value="{{ f.value }}" onInput="{{ f.set }}" placeholder="{{ f.last }}" aria-label="{{ f.aria }}"><span class="small dim">cm</span></span>
+            </label>
+          </sc-for>
+          <sc-if value="{{ hasAsk }}" hint-placeholder-val="{{ false }}">
+            <div class="ask" role="alert">
+              <strong>Check:</strong> {{ askText }}
+              <div style="display: flex; gap: 8px; margin-top: 8px"><button class="btn primary" onClick="{{ confirmSave }}">Yes, save</button><button class="btn" onClick="{{ cancelAsk }}">Fix it</button></div>
+            </div>
+          </sc-if>
+          <div style="display: flex; gap: 8px; margin-top: 10px"><button class="btn primary" onClick="{{ save }}">Save</button><button class="btn" onClick="{{ closeForm }}">Cancel</button></div>
+        </div>
+      </sc-if>
+
+      <div style="margin-top: 12px">
+        <div class="mrow head"><span>cm</span><span class="num">Now</span><span class="num">Last</span><span class="num">Start</span></div>
+        <sc-for list="{{ rows }}" as="r" hint-placeholder-count="5">
+          <div class="mrow">
+            <span style="font-weight: 600">{{ r.label }}</span>
+            <span class="num">{{ r.now }}</span>
+            <span class="num small dim">{{ r.dLast }}</span>
+            <span class="num small dim">{{ r.dFirst }}</span>
+          </div>
+        </sc-for>
+        <p class="small dim" style="margin: 4px 0 0">Last = change since the time before. Start = change since {{ firstDate }}.</p>
+      </div>
+
+      <div style="margin-top: 14px">
+        <div role="group" aria-label="Chart" style="display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px">
+          <sc-for list="{{ chips }}" as="c" hint-placeholder-count="5">
+            <button class="{{ c.cls }}" aria-pressed="{{ c.on }}" onClick="{{ c.pick }}">{{ c.label }}</button>
+          </sc-for>
+        </div>
+        <svg width="330" height="150" viewBox="0 0 330 150" role="img" aria-label="{{ chartLabel }}" style="display: block; margin-top: 6px">
+          <line x1="28" y1="20" x2="322" y2="20" stroke="#ecebe7" stroke-width="1"></line>
+          <line x1="28" y1="110" x2="322" y2="110" stroke="#ecebe7" stroke-width="1"></line>
+          <text x="22" y="24" text-anchor="end" font-size="10" fill="#6b6b6b">{{ yMax }}</text>
+          <text x="22" y="114" text-anchor="end" font-size="10" fill="#6b6b6b">{{ yMin }}</text>
+          <polyline points="{{ line }}" fill="none" stroke="#2f6f4f" stroke-width="2"></polyline>
+          <sc-for list="{{ dots }}" as="d" hint-placeholder-count="4">
+            <circle cx="{{ d.x }}" cy="{{ d.y }}" r="4" fill="#2f6f4f"></circle>
+            <text x="{{ d.x }}" y="{{ d.ty }}" text-anchor="middle" font-size="10" fill="#1c1c1c">{{ d.v }}</text>
+            <text x="{{ d.x }}" y="138" text-anchor="middle" font-size="10" fill="#6b6b6b">{{ d.date }}</text>
+          </sc-for>
+        </svg>
+        <p class="small dim" style="margin: 2px 0 0">{{ ratioLine }}</p>
+      </div>
+    </section>
+
+    <section class="card" aria-labelledby="logh">
+      <h2 id="logh" style="margin-bottom: 6px">Or type it</h2>
+      <p class="small" style="margin: 0">In the Log bar or in chat: <strong>waist 123.5 hips 128 chest 125 arm 41.5 thigh 72</strong>. Any subset works ("waist 123.5").</p>
+    </section>
+
+    <div class="ghost">Entries table (unchanged: daily values only)</div>
+  </div>
+  <nav class="tabs" aria-label="Main">
+    <a href="Today.dc.html">Today</a><a href="#top">Food</a><a href="#top" aria-current="page">Health</a><a href="#top">Ideas</a><a href="#top">Gym</a><a href="#top">More</a>
+  </nav>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":1240}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = {
+      showForm: false, ask: '', msg: '', pick: 'waist',
+      draft: { waist: '', hips: '', chest: '', arm: '', thigh: '' },
+      history: [
+        { date: '07.09.', waist: 127.5, hips: 130.0, chest: 127.0, arm: 42.0, thigh: 73.5 },
+        { date: '05.10.', waist: 126.0, hips: 129.0, chest: 126.5, arm: 41.5, thigh: 73.0 },
+        { date: '02.11.', waist: 124.0, hips: 128.5, chest: 126.0, arm: 41.5, thigh: 72.0 }
+      ]
+    };
+  }
+  defs() {
+    return [
+      ['waist', 'Waist', 'At the navel, after a normal breath out'],
+      ['hips', 'Hips', 'Widest point of the buttocks'],
+      ['chest', 'Chest', 'Across the nipples, arms down'],
+      ['arm', 'Upper arm', 'Halfway shoulder to elbow, relaxed'],
+      ['thigh', 'Thigh', 'Halfway hip to knee, standing']
+    ];
+  }
+  fmt(v) { return v == null ? '–' : v.toFixed(1); }
+  delta(a, b) {
+    if (a == null || b == null) return '–';
+    const d = Math.round((a - b) * 10) / 10;
+    return d === 0 ? '±0' : (d > 0 ? '+' : '−') + Math.abs(d).toFixed(1);
+  }
+  latest(key) { const h = this.state.history; for (let i = h.length - 1; i >= 0; i--) if (h[i][key] != null) return h[i][key]; return null; }
+  trySave(force) {
+    const s = this.state; const entry = { date: '03.11.' }; let any = false; let odd = '';
+    this.defs().forEach((d) => {
+      const raw = String(s.draft[d[0]]).replace(',', '.').trim();
+      const v = raw === '' ? null : Number(raw);
+      if (v != null && !isNaN(v)) {
+        entry[d[0]] = v; any = true;
+        const last = this.latest(d[0]);
+        if (!odd && last != null && Math.abs(v - last) >= 4) odd = d[1] + ' ' + v.toFixed(1) + ' cm is ' + Math.abs(v - last).toFixed(1) + ' cm away from last time (' + last.toFixed(1) + '). Right?';
+      } else entry[d[0]] = null;
+    });
+    if (!any) { this.setState({ msg: 'Nothing to save. Fill at least one field.' }); return; }
+    if (odd && !force) { this.setState({ ask: odd }); return; }
+    this.setState({ history: s.history.concat([entry]), showForm: false, ask: '', msg: 'Saved body measurements · 03.11.2026 08:10 · Undo',
+      draft: { waist: '', hips: '', chest: '', arm: '', thigh: '' } });
+  }
+  renderVals() {
+    const s = this.state; const h = s.history; const defs = this.defs();
+    const last = h[h.length - 1]; const prev = h[h.length - 2]; const first = h[0];
+    const rows = defs.map((d) => ({ label: d[1], now: this.fmt(last[d[0]]), dLast: prev ? this.delta(last[d[0]], prev[d[0]]) : '–', dFirst: this.delta(last[d[0]], first[d[0]]) }));
+    const fields = defs.map((d) => ({ label: d[1], hint: d[2], value: s.draft[d[0]], last: this.fmt(this.latest(d[0])), aria: d[1] + ' in cm',
+      set: (e) => { const dr = Object.assign({}, this.state.draft); dr[d[0]] = e.target.value; this.setState({ draft: dr, ask: '' }); } }));
+    const chips = defs.map((d) => ({ label: d[1], on: s.pick === d[0], cls: s.pick === d[0] ? 'chip on' : 'chip', pick: () => this.setState({ pick: d[0] }) }));
+    const pts = h.filter((e) => e[s.pick] != null);
+    const vals = pts.map((e) => e[s.pick]);
+    let lo = Math.min.apply(null, vals), hi = Math.max.apply(null, vals);
+    if (hi - lo < 2) { const m = (hi + lo) / 2; lo = m - 1; hi = m + 1; }
+    const n = pts.length;
+    const dots = pts.map((e, i) => {
+      const x = n > 1 ? 44 + i * (262 / (n - 1)) : 175;
+      const y = 20 + (hi - e[s.pick]) / (hi - lo) * 90;
+      return { x: Math.round(x), y: Math.round(y), ty: Math.round(y) - 9, v: e[s.pick].toFixed(1), date: e.date };
+    });
+    const label = defs.filter((d) => d[0] === s.pick)[0][1];
+    const w = this.latest('waist');
+    return {
+      rows, fields, chips, dots, line: dots.map((d) => d.x + ',' + d.y).join(' '),
+      yMax: hi.toFixed(0), yMin: lo.toFixed(0), chartLabel: label + ' over time, in cm',
+      firstDate: first.date + (first.date.length < 7 ? '2026' : ''),
+      lastLine: 'Last measured ' + last.date + '2026 · next due in about 4 weeks',
+      ratioLine: 'Waist ÷ height: ' + (w / 178).toFixed(2) + ' (height 178 cm, set once in Settings). Under 0.5 is the common target.',
+      showForm: s.showForm, hasAsk: !!s.ask, askText: s.ask, hasMsg: !!s.msg, msg: s.msg,
+      openForm: () => this.setState({ showForm: !this.state.showForm, msg: '', ask: '' }),
+      closeForm: () => this.setState({ showForm: false, ask: '' }),
+      save: () => this.trySave(false), confirmSave: () => this.trySave(true), cancelAsk: () => this.setState({ ask: '' })
+    };
+  }
+}
+</script>
+</body>
+</html>

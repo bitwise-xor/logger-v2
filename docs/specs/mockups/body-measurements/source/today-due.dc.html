@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Today with measurements due</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:#f6f6f4;color:#1c1c1c;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;font-size:16px;line-height:1.35}
+button{font:inherit;color:inherit;cursor:pointer}
+a{color:#2f6f4f}a:hover{color:#1f4f37}
+.dim{color:#6b6b6b}.small{font-size:.82rem}
+.card{background:#fff;border:1px solid #e3e2de;border-radius:.7rem;padding:.9rem 1rem;margin:0 0 .8rem}
+.card h2{margin:0 0 .6rem;font-size:1.05rem}
+.ghost{background:#fff;border:1px dashed #cfcdc7;border-radius:.7rem;padding:.8rem 1rem;margin:0 0 .8rem;color:#6b6b6b;font-size:.9rem}
+.due{display:flex;align-items:center;justify-content:space-between;gap:10px;border-top:1px solid #e3e2de;padding:.6rem 0}
+.go{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:0 1rem;border-radius:.5rem;background:#2f6f4f;color:#fff;font-weight:600;text-decoration:none;flex:none}
+.go:hover{color:#fff;background:#265c41}
+.lnk{background:none;border:0;padding:.5rem .2rem;color:#6b6b6b;text-decoration:underline;min-height:44px;font-size:.85rem}
+.tabs{display:flex;background:#fff;border-top:1px solid #e3e2de}
+.tabs a{flex:1;display:flex;align-items:center;justify-content:center;min-height:52px;color:#6b6b6b;text-decoration:none;font-size:.85rem}
+.tabs a[aria-current]{color:#1c1c1c;font-weight:650;box-shadow:inset 0 2px 0 #1c1c1c}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; display: flex; flex-direction: column; overflow: hidden; background: #f6f6f4">
+  <div style="flex: 1; overflow-y: auto; padding: 14px 14px 18px">
+    <div class="small dim" style="letter-spacing: .06em; text-transform: uppercase; font-weight: 650">Today</div>
+    <h1 style="margin: 0 0 10px; font-size: 1.5rem">Tuesday, 3 November</h1>
+    <p class="small dim" style="margin: 0 0 10px">Mockup · only the new line is real</p>
+
+    <div class="ghost">Calories, protein, fat, carbs (unchanged)</div>
+    <div class="ghost">Food and drinks, Again and Repeat chips (unchanged)</div>
+    <div class="ghost">Habits · Gym · Health card (unchanged)</div>
+
+    <section class="card" aria-labelledby="revh">
+      <h2 id="revh">To review</h2>
+      <sc-if value="{{ showDue }}" hint-placeholder-val="{{ true }}">
+        <div class="due">
+          <div>
+            <div style="font-weight: 600">Body measurements due</div>
+            <div class="small dim">Last 05.10. · 29 days ago · takes about 3 minutes</div>
+          </div>
+          <a class="go" href="Main.dc.html">Measure</a>
+        </div>
+        <div style="display: flex; gap: 12px">
+          <button class="lnk" onClick="{{ snooze }}">Not today</button>
+        </div>
+      </sc-if>
+      <sc-if value="{{ snoozed }}" hint-placeholder-val="{{ false }}">
+        <p class="small dim" style="margin: 0">Nothing to review. Measurements will show again tomorrow.</p>
+      </sc-if>
+    </section>
+    <p class="small dim" style="margin: 0 4px">Shows 28 days after the last measurement, only after you log your wake-up. Gone once any measurement is saved.</p>
+  </div>
+  <nav class="tabs" aria-label="Main">
+    <a href="#top" aria-current="page">Today</a><a href="#top">Food</a><a href="Main.dc.html">Health</a><a href="#top">Ideas</a><a href="#top">Gym</a><a href="#top">More</a>
+  </nav>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  constructor(props) { super(props); this.state = { snoozed: false }; }
+  renderVals() {
+    return { showDue: !this.state.snoozed, snoozed: this.state.snoozed, snooze: () => this.setState({ snoozed: true }) };
+  }
+}
+</script>
+</body>
+</html>
