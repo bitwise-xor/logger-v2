@@ -150,7 +150,21 @@ document.addEventListener("DOMContentLoaded", () => {
   drawAll();
   let resized;
   window.addEventListener("resize", () => { clearTimeout(resized); resized = setTimeout(drawAll, 150); });
+
+  // Home page, pick screen: the countdown of a running timer. The server keeps the end time; this only draws the seconds left.
+  document.querySelectorAll(".hoclock[data-left]").forEach(setupClock);
 });
+
+function setupClock(el) {
+  const end = Date.now() + Number(el.dataset.left) * 1000, over = document.querySelector("[data-over]");
+  const show = () => {
+    const s = Math.max(0, Math.round((end - Date.now()) / 1000));
+    el.textContent = String(Math.floor(s / 60)).padStart(2, "0") + ":" + String(s % 60).padStart(2, "0");
+    if (s === 0) { el.classList.add("over"); if (over) over.hidden = false; clearInterval(tick); }
+  };
+  const tick = setInterval(show, 500);
+  show();
+}
 
 // The scanner: the camera reads EAN/UPC codes with the zxing library (loaded on first use, from the app itself); typing
 // the digits works too. A catalogue food with that code gets amount, time and Log; an unknown code goes to Open Food Facts.

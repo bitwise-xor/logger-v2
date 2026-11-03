@@ -790,3 +790,24 @@ ol.steps{padding-left:1.2rem;display:grid;gap:.35rem}
 .homecard .gopen{display:flex;justify-content:center;margin-top:.7rem}
 .honext{margin:.1rem 0;font-size:1.05rem}
 @media (max-width:420px){.hotiles{gap:.3rem}.hotile{font-size:.78rem}}
+
+/* Home page step 2 (03.11.2026): time chips, the week bar, the pick screen and its timer */
+.hochips{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.5rem;margin:.6rem 0}
+.hochip{display:flex;justify-content:center;align-items:center;min-height:2.75rem;padding:.4rem .3rem;border:1px solid var(--line2);border-radius:12px;background:var(--card);color:var(--ink);text-decoration:none;font-weight:500;font-size:.95rem;white-space:nowrap}
+.hochip.on{border:2px solid var(--accent);background:color-mix(in srgb,var(--accent) 14%,var(--card));font-weight:600}
+.hobar{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;gap:.5rem;margin:.6rem 0}
+.hoseg{height:.55rem;border-radius:99px;background:var(--bar)}
+.hoseg.on{background:var(--accent)}
+.hojob h2{margin:.6rem 0 .5rem;font-size:1.5rem}
+.hojob ol.steps{margin:.3rem 0 .6rem}
+.hotimer{text-align:center}
+.hoclock{font-size:3.4rem;font-weight:700;font-variant-numeric:tabular-nums;line-height:1.2;margin:.2rem 0 .6rem}
+.hoclock.over{color:var(--accent)}
+.hoover{margin:.2rem 0 .6rem;font-weight:600;color:var(--accent)}
+.hotimer .row{justify-content:center}
+.hotimer form,.hotimer button.primary{width:100%}
+.hobtns{display:flex;flex-wrap:wrap;gap:.5rem;margin:.9rem 0}
+.hobtns>form{flex:1 1 0}
+.hobtns>form button,.hobtns>a{width:100%;display:flex;justify-content:center;align-items:center;min-height:2.9rem;box-sizing:border-box;text-decoration:none}
+.hobtns>a{flex:1 1 0}
+.homecard .hobtns{margin:.7rem 0 0}

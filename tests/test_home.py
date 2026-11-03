@@ -105,7 +105,7 @@ def test_now_lists_the_chores_waiting_longest(web, starter):
     page = c.get("/web/home").text
     assert "Longest since last done" in page and "20 chores" in page and "Show all 20 chores" in page
     assert page.count('class="horow"') == 6 and "Vacuum · Bathroom" in page and "not logged yet · weekly" in page
-    assert "Recently done" not in page and "Pick a job" not in page  # the timer and the weekly sessions are step 2
+    assert "Recently done" not in page and "Pick a job for me" in page and "This week" in page  # step 2's cards
 
 
 def test_a_tick_is_saved_ticked_off_by_a_second_tap_and_undone(web, starter):
