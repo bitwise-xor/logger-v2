@@ -1,16 +1,18 @@
 """The web app's Settings page (decided 29.10.2026). Tabs: Food targets (the day's targets, new ones start on a date and the old ones
 stay as history), Habits (label, daily count, order, active; add a habit), Today page (what shows on Today and in which order),
-Devices (the signed-in devices), Notifications (31.10.2026: turn nudges on per device, pick them and their times).
+Body (03.11.2026: height from a date, how often body measurements are due, which measures show), Devices (the signed-in
+devices), Notifications (31.10.2026: turn nudges on per device, pick them and their times).
 The forms post to websettings.py; this module only reads."""
 import re
 from urllib.parse import urlencode
 
-from . import nudges, rules, uiprefs, webpush
+from . import body, nudges, rules, uiprefs, webpush
 from .db import connect
 from .todaypage import HEALTH_ROWS, _plain
 from .webentry import esc, hidden
 
-TABS = (("targets", "Food targets"), ("habits", "Habits"), ("today", "Today page"), ("devices", "Devices"), ("notify", "Notifications"))
+TABS = (("targets", "Food targets"), ("habits", "Habits"), ("today", "Today page"), ("body", "Body"), ("devices", "Devices"),
+        ("notify", "Notifications"))
 BACK = re.compile(r"/web/settings(\?[A-Za-z0-9=&._%+-]*)?")
 TARGET_FIELDS = (("kcal", "Calories", "kcal"), ("protein", "Protein", "g"), ("fat", "Fat", "g"), ("sat_fat", "Saturated fat", "g"),
                  ("carbs", "Carbs", "g"), ("fibre", "Fibre", "g"), ("sugar_added", "Added sugar", "g"), ("sodium_mg", "Sodium", "mg"))
@@ -61,6 +63,36 @@ def _targets(session, csrf: str) -> str:
             '<span class="small">New targets count from the date; earlier days keep the targets they had. An empty field means no target for it.</span></p></form></div>'
             f'<div class="card"><h2>History</h2><div class="tablewrap"><table class="ft plain"><thead><tr><th>From</th><th>kcal</th><th>Protein</th><th>Fat</th><th>Sat fat</th>'
             f'<th>Carbs</th><th>Note</th></tr></thead><tbody>{hist or "<tr><td colspan=7 class=empty>No targets yet.</td></tr>"}</tbody></table></div></div>')
+
+
+# ---- body measurements (03.11.2026) ------------------------------------------------------------------
+
+def _body(session, csrf: str) -> str:
+    """Height (dated: a session uses the height valid on its day), how often measurements are due, which measures show."""
+    with connect() as c, c.cursor() as cur:
+        today = cur.execute("SELECT log_day(now()) AS d").fetchone()["d"]
+        rows = body.heights(cur)
+        prefs = body.settings(cur)
+    now = next((r for r in rows if r["valid_from"] <= today), None)
+    lo, hi = body.HEIGHT_RANGE
+    hist = "".join(f'<tr><td>{r["valid_from"]:%d.%m.%Y}</td><td>{_plain(r["height_cm"])} cm</td></tr>' for r in rows)
+    boxes = "".join(f'<label class="row"><input type="checkbox" name="show" value="{k}"{"" if k in prefs["hidden"] else " checked"}> {lbl}</label>'
+                    for k, lbl, _h in body.TAPE)
+    ilo, ihi = body.INTERVAL_RANGE
+    return (f'<div class="card"><h2>Height <span class="small">· {f"{_plain(now["height_cm"])} cm" if now else "not set yet"}</span></h2>'
+            f'<form method="post" action="/web/settings/height">{hidden("csrf", csrf)}{hidden("back", url(tab="body"))}<div class="fields">'
+            f'<label>Valid from<input type="date" name="valid_from" value="{today.isoformat()}" required></label>'
+            f'<label>Height <span class="small">cm</span><input type="number" name="height" min="{lo}" max="{hi}" step="any" inputmode="decimal" required></label></div>'
+            '<p class="row"><button class="primary" type="submit">Save height</button>'
+            '<span class="small">For waist ÷ height on the Health page. A new height counts from its date; earlier measurements keep the height they had.</span></p></form>'
+            + (f'<div class="tablewrap"><table class="ft plain"><thead><tr><th>From</th><th>Height</th></tr></thead><tbody>{hist}</tbody></table></div>' if rows else "")
+            + '</div>'
+            f'<div class="card"><h2>Body measurements</h2><form method="post" action="/web/settings/body">{hidden("csrf", csrf)}{hidden("back", url(tab="body"))}'
+            f'<div class="fields"><label>Due every <span class="small">days, {ilo} to {ihi}</span>'
+            f'<input type="number" name="interval" min="{ilo}" max="{ihi}" step="1" inputmode="numeric" value="{prefs["interval"]}" required></label></div>'
+            f'<p class="small">Measures in the form and on the Health page:</p><div class="row bchecks">{boxes}</div>'
+            '<p class="row"><button class="primary" type="submit">Save</button>'
+            '<span class="small">A hidden measure keeps its values; it is only left out of the form, the table and the chips.</span></p></form></div>')
 
 
 # ---- habits ----------------------------------------------------------------------------------------
@@ -186,4 +218,5 @@ def _notify(session, csrf: str) -> str:
 def render(session, q) -> str:
     tab = q.get("tab") if q.get("tab") in dict(TABS) else TABS[0][0]
     csrf = session["csrf"]
-    return _tabs(tab) + {"targets": _targets, "habits": _habits, "today": _today_tab, "devices": _devices, "notify": _notify}[tab](session, csrf)
+    return _tabs(tab) + {"targets": _targets, "habits": _habits, "today": _today_tab, "body": _body, "devices": _devices,
+                         "notify": _notify}[tab](session, csrf)

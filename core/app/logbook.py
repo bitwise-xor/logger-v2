@@ -13,7 +13,7 @@ from typing import Any, Optional
 
 from psycopg.types.json import Jsonb
 
-from . import commands, held, labs, lookup, record, todos
+from . import commands, held, labs, lookup, record, tape, todos
 from .ai import parser
 from .ai.provider import LIVE, AnthropicProvider, Provider, ProviderError
 from .db import connect
@@ -107,8 +107,8 @@ def _public(out: dict) -> dict:
 
 
 def log(text: str, idempotency_key: Optional[str] = None, pred: Optional[dict] = None, channel: str = CHANNEL) -> dict[str, Any]:
-    """pred: a ready parser answer (the web app's quick buttons); the AI then does not read the text and the message is
-    saved at once. Without one, the words are kept first (held.py) and then read and saved by read_held, so an AI or save
+    """pred: a ready parser answer (the web app's quick buttons, or tape.read for a line of body measurements); the AI then
+    does not read the text and the message is saved at once. Without one, the words are kept first (held.py) and then read and saved by read_held, so an AI or save
     failure cannot lose them (01.11.2026).
     channel: where the message came from (CHANNEL or WEB), stored with it and in the audit log."""
     now = clock()
@@ -126,6 +126,8 @@ def log(text: str, idempotency_key: Optional[str] = None, pred: Optional[dict] =
                     return {"outcome": "rejected", "message": "This idempotency key was already used for a different message."}
                 _audit(cur, "log", "replayed", {}, channel)
                 return {**row["response"], "replayed": True}
+        if pred is None:  # body measurements typed as pairs ("waist 123.5 hips 128") need no AI (03.11.2026)
+            pred = tape.read(cur, text)
         hid = held.find(cur, idempotency_key) if pred is None else None  # sent again while it waits: read the kept one
         if hid is None:
             cur.execute("""SELECT received_at FROM raw_inbox WHERE channel = ANY(%s) AND lower(content) = lower(%s)

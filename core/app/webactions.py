@@ -6,7 +6,9 @@ import re
 from datetime import date, datetime, timedelta
 from typing import Optional
 
-from . import commands, habitspage, healthpage, logbook, webundo
+from psycopg.types.json import Jsonb
+
+from . import body, commands, habitspage, healthpage, logbook, webundo
 from .db import connect
 from .todaypage import AREAS, CHECKIN, HEALTH_ROWS, THOUGHT_TYPES
 from .v1_log import Reject, _words_in
@@ -318,6 +320,93 @@ def health_day(day_s: str, r: str, form, key: Optional[str]) -> dict:
     if out["outcome"] == "saved" and not out.get("questions"):
         out["head"] = head
     return out
+
+
+# ---- body measurements (03.11.2026) ------------------------------------------------------------------
+
+def body_save(form, key: Optional[str]) -> dict:
+    """The Health card's Measure form: one session (a health day) of tape measurements. A value in an empty field is logged
+    for that day, a changed one corrected, a cleared one deleted (asked once). Save is the yes, but a value out of range or
+    4 cm or more away from last time is read back first ("Yes, save" / "Fix it"), spec sections 6 and 8."""
+    try:
+        day = date.fromisoformat(str(form.get("day", "")))
+    except ValueError:
+        return _rejected("Unknown day.")
+    r = str(form.get("r", ""))
+    r = r if r in {str(x) for x in healthpage.RANGES} else str(healthpage.DEFAULT_RANGE)
+    sure = form.get("confirmed") == "1"
+    with connect() as conn, conn.cursor() as cur:
+        cur.execute("SELECT log_day(now()) AS d")
+        today = cur.fetchone()["d"]
+        if not today - timedelta(days=365) <= day <= today:
+            return _rejected("Pick a day of the last 12 months.")
+        now_vals = body.day_values(cur, day)
+        cur.execute("SELECT name, min1, max1 FROM log_types WHERE name = ANY(%s)", (list(body.NAMES),))
+        ranges = {t["name"]: (float(t["min1"]), float(t["max1"])) for t in cur.fetchall()}
+        steps, items, words, said, deletes, checks, filled = [], [], [], [], [], [], False
+        for k, lbl, _h in body.TAPE:
+            sent = form.get(k)
+            if sent is None:
+                continue  # a measure the form does not show
+            sent, had = str(sent).strip(), now_vals.get(k)
+            if not sent:
+                if had:
+                    steps.append({"action": "change", "args": {"id": had["id"], "delete": True}})
+                    deletes.append(f"{lbl} {body.cm(had['v'])}")
+                    said.append(f"{lbl} {body.cm(had['v'])} deleted")
+                continue
+            filled = True
+            v = _num(sent)
+            if v is None or v <= 0:
+                return _rejected(f"{lbl}: give a number in cm.")
+            v = round(v, 1)
+            if had and abs(had["v"] - v) < 0.05:
+                continue
+            lo, hi = ranges[k]
+            if not lo <= v <= hi:
+                checks.append(f"{lbl} {body.cm(v)} cm is outside the usual range of {lo:g} to {hi:g} cm. Right?")
+            checks += body.jump(cur, k, v, day)
+            if had:
+                steps.append({"action": "change", "args": {"id": had["id"], "fields": {"value": v, **({"confirmed": True} if sure else {})}}})
+                said.append(f"{lbl} {body.cm(had['v'])} → {body.cm(v)}")
+            else:
+                items.append({"type": k, "value": v, "value2": None, "period": None, "session": None,
+                              "when": None if day == today else f"{day:%d.%m.%Y}", "confirmed": sure})
+                words.append(f"{lbl.lower()} {body.cm(v)}")
+                said.append(f"{lbl} {body.cm(v)} added")
+    if not steps and not items:
+        return {"outcome": "unchanged", "reason": "Nothing changed." if filled else "Nothing to save. Fill at least one field."}
+    dm = f"{day:%a %d.%m.}"
+    again = {k: str(form.get(k)) for k in body.NAMES if form.get(k) is not None} | {"day": day.isoformat(), "r": r}
+    back = f"/web/health?r={r}&measure=1&mday={day.isoformat()}#body"
+    if deletes and form.get("confirm_del") != "1":
+        return {"outcome": "needs_confirmation", "read_back": f"Delete on {dm}: {', '.join(deletes)}?",
+                "confirm": {"action": "/web/body", "label": "Yes, delete", "no": back, "no_label": "Keep it",
+                            "fields": again | {"confirm_del": "1", **({"confirmed": "1"} if sure else {})}}}
+    if checks and not sure:
+        return {"outcome": "needs_confirmation", "read_back": "Check: " + " ".join(checks),
+                "confirm": {"action": "/web/body", "label": "Yes, save", "no": back, "no_label": "Fix it",
+                            "fields": again | {"confirmed": "1", **({"confirm_del": "1"} if deletes else {})}}}
+    head = f"Saved for {dm}: {', '.join(said)}."
+    if steps:
+        out = _change(steps, "body measurements", head)
+        if out["outcome"] != "changed" or not items:
+            return out
+    out = logbook.log(", ".join(words) + ("" if day == today else f" on {day:%d.%m.%Y}"), key, _pred(health=items), channel=logbook.WEB)
+    if out["outcome"] == "saved" and not out.get("questions"):
+        out["head"] = head
+    return out
+
+
+def body_skip() -> dict:
+    """"Not today" on Today's "Body measurements due" line: hidden until the next health day."""
+    with connect() as conn, conn.cursor() as cur:
+        cur.execute("SELECT log_day(now()) AS d")
+        today = cur.fetchone()["d"]
+        cur.execute("""INSERT INTO ui_settings (key, value) VALUES (%s, %s)
+                       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()""",
+                    (body.SKIP_KEY, Jsonb({"day": today.isoformat()})))
+    return {"outcome": "changed", "head": "Body measurements hidden until tomorrow."}
 
 
 # ---- review ----------------------------------------------------------------------------------------

@@ -4,7 +4,9 @@ import re
 from datetime import date
 from typing import Optional
 
-from . import logbook, nudges, settingspage, uiprefs
+from psycopg.types.json import Jsonb
+
+from . import body, logbook, nudges, settingspage, uiprefs
 from .db import connect
 
 SID = re.compile(r"[0-9a-f-]{36}")
@@ -86,6 +88,46 @@ def targets(form, key: Optional[str], session) -> dict:
         logbook._audit(cur, "web_change", "changed", {"what": "food targets"}, logbook.WEB)
     shown = ", ".join(f"{label} {vals[k]:g}{' ' + u if u == 'mg' else ''}" for k, label, u in settingspage.TARGET_FIELDS[:5] if vals[k] is not None)
     return {"outcome": "changed", "head": f"Targets from {valid_from:%d.%m.%Y} saved: {shown}."}
+
+
+# ---- body measurements (03.11.2026) ------------------------------------------------------------------
+
+def height(form, key: Optional[str], session) -> dict:
+    """The owner's height from a date (a row of body_height; one of the same date is replaced, earlier days keep theirs)."""
+    try:
+        valid_from = date.fromisoformat(str(form.get("valid_from", "")).strip())
+    except ValueError:
+        return _rejected("Give the date the height counts from.")
+    ok, v = _number(form.get("height"))
+    lo, hi = body.HEIGHT_RANGE
+    if not ok or v is None or not lo <= v <= hi:
+        return _rejected(f"Height: give a number from {lo} to {hi} cm.")
+    with connect() as conn, conn.cursor() as cur:
+        cur.execute("""INSERT INTO body_height (valid_from, height_cm) VALUES (%s, %s)
+                       ON CONFLICT (valid_from) DO UPDATE SET height_cm = EXCLUDED.height_cm, logged_at = now()""", (valid_from, round(v, 1)))
+        logbook._audit(cur, "web_change", "changed", {"what": "height"}, logbook.WEB)
+    return {"outcome": "changed", "head": f"Height {round(v, 1):g} cm saved, from {valid_from:%d.%m.%Y}."}
+
+
+def body_settings(form, key: Optional[str], session) -> dict:
+    """How often body measurements are due, and which measures show in the form, the table and the chips."""
+    lo, hi = body.INTERVAL_RANGE
+    try:
+        n = int(str(form.get("interval", "")).strip())
+    except ValueError:
+        n = None
+    if n is None or not lo <= n <= hi:
+        return _rejected(f"Due every: give a whole number of days from {lo} to {hi}.")
+    show = {str(x) for x in form.getlist("show")}
+    if not show & set(body.NAMES):
+        return _rejected("Keep at least one measure.")
+    hidden = [k for k in body.NAMES if k not in show]
+    with connect() as conn, conn.cursor() as cur:
+        cur.execute("""INSERT INTO ui_settings (key, value) VALUES (%s, %s)
+                       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()""",
+                    (body.KEY, Jsonb({"interval": n, "hidden": hidden})))
+        logbook._audit(cur, "web_change", "changed", {"what": "body settings"}, logbook.WEB)
+    return {"outcome": "changed", "head": f"Body measurements: due every {n} days" + (f", {len(hidden)} hidden." if hidden else ".")}
 
 
 # ---- habits ----------------------------------------------------------------------------------------
@@ -182,4 +224,4 @@ def push_off(form, key: Optional[str], session) -> dict:
 
 
 ACTIONS = {"device": device, "others": others, "targets": targets, "habit": habit, "habit_new": habit_new, "today": today, "today_reset": today_reset,
-           "nudges": nudge_settings, "nudge_test": nudge_test, "push_off": push_off}
+           "nudges": nudge_settings, "nudge_test": nudge_test, "push_off": push_off, "height": height, "body": body_settings}

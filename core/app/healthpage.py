@@ -1,11 +1,12 @@
 """The web app's Health page: weight, blood pressure, fasted sugar and sleep over 7, 30 or 90 days, the checklist
-habits of the last 30 days, and every day's values in one row to correct in place (decided 26.10.2026).
+habits of the last 30 days, and every day's values in one row to correct in place (decided 26.10.2026). Between the charts
+and that table: the Body measurements card (bodypage.py, 03.11.2026).
 The charts are drawn by app.js from the numbers in each chart's data-chart attribute; without the script the
 table below still shows every value."""
 import json
 from datetime import date, datetime, timedelta
 
-from . import rules
+from . import bodypage, rules
 from .db import connect
 from .webentry import esc, hidden, key
 
@@ -200,9 +201,10 @@ def _entries(d: dict, csrf: str, show_all: bool) -> str:
             'clearing a value deletes it (asked once). Odd values still ask. Bed is the evening before; sleep comes from bed and wake-up.</p></div>')
 
 
-def render(csrf: str, days: int, show_all: bool = False) -> str:
+def render(csrf: str, days: int, show_all: bool = False, q=None) -> str:
+    """q: the page's query, for the Body measurements card (its form, session and chart chip)."""
     d = load(days)
     seg = "".join(f'<a href="/web/health?r={r}"{" aria-current=\"page\"" if r == days else ""}>{r} days</a>' for r in RANGES)
     return (f'<div class="head"><h1>Health</h1><nav class="seg" aria-label="Range">{seg}</nav></div>'
-            f'{_charts(d)}{_entries(d, csrf, show_all)}'
+            f'{_charts(d)}{bodypage.card(csrf, q or {}, d["today"], days)}{_entries(d, csrf, show_all)}'
             '<p class="small">The habits calendar moved to <a href="/web/habits">the Habits page</a>.</p>')

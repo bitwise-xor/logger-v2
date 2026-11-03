@@ -393,7 +393,7 @@ function drawChart(el, o) {
   const pts = o.series.flatMap(s => s.pts);
   if (!pts.length) { el.innerHTML = '<p class="empty">No values in this range.</p>'; return; }
   const esc = s => String(s).replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
-  const W = Math.max(260, el.clientWidth), H = 190, L = 42, R = 8, T = 8, B = 22;
+  const W = Math.max(260, el.clientWidth), H = 190, L = 42, R = 8, T = o.pointLabels ? 22 : 8, B = 22;  // room for the top point's label
   const refs = o.lines || [];  // reference lines: [value, class (w = amber, r = red), label]
   const ys = pts.map(p => p[1] + (p[3] || 0)).concat((o.band || []).filter(v => v != null), refs.map(l => l[0]));
   const ticks = niceTicks(o.min ?? Math.min(...ys), o.max ?? Math.max(...ys), 4), y0 = ticks[0], y1 = ticks[ticks.length - 1];  // max: a fixed top (mood 1 to 5)
@@ -413,9 +413,13 @@ function drawChart(el, o) {
     s += `<line class="ref ${cls}" x1="${L}" x2="${W - R}" y1="${f(y(v))}" y2="${f(y(v))}"/>`
        + `<text class="reflbl ${cls}" x="${W - R - 3}" y="${f(y(v) - 3)}" text-anchor="end">${esc(txt ?? v)}</text>`;
   }
-  const labels = o.days <= 7 ? [...Array(o.days).keys()] : [0, Math.floor((o.days - 1) / 2), o.days - 1];
+  // xAtPoints (body measurements, 03.11.2026): the dates of the points themselves, at most 6 of them
+  const at = o.xAtPoints ? [...new Set(pts.map(p => p[0]))].sort((a, b) => a - b) : null;
+  const labels = at ? (at.length <= 6 ? at : [at[0], at[Math.floor((at.length - 1) / 2)], at[at.length - 1]])
+               : o.days <= 7 ? [...Array(o.days).keys()] : [0, Math.floor((o.days - 1) / 2), o.days - 1];
   for (const i of labels) {
-    const anchor = o.days > 7 && i === 0 ? "start" : o.days > 7 && i === o.days - 1 ? "end" : "middle";
+    const anchor = at ? (o.days > 1 && i === 0 ? "start" : o.days > 1 && i === o.days - 1 ? "end" : "middle")
+                 : o.days > 7 && i === 0 ? "start" : o.days > 7 && i === o.days - 1 ? "end" : "middle";
     s += `<text x="${f(x(i))}" y="${H - 5}" text-anchor="${anchor}">${dm(i)}</text>`;
   }
   const bw = Math.max(2, (W - L - R) / o.days * 0.62);
@@ -426,7 +430,11 @@ function drawChart(el, o) {
       if (p[2]) marks.push({x: x(p[0]), y: y(p[1] + (se.mark === "bar" ? (p[3] || 0) : 0)), t: p[2], bar: se.mark === "bar"});
       const tip = `<title>${esc(p[2])}</title>`;
       if (se.mark === "bar") { const b0 = Math.max(p[3] || 0, y0); s += `<rect class="${se.cls}" x="${f(x(p[0]) - bw / 2)}" y="${f(y(b0 + p[1]))}" width="${f(bw)}" height="${f(y(b0) - y(b0 + p[1]))}" rx="1.5">${tip}</rect>`; }
-      else if (se.mark === "dot") s += `<circle class="${se.cls}" cx="${f(x(p[0]))}" cy="${f(y(p[1]))}" r="3.2">${tip}</circle>`;
+      else if (se.mark === "dot") {
+        s += `<circle class="${se.cls}" cx="${f(x(p[0]))}" cy="${f(y(p[1]))}" r="3.2">${tip}</circle>`;
+        if (o.pointLabels && (se.pts.length <= 8 || p === se.pts[se.pts.length - 1]))  // the value above each point (the last only when crowded)
+          s += `<text class="ptl" x="${f(x(p[0]))}" y="${f(y(p[1]) - 8)}" text-anchor="${o.days > 1 && p[0] === 0 ? "start" : o.days > 1 && p[0] === o.days - 1 ? "end" : "middle"}">${p[1].toFixed(1)}</text>`;
+      }
       else if (se.mark === "ring") s += `<circle class="ring ${se.cls}" cx="${f(x(p[0]))}" cy="${f(y(p[1]))}" r="3">${tip}</circle>`;
     }
   }

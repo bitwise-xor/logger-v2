@@ -5,6 +5,7 @@ count most, and the daily charts of calories, protein and fat."""
 from datetime import date, timedelta
 
 from . import trendspage
+from .body import LABEL as BODY_LABEL, sessions as body_sessions, signed
 from .db import connect
 from .foodpage import _pct_class
 from .todaypage import _n
@@ -103,6 +104,15 @@ def _health(cur, start: date, end: date, ndays: int) -> str:
         said = " · ".join(f'{t} {_avg(feel[t]):.1f}' for t in ("mood", "energy") if t in feel)
         n = max(len(v) for v in feel.values())
         items.append(("Mood · energy", f'{said} <span class="small">average of {n} evening{"" if n == 1 else "s"}, 1 to 5</span>'))
+    # body measurements (03.11.2026): one line per session in the period, with the waist's change since the session before
+    sess = body_sessions(cur)
+    for i, s in enumerate(sess):
+        if start <= s["day"] <= end:
+            k = "waist" if "waist" in s["vals"] else next(iter(s["vals"]))
+            prev = next((p["vals"][k]["v"] for p in reversed(sess[:i]) if k in p["vals"]), None)
+            said = f'{BODY_LABEL[k].lower()} {signed(s["vals"][k]["v"] - prev)} cm since last' if prev is not None else "the first measurement"
+            n = len(s["vals"])
+            items.append(("Body measurements", f'Measured {s["day"]:%d.%m.}: {said} <span class="small">({n} value{"" if n == 1 else "s"})</span>'))
     if habits and ndays:
         items.append(("Habits", f'{full / (habits * ndays) * 100:.0f}% <span class="small">of habit-days done ({full} of {habits * ndays})</span>'))
     # gym days (02.11.2026, Gym step c; the owner's answer: on the Week page only, not in the Sheet), once there is a gym list

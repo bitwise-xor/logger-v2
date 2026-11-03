@@ -3,7 +3,7 @@ habit toggles, the Health card (edited in place) and items to review. web.py wra
 import math
 from datetime import date, datetime, timedelta
 
-from . import gympage, healthpage, rules, uiprefs
+from . import body, bodypage, gympage, healthpage, rules, uiprefs
 from .db import connect
 from .webentry import esc, hidden, icon, key
 
@@ -132,8 +132,9 @@ def load(asked: date | None = None) -> dict:
                            JOIN foods f ON f.id = x.food_id WHERE f.active ORDER BY x.eaten_at DESC, x.id DESC LIMIT %s""", (AGAIN,))
             again = cur.fetchall()
         prefs = uiprefs.load(cur)
-    return {"day": day, "food": food, "foods": foods, "usual": usual, "habits": habits, "last_tick": last_tick,
-            "health": health, "review": review, "prefs": prefs, "today": today, "past": day < today, "again": again, "checkin": checkin}
+        due = body.due(cur, today, bool(w)) if day == today else None  # body measurements every 4 weeks, after the wake-up
+    return {"day": day, "food": food, "foods": foods, "usual": usual, "habits": habits, "last_tick": last_tick, "health": health,
+            "review": review, "prefs": prefs, "today": today, "past": day < today, "again": again, "checkin": checkin, "body_due": due}
 
 
 # ---- food -----------------------------------------------------------------------------------------
@@ -410,13 +411,14 @@ def _review_item(r: dict, csrf: str) -> str:
 
 
 def _review_section(d: dict, csrf: str) -> str:
+    due = d.get("body_due")
     if not uiprefs.shown("review", "box", d["prefs"]):  # hidden: only a one-line notice while something waits, so it is never forgotten
-        n = len(d["review"])
+        n = len(d["review"]) + bool(due)
         return (f'<p class="small notice">{n} item{"" if n == 1 else "s"} to review is hidden here · '
                 '<a href="/web/settings?tab=today">show the box</a></p>') if n else ""
-    body = ("".join(_review_item(r, csrf) for r in d["review"])
-            or f'<div class="allgood"><span class="ok-dot">{icon("check")}</span><p class="empty">Nothing to review.</p></div>')
-    return f'<div class="card"><h2>To review</h2>{body}</div>'
+    items = (bodypage.today_line(csrf, due) if due else "") + "".join(_review_item(r, csrf) for r in d["review"])
+    return ('<div class="card"><h2>To review</h2>'
+            + (items or f'<div class="allgood"><span class="ok-dot">{icon("check")}</span><p class="empty">Nothing to review.</p></div>') + '</div>')
 
 
 # ---- day picker, macro pie ---------------------------------------------------------------------------

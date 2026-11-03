@@ -11,6 +11,7 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
+from . import body
 from .v1_food import (_UNIT_BASE, _UNIT_GENERIC, _UNIT_SYN, _find_foods, _fkey, _food_cat, _norm, _num, _resolve_type,
                       _silent_close, _sing, _to_amount, _types, _unit_rows, _use_counts, _words_in)
 from .when import BERLIN, _day_of, parse_when
@@ -189,6 +190,16 @@ def _prepare_entries(cur, entries: list[Entry], now: datetime) -> list[dict]:
                 tally[("bp", day, per)] += 1
             elif name == "blood_sugar":
                 p["period"] = "fasted"
+            if name in body.NAMES:  # body measurements (v2, 03.11.2026): one value a health day, a second one replaces it after a
+                cur.execute("""SELECT id, value1 FROM measurements WHERE type_id=%s AND day=%s
+                               ORDER BY event_at DESC, id DESC""", (t["id"], day))  # yes; a jump of 4 cm or more asks too
+                same = cur.fetchall()
+                if same or tally[(name, day)]:
+                    had = f" {body.cm(same[0]['value1'])}" if same else ""
+                    problems.append(f"{t['label']} already{had} on {day:%d.%m.%Y}. Replace?")
+                    p["replace"] = [r["id"] for r in same]
+                problems += body.jump(cur, name, v1, day)
+                tally[(name, day)] += 1
             if name in _ONCE_PER_DAY:
                 n, r = _first(cur, "measurements", t["id"], day)
                 if n + tally[(name, day)]:
@@ -247,6 +258,9 @@ def _insert_entries(cur, raw_id: int, prepared: list[dict], out: list[str], note
             details["confirmed"] = "user"
         known = not p["date_only"]
         ts = p["ts"] if known else datetime.combine(p["ts"].astimezone(BERLIN).date(), time(12, 0), tzinfo=BERLIN)
+        if p.get("replace"):  # a body measurement the user said to replace (v2, 03.11.2026); change_log keeps the old row's trace
+            cur.execute("DELETE FROM measurements WHERE id = ANY(%s)", (p["replace"],))
+            notes.append(f"replaced the earlier {p['name']} of {_dm(p['day'])}")
         if t["kind"] == "measurement":
             cur.execute(
                 """INSERT INTO measurements (raw_id, type_id, day, event_at, time_known, period, value1, value2, note, details,

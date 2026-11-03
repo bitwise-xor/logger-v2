@@ -16,7 +16,7 @@ from typing import Optional
 from psycopg.types.json import Jsonb
 from pydantic import ValidationError
 
-from . import v1_log, v1_thoughts
+from . import tape, v1_log, v1_thoughts
 from .ai import parser
 from .ai.provider import Provider, Usage
 from .clock import read_when
@@ -109,15 +109,18 @@ def settle(cur, cat: dict, types: dict, pred: dict, now: datetime) -> Reading:
     for h in pred.get("health", []):
         t, _ = _resolve_type(types, h["type"])
         if not t:
-            r.questions.append(dict(kind="type", text=f"'{h['type']}' is not a known health type or habit. "
-                                                      "Is it a habit to add, or a thought?", item=h))
+            text = (tape.unknown_text(h["type"], h["value"]) if h.get("tape") else
+                    f"'{h['type']}' is not a known health type or habit. Is it a habit to add, or a thought?")
+            r.questions.append(dict(kind="type", text=text, item=h))
             continue
         ts, date_only, tprob = read_when(h["when"], now)
         if tprob:
             r.questions.append(dict(kind="time", text=tprob, item=h))
             continue
         r.entries.append(Entry(type=t["name"], value=h["value"], value2=h["value2"], when=_iso(ts, date_only),
-                               period=h["period"] if h["period"] in ("morning", "evening") else None, session=h["session"]))
+                               period=h["period"] if h["period"] in ("morning", "evening") else None, session=h["session"],
+                               confirmed=bool(h.get("confirmed"))))  # the web form's own read-back was answered yes
+    r.notes += [str(n) for n in pred.get("notes") or []]  # tape.read: inches turned into cm
     r.thoughts = [Thought(summary=t["summary"], thought_type=t["thought_type"], area=t["area"], tags=t["tags"][:3],
                           project=t["project"]) for t in pred.get("thoughts", [])]
     return r
@@ -134,7 +137,7 @@ def read(cur, provider: Provider, text: str, now: datetime, previous=(), meals=(
         pred, u = parser.parse(provider, text, naive, previous, meals)
         usages.append(u)
     r = best(cur, [pred], now)
-    if not (escalate and r.questions):
+    if not (escalate and r.questions) or any(h.get("tape") for h in pred.get("health", [])):  # a typed measurement line: no AI at all
         return r, usages, False
     pred2, u2 = parser.parse(provider, text, naive, previous, meals, model=ESCALATION_MODEL)
     usages.append(u2)
@@ -195,7 +198,7 @@ def save(cur, r: Reading, text: str, channel: str, now: datetime, confirmed: boo
         except Exception as e:  # noqa: BLE001 - fail closed: never fall back to the general inbox
             raise Reject(f"the private entry was not saved ({type(e).__name__}); nothing went to the normal inbox") from e
     for x in r.foods + r.entries:
-        x.confirmed = confirmed
+        x.confirmed = confirmed or x.confirmed
     try:
         prepared = v1_log._prepare_entries(cur, r.entries, now) if r.entries else []
         food = v1_log._prepare_food(cur, r.foods, r.meals, [], None, True, None, now, prepared) if (r.foods or r.meals) else None

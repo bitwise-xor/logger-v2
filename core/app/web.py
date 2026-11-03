@@ -336,7 +336,7 @@ def add_routes(mcp) -> None:
             return RedirectResponse("/web/login", status_code=302, headers={"Cache-Control": "no-store"})
         r = request.query_params.get("r", "")
         days = int(r) if r in {str(x) for x in healthpage.RANGES} else healthpage.DEFAULT_RANGE
-        return shell(session, healthpage.render(session["csrf"], days, request.query_params.get("all") == "1"), active="health")
+        return shell(session, healthpage.render(session["csrf"], days, request.query_params.get("all") == "1", request.query_params), active="health")
 
     @mcp.custom_route("/web/login", methods=["GET"])
     async def login_form(request: Request) -> Response:
@@ -684,6 +684,24 @@ def add_routes(mcp) -> None:
         r = r if r in {str(x) for x in healthpage.RANGES} else str(healthpage.DEFAULT_RANGE)
         day = str(form.get("day", ""))[:10]
         return done(session, await _run(lambda: webactions.health_day(day, r, form, form_key(form))), f"/web/health?r={r}")
+
+    @mcp.custom_route("/web/body", methods=["POST"])
+    async def body_form(request: Request) -> Response:
+        """The Health page's Body measurements form (03.11.2026)."""
+        session, form = await post_form(request)
+        if form is None:
+            return session
+        r = str(form.get("r", ""))
+        r = r if r in {str(x) for x in healthpage.RANGES} else str(healthpage.DEFAULT_RANGE)
+        return done(session, await _run(lambda: webactions.body_save(form, form_key(form))), f"/web/health?r={r}")
+
+    @mcp.custom_route("/web/body/skip", methods=["POST"])
+    async def body_skip(request: Request) -> Response:
+        """"Not today" on Today's Body measurements line."""
+        session, form = await post_form(request)
+        if form is None:
+            return session
+        return done(session, await _run(webactions.body_skip))
 
     def food_form(fn, back):
         """One form of the Food page (webfood.ACTIONS): signed in, same origin, then the reply and back to the page."""
