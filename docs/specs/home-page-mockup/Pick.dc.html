@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>15 minutes, what now?</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+a{color:#2E7D55}a:hover{color:#215C3F}
+</style>
+</helmet>
+<div style="width: 390px; height: 900px; box-sizing: border-box; background: #F4F5F2; font-family: -apple-system, system-ui, 'Segoe UI', sans-serif; color: #1D2420; display: flex; flex-direction: column">
+
+<header style="padding: 20px 16px 12px; display: flex; flex-direction: column; gap: 10px">
+<a href="Main.dc.html" style="font-size: 15px; font-weight: 600; text-decoration: none; min-height: 32px; display: flex; align-items: center">‹ Home</a>
+<h1 style="margin: 0; font-size: 28px; font-weight: 700; letter-spacing: -0.3px">Your 15 minutes</h1>
+</header>
+
+<main style="flex-grow: 1; padding: 4px 16px 16px; display: flex; flex-direction: column; gap: 14px">
+
+<section style="background: #FFFFFF; border-radius: 16px; padding: 20px 18px; display: flex; flex-direction: column; gap: 14px; border: 1px solid #E3E6E1">
+<div style="display: flex; gap: 8px">
+<span style="padding: 4px 10px; border-radius: 999px; background: #E4F1E9; color: #215C3F; font-size: 13px; font-weight: 600">Sleeping</span>
+<span style="padding: 4px 10px; border-radius: 999px; background: #F0F1EE; color: #5C6660; font-size: 13px">not logged yet</span>
+</div>
+<h2 style="margin: 0; font-size: 24px; font-weight: 700">Dust the sleeping area</h2>
+<ol style="margin: 0; padding-left: 20px; font-size: 15px; line-height: 1.7">
+<li>Lamp</li>
+<li>Shelves and bedside</li>
+<li>Radiator</li>
+<li>Window sill</li>
+</ol>
+<p style="margin: 0; font-size: 14px; line-height: 1.45; color: #5C6660">Top to bottom, with a damp cloth. Vacuuming comes after, another time is fine.</p>
+</section>
+
+<section style="background: #FFFFFF; border-radius: 16px; padding: 22px 18px; display: flex; flex-direction: column; align-items: center; gap: 14px; border: 1px solid #E3E6E1">
+<div role="timer" aria-live="off" style="font-size: 56px; font-weight: 700; letter-spacing: 1px; font-variant-numeric: tabular-nums">{{clock}}</div>
+<button onClick="{{toggle}}" style="width: 100%; min-height: 50px; border-radius: 14px; border: 0; background: #2E7D55; color: #FFFFFF; font-size: 16px; font-weight: 600">{{startLabel}}</button>
+<p style="margin: 0; font-size: 13px; color: #5C6660; text-align: center">When the timer ends, stop. It counts as a session, finished or not.</p>
+</section>
+
+<div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px">
+<a href="Main.dc.html" style="min-height: 48px; border-radius: 12px; background: #1D2420; color: #FFFFFF; font-size: 15px; font-weight: 600; text-decoration: none; display: flex; align-items: center; justify-content: center">Done</a>
+<button style="min-height: 48px; border-radius: 12px; border: 1px solid #D5D9D3; background: #FFFFFF; font-size: 15px; color: #1D2420">Another job</button>
+<a href="Main.dc.html" style="min-height: 48px; border-radius: 12px; border: 1px solid #D5D9D3; background: #FFFFFF; color: #1D2420; font-size: 15px; text-decoration: none; display: flex; align-items: center; justify-content: center">Not today</a>
+</div>
+
+<section style="display: flex; flex-direction: column; gap: 8px; padding: 4px 2px">
+<h3 style="margin: 0; font-size: 14px; font-weight: 600; color: #5C6660">Also fits in 15 minutes</h3>
+<div style="font-size: 15px">Vacuum · Workstation</div>
+<div style="font-size: 15px">Clear and wipe desk</div>
+</section>
+</main>
+
+<nav aria-label="Main" style="height: 64px; background: #FFFFFF; border-top: 1px solid #E3E6E1; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); align-items: center; text-align: center; font-size: 12px">
+<a href="Today.dc.html" style="color: #5C6660; text-decoration: none">Today</a>
+<a href="#" style="color: #5C6660; text-decoration: none">Food</a>
+<a href="#" style="color: #5C6660; text-decoration: none">Health</a>
+<a href="#" style="color: #5C6660; text-decoration: none">Ideas</a>
+<a href="#" style="color: #5C6660; text-decoration: none">Gym</a>
+<a href="Main.dc.html" aria-current="page" style="color: #2E7D55; font-weight: 700; text-decoration: none">More</a>
+</nav>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":900}}'>
+class Component extends DCLogic {
+constructor(props) {
+super(props);
+this.state = { left: 900, running: false };
+this.timer = null;
+}
+componentWillUnmount() {
+if (this.timer) clearInterval(this.timer);
+}
+renderVals() {
+var left = this.state.left;
+var m = Math.floor(left / 60);
+var s = left % 60;
+var self = this;
+return {
+clock: (m < 10 ? '0' : '') + m + ':' + (s < 10 ? '0' : '') + s,
+startLabel: left === 0 ? 'Time is up · well done' : (this.state.running ? 'Pause' : (left === 900 ? 'Start timer' : 'Resume')),
+toggle: function () {
+if (self.state.left === 0) { self.setState({ left: 900, running: false }); return; }
+if (self.state.running) {
+clearInterval(self.timer); self.timer = null;
+self.setState({ running: false });
+} else {
+self.timer = setInterval(function () {
+var n = self.state.left - 1;
+if (n <= 0) { clearInterval(self.timer); self.timer = null; self.setState({ left: 0, running: false }); }
+else { self.setState({ left: n }); }
+}, 1000);
+self.setState({ running: true });
+}
+}
+};
+}
+}
+</script>
+</body>
+</html>
