@@ -30,7 +30,7 @@ _LOG = logging.getLogger("logger.log")
 YES = re.compile(r"^\s*(yes|y|ok|okay|confirm(ed)?|correct|right|ja|jawohl|stimmt|richtig)\b", re.I)
 # The questions `answer` takes (the web app's Questions page lists these).
 ANSWER_TOOLS = ("log", "log_confirm", "log_repeat", "add_food_confirm", "command", "command_confirm", "lookup_confirm",
-                "report_confirm")
+                "report_confirm", "home_choice")
 NO = re.compile(r"^\s*(no|nope|nein|skip|cancel|stop|drop)\b", re.I)
 
 
@@ -54,7 +54,7 @@ def _context(cur, now: datetime) -> tuple[list, list]:
     """The parser's context: the last few messages of the 6 hours before `now`, and what was eaten and drunk that day.
     `now` is a kept message's own time when it is read again later, so later messages are left out."""
     cur.execute("""SELECT received_at, content FROM raw_inbox WHERE received_at > %s - interval '6 hours' AND received_at <= %s
-                   AND channel <> 'catalogue' AND content NOT LIKE 'add food: %%' AND NOT (metadata ? 'lab_report') AND NOT (metadata ? 'gym')
+                   AND channel <> 'catalogue' AND content NOT LIKE 'add food: %%' AND NOT (metadata ? 'lab_report') AND NOT (metadata ? 'gym') AND NOT (metadata ? 'home')
                    ORDER BY received_at DESC LIMIT 4""", (now, now))  # the logger's own catalogue rows are not messages
     prev = [(r["received_at"].astimezone(BERLIN).replace(tzinfo=None), r["content"]) for r in reversed(cur.fetchall())]
     cur.execute("""SELECT e.day, e.meal, e.is_drink, e.eaten_at, f.name FROM food_entries e JOIN foods f ON f.id = e.food_id
@@ -146,6 +146,17 @@ def log(text: str, idempotency_key: Optional[str] = None, pred: Optional[dict] =
                                 "questions": [{"pending_id": pid, "question": "Log it again (yes) or not (no)?"}]})
                 _audit(cur, "log", "needs_confirmation", {"why": "repeat", "questions": [pid]}, channel)
                 return resp
+            if pred is None:  # a chore line ("vacuumed the kitchen") is read by a word match, no AI (Home page, 03.11.2026)
+                from . import homechat  # here: homechat imports home, which imports this module
+                chore = homechat.read(cur, text, now, channel)
+                if chore is not None:
+                    resp = _public(chore)
+                    if idempotency_key:
+                        cur.execute("INSERT INTO idempotency_keys (key, tool, request_hash, response) VALUES (%s, 'log', %s, %s)",
+                                    (idempotency_key, req_hash, Jsonb(resp)))
+                    _audit(cur, "log", chore["outcome"], {"raw_id": chore.get("raw_id"), "home": True,
+                                                          "questions": [q["pending_id"] for q in chore.get("questions", [])]}, channel)
+                    return resp
             if pred is not None:
                 out = _process(cur, text, now, pred, channel)
                 resp = _public(out)
@@ -395,6 +406,9 @@ def answer(question_id: str, reply: str, channel: str = CHANNEL) -> dict[str, An
             out = lookup.accept(cur, p["payload"]["lookup"], now, question_id, p["payload"]["item"]["food"])
         elif p["tool"] == "log":  # which shopping item was meant
             out = todos.answer(cur, provider(), p, reply, now)
+        elif p["tool"] == "home_choice":  # which chore was meant (homechat.py)
+            from . import homechat
+            out = homechat.answer(cur, p, reply, now)
         elif p["tool"] == "command":  # which entry was meant: read the request again with the answer
             prev, _ = _context(cur, now)
             out, _ = commands.handle(cur, provider(), f"{p['payload']['text']}\n(Asked: {p['reason']} Answer: {reply})", now, prev)

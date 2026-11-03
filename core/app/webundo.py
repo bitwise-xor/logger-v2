@@ -35,6 +35,8 @@ def record(resp: dict, rows: Optional[list] = None) -> Optional[dict]:
         return {"token": secrets.token_urlsafe(12), "head": resp.get("head") or "Deleted.", "held": int(resp["held_undo"])}
     if resp.get("gym_undo") and not resp.get("replayed"):  # a gym tick or a removed gym row (gym.py)
         return {"token": secrets.token_urlsafe(12), "head": (resp.get("head") or "Saved.")[:160], "gym": resp["gym_undo"]}
+    if resp.get("home_undo") and not resp.get("replayed"):  # a chore tick or a removed history row (home.py)
+        return {"token": secrets.token_urlsafe(12), "head": (resp.get("head") or "Saved.")[:160], "home": resp["home_undo"]}
     if resp.get("outcome") == "changed" and rows:
         return {"token": secrets.token_urlsafe(12), "head": resp.get("head") or "Changed.", "rows": rows}
     if resp.get("raw_id") and resp.get("outcome") in ("saved", "partly_saved") and not resp.get("replayed"):
@@ -52,6 +54,9 @@ def apply(rec: dict) -> dict:
     if rec.get("gym"):
         from .gym import undo as gym_undo  # here: gym imports logbook, like this module
         return gym_undo(rec["gym"])
+    if rec.get("home"):
+        from .home import undo as home_undo  # here: home imports logbook, like this module
+        return home_undo(rec["home"])
     if rec.get("held"):
         if held.restore(int(rec["held"])):
             return {"outcome": "changed", "head": "The unread message is back."}

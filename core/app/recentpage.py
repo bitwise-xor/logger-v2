@@ -58,6 +58,11 @@ def load() -> dict:
         for r in cur.fetchall():  # gym ticks (02.11.2026)
             saved[r["raw_id"]].append(("Gym", f"{r['name']} {gym.row_text(r)}"))
             day_of.setdefault(r["raw_id"], r["day"])
+        cur.execute("""SELECT d.raw_id, d.day, c.name AS chore, z.name AS zone, c.zone_id FROM home_done d JOIN home_chores c ON c.id = d.chore_id
+                       JOIN home_zones z ON z.id = d.zone_id WHERE d.raw_id = ANY(%s) ORDER BY d.id""", (ids,))
+        for r in cur.fetchall():  # chores (Home page, 03.11.2026)
+            saved[r["raw_id"]].append(("Home", f"{r['chore']} · {r['zone']}"))
+            day_of.setdefault(r["raw_id"], r["day"])
         cur.execute("SELECT raw_id, count(*) AS n FROM todo_actions WHERE raw_id = ANY(%s) GROUP BY raw_id", (ids,))
         for r in cur.fetchall():
             saved[r["raw_id"]].append(("Task", f"{r['n']} to-do change{'' if r['n'] == 1 else 's'}"))

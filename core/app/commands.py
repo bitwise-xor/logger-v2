@@ -143,7 +143,8 @@ def _undo(cur, now: datetime, dry: bool = False) -> str:
     extractor version, which in v2 would hit the imported history. dry: say what would happen, touch no Todoist."""
     cur.execute("""SELECT r.id, r.content, r.received_at FROM raw_inbox r WHERE r.channel <> 'catalogue' AND r.received_at > %s - interval '24 hours'
                    AND (EXISTS (SELECT 1 FROM food_entries x WHERE x.raw_id = r.id) OR EXISTS (SELECT 1 FROM measurements x WHERE x.raw_id = r.id)
-                        OR EXISTS (SELECT 1 FROM events x WHERE x.raw_id = r.id) OR EXISTS (SELECT 1 FROM thoughts x WHERE x.raw_id = r.id)
+                        OR EXISTS (SELECT 1 FROM events x WHERE x.raw_id = r.id) OR EXISTS (SELECT 1 FROM home_done x WHERE x.raw_id = r.id)
+                        OR EXISTS (SELECT 1 FROM thoughts x WHERE x.raw_id = r.id)
                         OR EXISTS (SELECT 1 FROM todo_actions x WHERE x.raw_id = r.id AND x.undone_at IS NULL AND x.op <> 'exists')
                         OR EXISTS (SELECT 1 FROM lab_reports x WHERE x.raw_id = r.id) OR EXISTS (SELECT 1 FROM medications x WHERE x.raw_id = r.id)
                         OR EXISTS (SELECT 1 FROM medications m WHERE m.stop_date IS NOT NULL
@@ -168,6 +169,8 @@ def _undo(cur, now: datetime, dry: bool = False) -> str:
     gone += [f"m{x['id']}" for x in cur.fetchall()]
     cur.execute("DELETE FROM events WHERE raw_id = %s RETURNING id", (raw["id"],))
     gone += [f"e{x['id']}" for x in cur.fetchall()]
+    cur.execute("DELETE FROM home_done WHERE raw_id = %s RETURNING id", (raw["id"],))  # chores (Home page)
+    gone += [f"h{x['id']}" for x in cur.fetchall()]
     cur.execute("SELECT id FROM thoughts WHERE raw_id = %s ORDER BY id", (raw["id"],))
     for t in cur.fetchall():
         _delete_thought(cur, _thought_row(cur, t["id"]))

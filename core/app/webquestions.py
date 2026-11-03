@@ -93,6 +93,12 @@ def card(q: dict, csrf: str, back: str = "/web/") -> str:
                 + (f'<button class="ghost" type="button" data-fill="{esc(q["message"])}">Log again</button>' if q["message"] else "")
                 + f'{_skip()}</div>')
         return f'<div class="q">{head}{_form(q, csrf, back, body)}</div>'
+    if tool == "home_choice":  # which chore was meant (homechat.py): one button per candidate, all of them, or skip
+        cands = "".join(f'<button class="cand" type="submit" name="quick" value="H{i}" formnovalidate><b>{i}</b>{esc(c["label"])}</button>'
+                        for i, c in enumerate(p.get("cands") or [], 1))
+        body = (f'<div class="ask">{esc(q["reason"].split(" 1. ")[0])}</div><div class="row">{cands}</div>'
+                f'<div class="row"><button class="ghost" type="submit" name="quick" value="all" formnovalidate>All of them</button>{_skip()}</div>')
+        return f'<div class="q">{head}{_form(q, csrf, back, body)}</div>'
     if tool in _YES_NO and not (tool == "command_confirm" and p.get("ask_past")):
         fix = (f'<button class="ghost dim" type="button" data-fill="{esc(q["message"])}">Correct it</button>'
                if tool in _CORRECTABLE and q["message"] else "")

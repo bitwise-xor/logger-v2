@@ -129,7 +129,7 @@ def today_items(cur) -> list[tuple[str, str, list[tuple[str, str]]]]:
     cur.execute("SELECT id, name FROM usual_meals ORDER BY lower(name)")
     usual = [(str(r["id"]), r["name"]) for r in cur.fetchall()]
     return [("habit", "Habits", habits), ("health", "Health card rows", health), ("usual", "Usual meal buttons", usual),
-            ("review", "Box", [("box", "To review")])]
+            ("review", "Box", [("box", "To review")]), ("card", "Cards", [("home", "Home")])]
 
 
 def _today_tab(session, csrf: str) -> str:

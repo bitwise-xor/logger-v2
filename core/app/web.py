@@ -16,7 +16,7 @@ from starlette.concurrency import run_in_threadpool
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 
-from . import (activitypage, auth, foodpage, gym, gympage, habitspage, healthpage, ideaspage, insightspage, labelread, labspage, logbook, privatepage, recentpage, searchpage, settingspage, todaypage,
+from . import (activitypage, auth, foodpage, gym, gympage, habitspage, healthpage, home as home_actions, homepage, ideaspage, insightspage, labelread, labspage, logbook, privatepage, recentpage, searchpage, settingspage, todaypage,
                trendspage, usagepage, webactions, weekpage, webentry, webfood, webheld, webideas, weblabs, webprivate, webhabits, websettings,
                webquestions, webpush, webundo)
 from .ai.provider import ProviderError
@@ -35,7 +35,7 @@ _HEADERS = {"Cache-Control": "no-store", "X-Frame-Options": "DENY", "Referrer-Po
             "Content-Security-Policy": "default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self'; "
                                        "form-action 'self'; frame-ancestors 'none'; base-uri 'none'; manifest-src 'self'"}
 # Where a form on the entry box or the reply may send the browser back to: any signed-in page of the app, with its query.
-BACK_ANY = re.compile(r"/web(/(questions|food(/catalogue|/usual|/trends)?|ideas(/todoist)?|health|habits|gym(/exercises|/plan|/progress|/activity|/history)?|week|search|private|usage|labs(/tests|/meds)?|settings|recent|insights))?/?"
+BACK_ANY = re.compile(r"/web(/(questions|food(/catalogue|/usual|/trends)?|ideas(/todoist)?|health|habits|gym(/exercises|/plan|/progress|/activity|/history)?|home(/zones|/history|/edit)?|week|search|private|usage|labs(/tests|/meds)?|settings|recent|insights))?/?"
                       r"(\?[A-Za-z0-9=&._%+-]*)?")
 _STATIC_DIR = pathlib.Path(__file__).resolve().parent / "static"
 _STATIC = {"app.css": "text/css; charset=utf-8", "app.js": "text/javascript; charset=utf-8", "theme.js": "text/javascript; charset=utf-8",
@@ -121,7 +121,7 @@ def shell(session, body: str, status: int = 200, active: str = "") -> HTMLRespon
     """A signed-in page: the top bar (with the number of open questions), the entry box, the last reply, then the body."""
     open_q = webquestions.count()
     links = [("today", "/web/", "Today"), ("food", "/web/food", "Food"), ("ideas", "/web/ideas", "Ideas and tasks"), ("health", "/web/health", "Health"),
-             ("habits", "/web/habits", "Habits"), ("gym", "/web/gym", "Gym"), ("week", "/web/week", "Week"), ("questions", "/web/questions", "Questions"),
+             ("habits", "/web/habits", "Habits"), ("gym", "/web/gym", "Gym"), ("home", "/web/home", "Home"), ("week", "/web/week", "Week"), ("questions", "/web/questions", "Questions"),
              ("recent", "/web/recent", "Recent"), ("insights", "/web/insights", "Insights"), ("private", "/web/private", "Private"), ("usage", "/web/usage", "Usage"),
              ("labs", "/web/labs", "Labs and medication"), ("search", "/web/search", "Search"), ("settings", "/web/settings", "Settings")]
     current = ' aria-current="page"'
@@ -494,6 +494,22 @@ def add_routes(mcp) -> None:
 
     for _name, _fn in gym.ACTIONS.items():
         mcp.custom_route(f"/web/gym/{_name}", methods=["POST"])(gym_form(_fn))
+
+    for _path, _render in (("/web/home", homepage.render_now), ("/web/home/zones", homepage.render_zones), ("/web/home/history", homepage.render_history),
+                           ("/web/home/edit", homepage.render_edit)):  # the Home page (03.11.2026)
+        mcp.custom_route(_path, methods=["GET"])(gym_tab(_render, active="home"))
+
+    def home_form(fn):
+        """One form of the Home page (home_actions.ACTIONS), back to the page it came from."""
+        async def handler(request: Request) -> Response:
+            session, form = await post_form(request)
+            if form is None:
+                return session
+            return done(session, await _run(lambda: fn(form, form_key(form), session)), back_any(form, "/web/home"))
+        return handler
+
+    for _name, _fn in home_actions.ACTIONS.items():
+        mcp.custom_route(f"/web/home/{_name}", methods=["POST"])(home_form(_fn))
 
     @mcp.custom_route("/web/foods.json", methods=["GET"])
     async def foods_json(request: Request) -> Response:
