@@ -118,25 +118,26 @@ def _login_page(msg: str = "", status: int = 200) -> HTMLResponse:
 
 
 def shell(session, body: str, status: int = 200, active: str = "") -> HTMLResponse:
-    """A signed-in page: the top bar (with the number of open questions), the entry box, the last reply, then the body."""
+    """A signed-in page: the top bar (the number of open questions on the Today link), the entry box, the last reply, then the body.
+    Since 04.11.2026 (web item 55) there is no Questions page: every open question is on Today."""
     open_q = webquestions.count()
-    links = [("today", "/web/", "Today"), ("food", "/web/food", "Food"), ("ideas", "/web/ideas", "Ideas and tasks"), ("health", "/web/health", "Health"),
-             ("habits", "/web/habits", "Habits"), ("gym", "/web/gym", "Gym"), ("home", "/web/home", "Home"), ("week", "/web/week", "Week"), ("questions", "/web/questions", "Questions"),
+    links = [("today", "/web/", "Today"), ("food", "/web/food", "Food"), ("ideas", "/web/ideas", "Ideas"), ("health", "/web/health", "Health"),
+             ("habits", "/web/habits", "Habits"), ("gym", "/web/gym", "Gym"), ("home", "/web/home", "Home"), ("week", "/web/week", "Week"),
              ("recent", "/web/recent", "Recent"), ("insights", "/web/insights", "Insights"), ("private", "/web/private", "Private"), ("usage", "/web/usage", "Usage"),
-             ("labs", "/web/labs", "Labs and medication"), ("search", "/web/search", "Search"), ("settings", "/web/settings", "Settings")]
+             ("labs", "/web/labs", "Medical"), ("search", "/web/search", "Search"), ("settings", "/web/settings", "Settings")]
     current = ' aria-current="page"'
     badge = f'<span class="badge">{open_q}<span class="sr"> open</span></span>'
     icon = webentry.icon
     # the icon comes after the label in the markup and is drawn before it (CSS order), so the label stays the link's first text
     link = lambda k, href, label: (f'<a href="{href}"{current if k == active else ""}>{label}'
-                                   + (badge if k == "questions" and open_q else "") + icon(k) + "</a>")
+                                   + (badge if k == "today" and open_q else "") + icon(k) + "</a>")
     by_key = {k: (href, label) for k, href, label in links}
 
     def menu(shown, short=False):
         """The given links, then a More menu with all the others."""
         rest = [k for k, _h, _l in links if k not in shown]
         return ("".join(link(k, by_key[k][0], "Ideas" if short and k == "ideas" else by_key[k][1]) for k in shown)
-                + f'<details class="more"><summary{current if active in rest else ""}>More{badge if open_q else ""}{icon("more")}</summary>'
+                + f'<details class="more"><summary{current if active in rest else ""}>More{icon("more")}</summary>'
                 + f'<div class="panel">{"".join(link(k, *by_key[k]) for k in rest)}</div></details>')
 
     # Wide screens: the main links in the top bar, the rest under More. Phones: Today, Food, Health, Ideas, Gym and More in a bar at
@@ -219,7 +220,7 @@ def add_routes(mcp) -> None:
         session = current_session(request)
         if not session:
             return RedirectResponse("/web/login", status_code=302, headers={"Cache-Control": "no-store"})
-        return shell(session, webquestions.render(session["csrf"]), active="questions")
+        return RedirectResponse("/web/", status_code=302, headers={"Cache-Control": "no-store"})  # the questions are on Today since 04.11.2026
 
     @mcp.custom_route("/web/food", methods=["GET"])
     async def food_log(request: Request) -> Response:
@@ -313,7 +314,7 @@ def add_routes(mcp) -> None:
         return shell(session, usagepage.render(request.query_params.get("r", "7")), active="usage")
 
     def labs_tab(render):
-        """One tab of the Labs and medication page."""
+        """One tab of the Medical page."""
         async def handler(request: Request) -> Response:
             if (r := hidden(request)) is not None:
                 return r
@@ -733,7 +734,7 @@ def add_routes(mcp) -> None:
         mcp.custom_route(f"/web/food/{_name}", methods=["POST"])(food_form(_fn, _back))
 
     def ideas_form(fn):
-        """One form of the Ideas and tasks page (webideas.ACTIONS), back to the page it came from."""
+        """One form of the Ideas page (webideas.ACTIONS), back to the page it came from."""
         async def handler(request: Request) -> Response:
             session, form = await post_form(request)
             if form is None:
@@ -759,7 +760,7 @@ def add_routes(mcp) -> None:
         mcp.custom_route(f"/web/private/{_name}", methods=["POST"])(private_form(_fn))
 
     def labs_form(fn):
-        """One form of the Labs and medication page (weblabs.ACTIONS), back to the page it came from."""
+        """One form of the Medical page (weblabs.ACTIONS), back to the page it came from."""
         async def handler(request: Request) -> Response:
             session, form = await post_form(request)
             if form is None:

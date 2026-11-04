@@ -88,13 +88,23 @@ def test_the_pie_and_share_table_against_the_targets(web):
     eat("Test oats", 400, 20, 10, 60)
     page = today(web)
     assert "Energy from macros" in page and page.count('<svg class="pie"') == 1 and pie(page).count("<path ") == 3
-    assert "Calories from protein 20 %, carbs 59 %, fat 22 %" in page  # in the pie's label
+    assert "400 kcal; calories from protein 20 %, carbs 59 %, fat 22 %" in page  # in the pie's label
     assert page.index("Energy from macros") < page.index('class="ft"')  # above the meals
     p, c, f = (macro_row(page, x) for x in ("Protein", "Carbs", "Fat"))
     assert "<td>20.0</td><td>80</td><td>19.5 %</td><td>21.9 %</td><td><span class=\"dp ok\">-2.3 pts</span></td>" in p
     assert "<td>60.0</td><td>240</td><td>58.5 %</td><td>43.7 %</td><td><span class=\"dp bad\">+14.8 pts</span></td>" in c
     assert "<td>10.0</td><td>90</td><td>22.0 %</td><td>34.4 %</td><td><span class=\"dp bad\">-12.5 pts</span></td>" in f
-    assert "<td>Total</td><td></td><td>410</td><td>100 %</td><td>100 %</td>" in page and "ideal share comes from the day" in page
+    assert "<td>Total from macros</td><td></td><td>410</td><td>100 %</td><td>100 %</td>" in page and "ideal share comes from the day" in page
+
+
+def test_the_pie_shows_the_calories_cards_total_and_the_table_the_macros(web):
+    # web item 53 (04.11.2026): a label's kcal (400) and the macros' kcal (410) differ; the pie's centre and the Calories card agree
+    eat("Test oats", 400, 20, 10, 60)
+    page = today(web)
+    assert '<div class="mid" aria-hidden="true"><b class="num">400</b>' in page
+    assert "The centre shows 400 kcal, the day's total as on the Calories card; the macros add up to 410" in page
+    eat("Test even", 90, 0, 10, 0)  # 90 kcal = 10 g fat × 9: no gap of its own, the day's gap stays
+    assert '<b class="num">490</b>' in today(web)
 
 
 def test_the_difference_is_amber_between_five_and_ten_points(web):

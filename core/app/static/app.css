@@ -382,7 +382,7 @@ form.word{display:inline-flex;align-items:center;gap:.2rem;border:1px solid var(
 .ft tfoot tr.tg td.good{color:var(--accent);font-weight:600}
 .ft tfoot tr.tg td.warn{color:var(--warn);font-weight:600}
 .ft tfoot tr.tg td.bad{color:var(--bad);font-weight:600}
-/* Ideas and tasks: thoughts and Todoist */
+/* Ideas: thoughts and Todoist */
 .th{border-top:1px solid var(--line);padding:.65rem 0}
 .th:first-of-type{border-top:0}
 .th .top{display:flex;gap:.6rem;align-items:baseline;color:inherit;text-decoration:none}
@@ -484,7 +484,7 @@ textarea.wide{width:100%;resize:vertical}
 .key.sq.b{background:var(--c2)}
 .grid2.gap{margin:1.25rem 0}
 .ft td.first{white-space:normal;max-width:32rem}
-/* Labs and medication: flags H and L amber, A red; the reference band; medication */
+/* Medical: flags H and L amber, A red; the reference band; medication */
 .flag{display:inline-block;min-width:1.4rem;text-align:center;font-size:.75rem;font-weight:700;padding:.05rem .4rem;border-radius:1rem}
 .flag.H,.flag.L{background:var(--warn-soft);color:var(--warn)}
 .flag.A{background:var(--bad-soft);color:var(--bad)}

@@ -1,4 +1,4 @@
-"""The web app's Ideas and tasks page: the thoughts (filter, change, move between stages, delete) and the open Todoist
+"""The web app's Ideas page: the thoughts (filter, change, move between stages, delete) and the open Todoist
 tasks of Lists and the Inbox (tick off, change the text or section, due dates; shopping stays in the chat and Todoist).
 The forms post to webideas.py; this module only reads (Todoist through todos' 10-minute cache)."""
 import re
@@ -34,7 +34,7 @@ def _opts(values, selected, blank: str = "") -> str:
 
 
 def _tabs(on: str) -> str:
-    return ('<div class="head"><h1>Ideas and tasks</h1><nav class="seg" aria-label="Ideas and tasks">'
+    return ('<div class="head"><h1>Ideas</h1><nav class="seg" aria-label="Ideas">'
             f'<a href="/web/ideas"{' aria-current="page"' if on == "thoughts" else ""}>Thoughts</a>'
             f'<a href="/web/ideas/todoist"{' aria-current="page"' if on == "todoist" else ""}>Todoist</a></nav></div>')
 

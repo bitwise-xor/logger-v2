@@ -1,4 +1,4 @@
-"""The Ideas and tasks page: thoughts (filters, Save as the yes, stage buttons with Undo, delete after one yes) and the
+"""The Ideas page: thoughts (filters, Save as the yes, stage buttons with Undo, delete after one yes) and the
 open Todoist tasks of Lists and the Inbox (tick off with Undo, text and section changed after a Yes, delete only what
 the logger added, due dates; shopping is not shown)."""
 import html
@@ -56,7 +56,7 @@ def test_open_thoughts_newest_first_with_filters(web):
     thought("Restore test passed", stage="done", tt="progress")
     c, _ = web
     page = c.get("/web/ideas").text
-    assert 'href="/web/ideas" aria-current="page">Ideas and tasks' in page
+    assert 'href="/web/ideas" aria-current="page">Ideas' in page
     assert "2 thoughts" in page and page.index("Book the blood test") < page.index("Weekly protein review")
     assert "Restore test passed" not in page  # done is not open
     assert "Restore test passed" in c.get("/web/ideas?stage=done").text

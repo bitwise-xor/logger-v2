@@ -7,38 +7,43 @@ Before building one, plan it in the doc first (with a clickable mockup for a new
 
 Size: S = about an hour, M = about half a day, L = a day or more. Rough guesses.
 
-## Priorities (reviewed 02.11.2026, after the Gym section and deploy 41)
+## Priorities (reviewed 04.11.2026, after the Home page, deploy 48)
 
-Re-ranked against the app as it is now: the daily logging is fast and safe (never lose a message, Again chips, suggestions,
-scanner, label photos), the Gym section is complete (Workout, Plan, Progress, Activity, History, Exercises with rename), the
-watch data waits for the owner's watch. What is missing most is the *meaning* of the data (coaching, mood) and a few small
-daily frictions. The core list (`docs/CORE-IMPROVEMENTS.md`) has its own ranking; the two together give the order below.
-Nothing here is decided: plan each one in the doc first.
+Re-ranked against the app as it is now: daily logging is fast and safe, and the Gym section, mood check-in, body measurements (T1)
+and the Home page are live. What is missing most is the *meaning* of the data (coaching) and the small items the owner asked for on
+03.11. Ranked by value for the effort, together with the core list (`docs/CORE-IMPROVEMENTS.md`). Nothing is decided: plan each one in
+the doc's Current tab first.
 
-**High priority, in the next major build (owner, 03.11.2026):**
+**Do first (Claude's recommendation, in order):**
 
-- **53 One calorie total on Today** (S): see the table in section 8. Decided: the pie's centre shows the Calories card's total; the table under the pie keeps its total from the macros, labelled as such.
-- **54 "Ideas and tasks" becomes "Ideas"** (S): menu, page title, tab title; the address stays `/web/ideas`. Questions in the doc, section "Next major build: plan and questions (03.11.2026)".
-- **55 Rethink the Questions page** (S): rarely used (23 questions since 26.10., all answered where they came up, 16 within 2 minutes). Suggestion: no page; every open question on Today, the red count on the Today link. Questions in the doc, same section.
+1. **Next major build: 53 + 54 + 55: done 04.11.2026, deploy 49**, with "Labs and medication" renamed to "Medical" (name only) and
+   core 29 resolved (old flakes, no code change).
+2. **29 + core 26 Usage page complete** (S): every AI cost on the Usage page (label photos, food look-ups and lab reports with their
+   tokens). Needed before coaching adds Opus calls.
+3. **52 Coaching** (M-L): the most value left; the data (food, health, sleep, habits, gym, mood, body, home) is rich enough. Plan and a
+   clickable mockup first; 4 open questions in its section below.
+4. **45 + core 19 Export of everything** (S-M): one CSV/JSON download, apart from the Sheet and the encrypted backup; useful before the
+   mini PC move.
+5. **40 Water target** (S): drinks are logged already; a daily water bar on Today.
 
-**Claude's recommendations (most value next):**
+**Most effort among the open items (biggest first):**
 
-1. **52 Coaching** (M-L): the data is now rich enough (food, health, sleep, habits, gym) to say something useful each day and week. Needs the owner's answers to its 4 open questions first.
-2. **37 Mood and energy check-in** (M, **done 02.11.2026, deploy 44**; answers in the doc, section "Mood and energy check-in"): mood and energy 1 to 5, once a day in the evening. Today: a "How was today?" card from 17:00 until 05:00 or until both are answered (`todaypage._checkin_section`, POST `/web/checkin`); typed in the chat ("mood 4, energy 3", "mood good"; parser.md); stored as measurements (migration 023, log types `mood` and `energy`, range 1 to 5); Health page chart `c-mood` and two columns in the day rows; Week page row "Mood · energy"; Sheet Health tab columns M and N (green 4 to 5, red 1 to 2). Not done (owner: later): a 21:00 reminder; Insights questions on mood (50).
-3. **Core 28 Faster test run, and core 15 tests on GitHub** (M): a full run takes about 15 minutes before every deploy; most of that is waiting. Faster runs make every later item cheaper.
-4. **45 Export of everything** (with core 19) (S-M): your data in an open form, apart from the Sheet and the encrypted backup; useful before a mini PC move.
+1. **42 / 16 Lab report upload with trends** (L): parked by the owner on 02.11.2026.
+2. **Core 25 Telegram as a second channel** (M-L, more with core 17 digest).
+3. **52 Coaching** (M-L).
+4. **44 A photo on a food entry** (M-L): parked (disk).
+5. **51 Voice without the browser's speech recognition** (M-L): only if Safari's fails.
 
-**Quick wins (small, about an hour each):**
-
-1. **Core 27 Disk headroom** (S, **done 02.11.2026**: now 80% used, 7.4 GB free; deploys clean up after themselves): was 86% used; 2.2 GB of Docker build cache can go; each deploy adds a 309 MB image. Prune the build cache in `deploy.sh` and add a disk check to the Kuma push checks.
-2. **Core 5 Shorter AI wait** (S, **done 02.11.2026, deploy 42**): since 01.11. a typed message is kept and retried by cron, so a live message no longer needs to wait up to 60 s × 3; about 20 s, then "kept, trying again".
-3. **46 One-tap usual meals** (S, **done 02.11.2026, deploy 43**): "+ name" on Today logs the meal at once with its saved amounts and the current time (POST `/web/usual` with `quick=1`, `webactions.usual`); the pencil next to it opens the editor as before ("Change name"); a mistaken tap is one Undo away, a double tap saves once (the form's key).
-4. **40 Water target** (S): a daily water bar on Today from the drinks already logged.
-5. **29 + core 26 Usage page complete** (S): label photos and token counts for food look-ups and lab reports; worth having before coaching adds Opus calls.
-
-**Next after those:** 48 "All look right" on the review box (S), 26 error page in the app's layout (S), 38 minutes for practices (M), 43 medication schedule (M, only if wanted), 49 more nudges (S-M), 50 more Insights (M, after 37), 18 link thoughts (M), gym workouts in the Search page (S).
-**Parked or dropped:** 42 and 16 lab report upload (parked by the owner on 02.11.2026: "not interested at the moment"), 35 swipe (not needed), 41 weight trend (dropped), 44 photo on a food entry (disk), 47 home-screen shortcuts (iOS limits), 51 server-side voice (only if Safari's fails), 20/21 chat usual meal and exchange log (no ask since 29.10.).
-**Done since 31.10.:** 36 in part (sleep hours; no colours, the owner's choice), 39 mostly (watch data and the Gym Activity tab, deploy 40; typed steps not planned), the Gym section (deploys 37 to 41), 56 body measurements T1 (deploy 46, 03.11.2026).
+**Next after the first five:** 48 "All look right" (S), 26 error page in the app's layout (S), gym workouts and home chores in the Search
+page (S), 49 more nudges (S-M), 50 more Insights (M, now with mood data), 38 minutes for practices (M), 43 medication schedule (M, only if
+wanted), 18 link thoughts (M), 56 T2 body measurements (M), 57 a notification when the Home timer ends (S-M); on the core list 16, 13, 24,
+20, 12.
+**Look at later:** core 3, the second-read data, around mid-November.
+**Parked or dropped:** 42 and 16 lab report upload (owner, 02.11.2026: "not interested at the moment"), 35 swipe (not needed), 41 weight
+trend (dropped), 44 photo on a food entry (disk), 47 home-screen shortcuts (iOS limits), 51 server-side voice (only if Safari's fails),
+20/21 chat usual meal and exchange log (no ask since 29.10.), core 6 shorter prompt (not worth it now).
+**Done since 02.11.:** 53, 54, 55 and the Medical name (deploy 49, 04.11.), 37 mood and energy (deploy 44), 46 one-tap usual meals (43), 56 body measurements T1 (46), the Home page (47 and 48;
+spec on the branch `docs/home-page-spec`), core 5 (42), 9 and 28 (45), 27.
 
 ## Status (31.10.2026; the first build run of 29.10. is described in `docs/reports/web-app-2026-10-29.md`)
 
@@ -152,10 +157,11 @@ Collected from the user's list of 30.10.2026 and the answers on 31.10.2026. Noth
 | 50 | Insights: more questions as the data grows (mood, steps, sleep once item 36 exists), and a longer range | Today's three cards need about 4 days in each group; the user's data had 1 day with a long gap after food | M |
 | 51 | Voice without the browser's speech recognition (record on the phone, convert on the server) if Safari's recognition is missing in the home-screen app | Only if the microphone button does not show or does not work there | M-L |
 | 52 | Coaching: "Coach me" on Today (any day of the date picker) and "Review this week" on the Week page, by Claude Opus 5.5 at high effort, on demand | The user's idea of 02.11.2026; details below. The chat can already coach when asked; this makes it one tap and keeps each coaching | M |
-| 53 | **High priority, next major build (owner, 03.11.2026).** One calorie total on Today: the macro pie's centre (`todaypage._macro_block`, `_pie(..., middle)`) shows the day's kcal from `v_food_day` (the Calories card's number) instead of the kcal worked out from the macros (4 × protein + 4 × carbs + 9 × fat). The shares stay from the macros. The table's Total row keeps its macro total, labelled "from macros", with a short note that labels count fibre (2 kcal/g in the EU) and rounding differently. A test for both numbers; check at phone width | Found 03.11.2026: the card said 897 kcal and the pie 888 for 02.11. The biggest gaps were high-fibre rolls (label 205, macros 190) and avocado (label 144, macros 161, its carbs apparently counting fibre). The data is right; two ways of counting showed two totals | S |
-| 54 | **Next major build (owner, 03.11.2026).** Rename "Ideas and tasks" to "Ideas": the PC menu (`web.py` links), the page heading and the browser tab title (`ideaspage._tabs`), the CSS comment, tests (`test_webideas.py`, `test_webdevices.py`). The address `/web/ideas` stays; the phone tab bar already says "Ideas". Open: the tab names inside (Thoughts / Todoist) and whether Todoist stays here | The page is called "Ideas and tasks" on the PC and "Ideas" on the phone | S |
-| 55 | **Next major build (owner, 03.11.2026).** Rethink the Questions page, which is rarely used. Data 26.10. to 02.11.: 23 questions (7 add-this-food after a look-up, 6 make-this-change, 5 which-food, 2 log-again, 2 new food, 1 which task), all answered, none expired, 16 within 2 minutes (median about 1 minute), about one a day since 30.10. Suggestion: drop the page from the menu; Today shows every open question (`webquestions.today_section`, now 3); the count badge moves to the Today link; `/web/questions` and the look-up's way back (`webfood` "lookup") go to Today | A page of its own under More with a red count; Today shows the newest 3 | S |
+| 53 | **Done 04.11.2026, deploy 49.** One calorie total on Today: the macro pie's centre (`todaypage._macro_block`, `_pie(..., middle)`) shows the day's kcal from `v_food_day` (the Calories card's number) instead of the kcal worked out from the macros (4 × protein + 4 × carbs + 9 × fat). The shares stay from the macros. The table's Total row keeps its macro total, labelled "from macros", with a short note that labels count fibre (2 kcal/g in the EU) and rounding differently. A test for both numbers; check at phone width | Found 03.11.2026: the card said 897 kcal and the pie 888 for 02.11. The biggest gaps were high-fibre rolls (label 205, macros 190) and avocado (label 144, macros 161, its carbs apparently counting fibre). The data is right; two ways of counting showed two totals | S |
+| 54 | **Done 04.11.2026, deploy 49** (tabs Thoughts and Todoist kept; "Labs and medication" became "Medical" in the same deploy). Rename "Ideas and tasks" to "Ideas": the PC menu (`web.py` links), the page heading and the browser tab title (`ideaspage._tabs`), the CSS comment, tests (`test_webideas.py`, `test_webdevices.py`). The address `/web/ideas` stays; the phone tab bar already says "Ideas". Open: the tab names inside (Thoughts / Todoist) and whether Todoist stays here | The page is called "Ideas and tasks" on the PC and "Ideas" on the phone | S |
+| 55 | **Done 04.11.2026, deploy 49** (no page; every open question on Today; the count on the Today link). Rethink the Questions page, which is rarely used. Data 26.10. to 02.11.: 23 questions (7 add-this-food after a look-up, 6 make-this-change, 5 which-food, 2 log-again, 2 new food, 1 which task), all answered, none expired, 16 within 2 minutes (median about 1 minute), about one a day since 30.10. Suggestion: drop the page from the menu; Today shows every open question (`webquestions.today_section`, now 3); the count badge moves to the Today link; `/web/questions` and the look-up's way back (`webfood` "lookup") go to Today | A page of its own under More with a red count; Today shows the newest 3 | S |
 | 56 | **Done 03.11.2026, deploy 46.** Body measurements T1 (spec `docs/specs/body-measurements-spec.md` on the branch `docs/body-measurements-spec`; plan and the owner's answers in the doc, Current tab): waist, hips, chest, upper arm and thigh in cm (migration 024: log_types rows and the dated `body_height`); typed pairs read without the AI (`tape.py`, also inches); read-backs for a second value on a health day (yes replaces it), a jump of 4 cm or more and out of range; the Health card after the charts (`bodypage.py`: table Now / Last / Start, chips with a chart, waist ÷ height, weight rate, Measure form via `?measure=1`); "Body measurements due" in To review 28 days after the last session, once woken up, with Not today; Settings > Body (height from a date, interval, shown measures); a Week line and one Recent line per session. Not in the Sheet (owner). Later: T2 (neck, calf, body-fat estimate), T3 fitness tests | – | M |
+| 57 | A notification when the Home pick timer ends (web push at the timer's end time) | Today the page says "Time is up" only when it is open; a locked phone shows nothing (agreed on 03.11.2026 as later). Needs a scheduler more precise than the 5-minute cron | S-M |
 
 ### 52. Coaching (02.11.2026, not started; plan in the doc and a clickable mockup first)
 

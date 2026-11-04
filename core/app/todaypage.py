@@ -444,7 +444,9 @@ def _pie(shares: list, label: str, middle: str = "") -> str:
 
 
 def _macro_block(total) -> str:
-    """Calories from protein, carbs and fat as a pie and a table: the share of each against the share the day's targets ask for."""
+    """Calories from protein, carbs and fat as a pie and a table: the share of each against the share the day's targets ask for.
+    The pie's centre shows the day's kcal as the Calories card does (from the foods' own kcal, web item 53, 04.11.2026); the table's
+    Total row is worked out from the macros and says so (labels count fibre and round differently, so the two can differ a little)."""
     if not total:
         return ""
     kcal = {k: float(total[k] or 0) * m for k, _, m, _ in MACRO_KCAL}
@@ -464,9 +466,13 @@ def _macro_block(total) -> str:
         rows.append(f'<tr><td><span class="sw {cls}"></span>{label}</td><td>{_n(total[k], 1)}</td><td>{_n(kcal[k])}</td><td>{share:.1f} %</td>'
                     f'<td>{"–" if ideal is None else f"{ideal:.1f} %"}</td><td>{gap}</td></tr>')
     head = "<thead><tr><th>Macro</th><th>g</th><th>kcal</th><th>Share</th><th>Ideal</th><th>Diff.</th></tr></thead>"
-    foot = f'<tfoot><tr><td>Total</td><td></td><td>{_n(whole)}</td><td>100 %</td><td>{"100 %" if aim_whole else "–"}</td><td></td></tr></tfoot>'
+    foot = f'<tfoot><tr><td>Total from macros</td><td></td><td>{_n(whole)}</td><td>100 %</td><td>{"100 %" if aim_whole else "–"}</td><td></td></tr></tfoot>'
     note = ("The ideal share comes from the day's targets." if aim_whole else "No targets for this day, so no ideal share.")
-    pie = _pie([(cls, kcal[k] / whole) for k, _, _, cls in MACRO_KCAL], "Calories from " + ", ".join(said), _n(whole))
+    day_kcal = float(total["kcal"] or 0) or whole  # the Calories card's number
+    if round(day_kcal) != round(whole):
+        note += (f" The centre shows {_n(day_kcal)} kcal, the day's total as on the Calories card; the macros add up to {_n(whole)}"
+                 " (labels count fibre and round differently).")
+    pie = _pie([(cls, kcal[k] / whole) for k, _, _, cls in MACRO_KCAL], f"{_n(day_kcal)} kcal; calories from " + ", ".join(said), _n(day_kcal))
     return (f'<div class="card macrobox"><h2>Energy from macros<span class="small">kcal from protein, carbs (4 per g) and fat (9 per g)</span></h2>'
             f'<div class="macros">{pie}<div><div class="tablewrap">'
             f'<table class="ms">{head}<tbody>{"".join(rows)}</tbody>{foot}</table></div><p class="small">{note}</p></div></div></div>')

@@ -1,4 +1,4 @@
-"""The web app's Labs and medication page: the reports (each opening with its values, ranges and flags; H and L in amber,
+"""The web app's Medical page: the reports (each opening with its values, ranges and flags; H and L in amber,
 A in red, decided 26.10.2026), the values flagged in the newest lab report, one test over time with its reference range
 as a band, and the medication courses. All reports are shown, 2014 included (decided 26.10.). Values are written the
 way the logger prints them (v1's own helpers). Corrections post to weblabs.py; this module only reads."""
@@ -37,7 +37,7 @@ def _flag(f) -> str:
 
 def _tabs(on: str) -> str:
     tabs = (("reports", "/web/labs", "Reports"), ("tests", "/web/labs/tests", "Tests over time"), ("meds", "/web/labs/meds", "Medication"))
-    return ('<div class="head"><h1>Labs and medication</h1><nav class="seg" aria-label="Labs">'
+    return ('<div class="head"><h1>Medical</h1><nav class="seg" aria-label="Medical">'
             + "".join(f'<a href="{h}"{' aria-current="page"' if k == on else ""}>{lbl}</a>' for k, h, lbl in tabs) + "</nav></div>")
 
 

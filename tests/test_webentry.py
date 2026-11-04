@@ -11,7 +11,7 @@ from test_web import act, n, web  # noqa: F401
 
 def test_the_entry_box_is_on_every_page(web):
     c, csrf = web
-    for path in ("/web/", "/web/questions"):
+    for path in ("/web/", "/web/health"):
         page = c.get(path).text
         assert 'action="/web/log"' in page and 'id="entry-text"' in page and csrf in page
         assert re.search(r'name="key" value="[\w-]{16,}"', page)

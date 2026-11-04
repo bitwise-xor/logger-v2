@@ -28,7 +28,7 @@ PROVIDER: Optional[Provider] = None  # created on first use; tests put a fake he
 _LOG = logging.getLogger("logger.log")
 # A confirmation counts when the reply starts with a yes ("yes, it is correct ..."); only a clear no cancels.
 YES = re.compile(r"^\s*(yes|y|ok|okay|confirm(ed)?|correct|right|ja|jawohl|stimmt|richtig)\b", re.I)
-# The questions `answer` takes (the web app's Questions page lists these).
+# The questions `answer` takes (the web app lists the open ones on Today).
 ANSWER_TOOLS = ("log", "log_confirm", "log_repeat", "add_food_confirm", "command", "command_confirm", "lookup_confirm",
                 "report_confirm", "home_choice")
 NO = re.compile(r"^\s*(no|nope|nein|skip|cancel|stop|drop)\b", re.I)

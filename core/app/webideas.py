@@ -1,4 +1,4 @@
-"""What the Ideas and tasks page's forms do. Thoughts change through the logger's own change function (v1's checks):
+"""What the Ideas page's forms do. Thoughts change through the logger's own change function (v1's checks):
 Save is the yes for the user's own fields and the stage buttons work at once with an Undo button (decided 26.10.2026);
 a deletion is shown first. Todoist: tick off at once with Undo (recorded in todo_actions like the chat's); a changed
 text or section is shown first, then sent after the Yes; only tasks the logger added can be deleted."""

@@ -5,9 +5,8 @@ from .db import connect
 from .logbook import ANSWER_TOOLS
 from .webentry import esc, hidden, readable
 
-LIMIT = 50
-TODAY_SHOWN = 3  # Today shows the newest few; the Questions page shows all
-BACKS = ("/web/", "/web/questions")
+LIMIT = 50  # Today shows every open question (web item 55, 04.11.2026: the Questions page is gone)
+BACKS = ("/web/",)
 # What a yes does, for questions whose stored text is a read-back rather than a question.
 _YES_NO = {"log_confirm": "Save this?", "log_repeat": "Log it again?", "add_food_confirm": "Add this food?",
            "lookup_confirm": "Add this food?", "report_confirm": "Save this report?", "command_confirm": "Make this change?"}
@@ -117,17 +116,9 @@ def card(q: dict, csrf: str, back: str = "/web/") -> str:
 
 
 def today_section(csrf: str) -> str:
-    rows = load(TODAY_SHOWN + 1)
-    if not rows:
-        return ""
-    n = count()
-    more = f'<a href="/web/questions">see all {n} on Questions</a>' if n > TODAY_SHOWN else ""
-    return (f'<section class="qwrap"><h2><span>Waiting for your answer · {n}</span>{more}</h2>'
-            + "".join(card(q, csrf, "/web/") for q in rows[:TODAY_SHOWN]) + "</section>")
-
-
-def render(csrf: str) -> str:
+    """Every open question, newest first, at the top of Today (the count is on the Today link)."""
     rows = load()
     if not rows:
-        return '<h1>Questions</h1><p class="empty">Nothing is waiting for an answer.</p>'
-    return "<h1>Questions</h1>" + "".join(card(q, csrf, "/web/questions") for q in rows)
+        return ""
+    return (f'<section class="qwrap"><h2><span>Waiting for your answer · {len(rows)}</span></h2>'
+            + "".join(card(q, csrf, "/web/") for q in rows) + "</section>")

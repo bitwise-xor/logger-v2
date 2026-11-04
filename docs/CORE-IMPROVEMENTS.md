@@ -8,21 +8,25 @@ The v1 files (`v1_*.py`) are copied unchanged on purpose and are left as they ar
 
 Size: S = about an hour, M = about half a day, L = a day or more. Rough guesses.
 
-## Priorities (reviewed 02.11.2026, after deploy 41)
+## Priorities (reviewed 04.11.2026, after deploy 48)
 
-The combined ranking with the web list is at the top of `docs/IMPROVEMENTS.md`. For the core, in order:
+The combined ranking with the web list, with the top 5 to do first and the top 5 by effort, is at the top of `docs/IMPROVEMENTS.md`.
+For the core, in order:
 
-1. **27 Disk headroom** (S, quick win): **done 02.11.2026**, see section 8.
-2. **5 Shorter AI wait** (S, quick win): **done 02.11.2026, deploy 42** (commit 9d5b17e): a live read of a kept message gets 20 s and one retry per AI call (`provider.LIVE`, set by `logbook.read_held`); cron's reads keep 60 s and 2 retries. Measured before: a read takes about 2 s, a whole message at most 7.5 s.
-3. **26 Usage page complete** (S, quick win): label photos as a kind; token counts for food look-ups and lab reports (web 29).
-4. **28 Faster test run, then 15 tests on GitHub** (M): **done 02.11.2026: 15 min → 3 min 14 s** (step 1 test-only settings, step 2 the connection pool, item 9, deploy 45), see section 8. **15 was already working:** GitHub runs all tests on every push to main (27 runs since 29.10., about 3 minutes each, the recent ones green); 4 runs failed, all between about 03:00 and 06:00 Berlin time (likely tests around the 05:00 day change; to look into).
-5. **19 Export** (S-M): with web 45.
-6. **13 Remove the pilot tools** (S-M): 9 hidden tools still in `mcp_app.py`, plus `service.py` and its tests; fewer tests also make runs shorter.
-7. **24 Words review** (S): the catalogue shows each food's words since 02.11.; a list of all learned words by date is still missing.
-8. **3 Second read**: look at the data again around mid-November (owner agreed on 02.11.).
-9. **9 Connection pool: done 02.11.2026, deploy 45** (owner's yes): `db.connect()` lends a connection from a psycopg-pool `ConnectionPool` (3.3.3; 1 to 8 per role, checked before lending, idle ones closed after 5 minutes, closed at exit for the cron jobs); `with connect() as conn` works as before (commit at the end, rollback after an error). Live page builds about 3× faster (Today 146 → 48 ms, Habits 63 → 12 ms); the full test run 10 min → 3 min 14 s; a database restart is recovered without restarting the app (tried on the test database).
-10. Later: 17 digest (or the coach's week review, web 52), 25 Telegram, 20 food look-up gaps, 16 `answer()` handlers, 12 update watch (Diun), 6 shorter prompt (not worth it now).
-**Done since this list was written:** 1, most of 2 (01.11.), 4 (cache reads recorded, 1-hour cache on 02.11.), 7, 8, 10 (`maintenance.py`), 11, 14, 18 (web push), 21, 22, 23.
+1. **29 Night-time test failures: resolved 04.11.2026 without a code change**: the failures were the clock-dependent tests fixed on 30.10.
+   (`fd60ce3`) and one chance failure on 02.11. (fixed in `31c49f9`); all 19 runs since passed, and the full suite passes at a simulated 03:15.
+2. **26 Usage page complete** (S): label photos and push as kinds; token counts for food look-ups and lab reports (web 29). Before coaching.
+3. **19 Export** (S-M): with web 45.
+4. **16 `answer()` handlers** (S-M): one small handler per question kind; there are 9 kinds now (`home_choice` added 03.11.2026). Before
+   Telegram or coaching add more.
+5. **13 Remove the pilot tools** (S-M): 9 hidden tools still in `mcp_app.py`, plus `service.py` and its tests; fewer tests also make runs
+   shorter.
+6. **24 Words review** (S): a list of all learned words by date (the catalogue shows each food's words since 02.11.).
+7. **3 Second read**: look at the data again around mid-November (owner agreed on 02.11.).
+8. **Later:** 25 Telegram (M-L, with 17 digest, or the coach's week review, web 52), 20 food look-up gaps, 12 update watch (Diun);
+   6 shorter prompt is not worth it now.
+**Done:** 1, most of 2 (01.11.), 4, 5 (02.11., deploy 42), 7, 8, 9 (deploy 45), 10, 11, 14, 15 (GitHub runs every push), 18 (web push),
+21, 22, 23, 27 and 28 (02.11.).
 
 ## Status (01.11.2026)
 
@@ -117,6 +121,7 @@ token counts for food look-ups and lab reports (web list 21, 20, 29).
 |---|---|---|---|
 | 27 | Disk headroom: `docker builder prune` (keep a little cache) at the end of `tools/deploy.sh`, and a disk-use check (warn above 90%) in `uptime-kuma/push-checks.sh`. **Done 02.11.2026:** cleaned up from 86% (5.4 GB free) to 80% (7.4 GB free): build cache trimmed to 1 GB, unused images removed (hello-world and its exited container, traefik/whoami, alpine:3, alpine:latest, python:3.13-slim), three old Claude Code versions in `~/.local/share/claude/versions` (2.1.306-308). `deploy.sh` now ends with a clean-up: it removes `trial-fixes<N-3>` and trims the build cache to 1 GB. The disk check was already in `push-checks.sh` (down above 90%); it alerts only once Kuma has an alert channel (the owner's task). Left: `sudo apt clean` (145 MB) and old journal logs need sudo (the owner) | The disk was at 86% (5.3 GB free); the build cache held 2.2 GB that could be reclaimed, and every deploy adds a 309 MB image (three are kept) | S |
 | 28 | A faster test run: find the slowest tests (`pytest --durations=25`), share set-up where tests only read, and look at running in parallel with one test database per worker. **Step 1 done 02.11.2026: 15 min 15 s → 10 min 13 s** (405 tests): the tests hash passwords with a tiny scrypt cost (`auth.SCRYPT_N`, lowered in `conftest.py`; the live app keeps 2^15; sign-in cost 2 × 0.4 s per signed-in test), and the test database runs in memory without syncing (`tests/test-db.sh`: tmpfs, fsync off, scram_iterations 1; emptying the tables 340 → 220 ms per test). **Measured next:** opening a connection costs about 45 ms on this VM and a page opens 4 to 8 (the Today page 2.3 s in a test, 1.6 s of it connections; live, Today takes about 0.6 s to build, half of it 2 connections). A small connection pool (item 9) would speed up the tests and every live page. GitHub's runners take about 3 minutes for the whole suite | A full run takes about 15 to 17 minutes before every deploy; it was about 4 minutes at 223 tests | M |
+| 29 | **Resolved 04.11.2026, no code change** (see Priorities). Night-time test failures: 4 GitHub test runs failed, all between about 03:00 and 06:00 Berlin time (seen 02.11.2026); find the tests that depend on the 05:00 day change and fix their clock | GitHub's run can then be the check before a deploy (an open owner decision) | S |
 
 ## Suggested order
 

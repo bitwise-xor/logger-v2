@@ -430,4 +430,4 @@ def label_add(form, key: Optional[str]) -> dict:
 # (None = the page the form came from).
 ACTIONS = {"entry": (entry, None), "note": (note, None), "copy": (copy, "/web/food"), "usualnew": (usual_new, None), "usualcreate": (usual_create, None),
            "values": (values, None), "words": (words, None), "barcode": (barcode, None), "reviewed": (reviewed, None),
-           "lookup": (lookup, "/web/questions"), "usualmeal": (usual_meal, None), "again": (again, "/web/"), "labeladd": (label_add, "/web/")}
+           "lookup": (lookup, "/web/"), "usualmeal": (usual_meal, None), "again": (again, "/web/"), "labeladd": (label_add, "/web/")}

@@ -27,19 +27,20 @@ IPHONE = {"User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) 
 def test_wide_screens_get_every_link_and_phones_a_tab_bar_with_more(web):
     page = web[0].get("/web/health").text
     top = re.search(r'<nav class="top" aria-label="Main">(.*?)</nav>', page, re.S)[1]
-    for label in ("Today", "Food", "Ideas and tasks", "Health", "Habits", "Week", "Questions", "Private", "Usage", "Labs and medication", "Search", "Settings"):
+    for label in ("Today", "Food", "Ideas", "Health", "Habits", "Week", "Private", "Usage", "Medical", "Search", "Settings"):
         assert f">{label}" in top
     tabs = re.search(r'<nav class="tabs" aria-label="Main menu">(.*?)</nav>', page, re.S)[1]
     bar, panel = tabs.split('<details class="more">')
     assert [m for m in re.findall(r">(Today|Food|Health|Ideas)<", bar)] == ["Today", "Food", "Health", "Ideas"]
-    for label in ("Habits", "Week", "Questions", "Private", "Usage", "Labs and medication", "Search", "Settings"):
+    for label in ("Habits", "Week", "Private", "Usage", "Medical", "Search", "Settings"):
         assert f">{label}" in panel and f">{label}" not in bar
     assert "<summary>More<svg" in panel and 'aria-current="page">Health' in bar
 
 
-def test_more_is_marked_when_the_page_is_in_it_and_shows_the_open_questions(web, fake_question):
+def test_more_is_marked_when_the_page_is_in_it_and_the_open_questions_show_on_today(web, fake_question):
     page = web[0].get("/web/settings").text
-    assert re.search(r'<summary aria-current="page">More<span class="badge">1', page)
+    assert re.search(r'<summary aria-current="page">More<svg', page) and page.count('>Today<span class="badge">1<') == 2
+    assert ">Questions<" not in page
     assert 'aria-current="page">Settings' in page
 
 

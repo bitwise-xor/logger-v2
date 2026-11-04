@@ -1,4 +1,4 @@
-"""What the Labs and medication page's forms do. Every correction of a lab value, a report or a medication course goes
+"""What the Medical page's forms do. Every correction of a lab value, a report or a medication course goes
 through the logger's change function and is shown first (v1's own preview, made in a savepoint and rolled back), then
 made after the Yes (decided 26.10.2026). Only changed fields are sent, so v1 checks exactly what the user changed."""
 import re

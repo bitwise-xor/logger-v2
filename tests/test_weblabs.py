@@ -1,4 +1,4 @@
-"""The Labs and medication page: reports newest first (2014 included) with their values and flags, the flagged values of
+"""The Medical page: reports newest first (2014 included) with their values and flags, the flagged values of
 the newest lab report, one test over time with the reference band, medication courses; every correction is shown first
 and made on Yes through the logger's change function."""
 import html
@@ -56,7 +56,7 @@ def test_the_pages_need_sign_in_and_the_app_host():
 def test_reports_newest_first_with_2014_and_the_flagged_values(web):
     s = seed()
     page = text(web[0].get("/web/labs"))
-    assert 'href="/web/labs" aria-current="page">Labs and medication' in page
+    assert 'href="/web/labs" aria-current="page">Medical' in page
     table = page.split("<table")[1]
     assert table.index("10.10.2026") < table.index("02.10.2026") < table.index("15.09.2025") < table.index("23.10.2014")  # 2014 kept
     flagged = page.split("Flagged in your newest report")[1].split("</div>")[0]
