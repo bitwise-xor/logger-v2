@@ -3,7 +3,8 @@
 names (home.py's data). A line must say that something was done (a verb) and be made only of known words: a line with anything
 else in it (a weight, a meal, a time) goes to the AI as before. A match that is not clear asks (a "home_choice" question, like
 food names) and saves nothing until it is answered. The words are kept in raw_inbox first, as always; the receipt shows date and
-time; the chat's undo takes the rows back (commands._undo)."""
+time; the chat's undo takes the rows back (commands._undo). Since round 2, step B (04.11.2026) a line may say when: "vacuumed yesterday",
+"this morning", "last night", "on Monday" (the last 7 days; 12:00 of that day)."""
 import re
 import secrets
 from datetime import datetime, timedelta
@@ -25,6 +26,24 @@ EVERY = {"everything", "everywhere"}
 NO = re.compile(r"^\s*(no|nope|nein|skip|cancel|stop|drop)\b", re.I)
 _TOK = re.compile(r"[a-zäöüß]+")
 _EXTRA = re.compile(r"[^a-zäöüß\s.,!;'’-]")  # a digit or any other sign: not a plain chore line
+DAYS = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
+# when it was done (round 2, step B, 04.11.2026): "vacuumed yesterday", "this morning", "last night", "on Monday" (the last 7 days)
+_SAID_WHEN = re.compile(r"\b(yesterday|this morning|last night|(?:on|last) (" + "|".join(DAYS) + r"))\b", re.I)
+
+
+def _when_said(text: str, day) -> tuple[int, str]:
+    """(days back, the line without the time words): 0 for none or "this morning", 1 for yesterday or last night, 1 to 7 for a weekday."""
+    m = _SAID_WHEN.search(text)
+    if not m:
+        return 0, text
+    w = m[1].lower()
+    back = 0 if w == "this morning" else 1 if w in ("yesterday", "last night") else ((day.weekday() - DAYS.index(m[2].lower())) % 7 or 7)
+    return back, text[:m.start()] + " " + text[m.end():]
+
+
+def _on(c: dict, zone_ids: list) -> list:
+    """The zones of these a whole-flat chore is done in (not switched off for it)."""
+    return home.flat_zones(c, zone_ids)
 
 
 def _stem(t: str) -> str:
@@ -64,7 +83,8 @@ def _pairs_text(data: dict, pairs: list) -> str:
     out = []
     for cid, zids in by.items():
         c = chores[cid]
-        if c["zone_id"] is None and set(zids) >= every and len(every) > 1:
+        on = set(_on(c, list(every)))
+        if c["zone_id"] is None and set(zids) >= on and len(on) > 1:
             out.append(f'{c["name"]} · {home.WHOLE}')
         else:
             out.append(f'{c["name"]} · {", ".join(zones[z]["name"] for z in zids)}')
@@ -127,14 +147,15 @@ def _resolve(data: dict, text: str) -> Optional[dict]:
         if c["zone_id"] is not None:
             pairs.append((c["id"], c["zone_id"]))
         elif zones_m:
-            pairs += [(c["id"], z) for z in zones_m]
+            pairs += [(c["id"], z) for z in _on(c, zones_m)]
         elif whole:
-            pairs += [(c["id"], z) for z in all_zones]
+            pairs += [(c["id"], z) for z in _on(c, all_zones)]
         else:
             pending_flat.append(c)
     if pending_flat:  # "vacuumed": which zone?
-        cands = [{"label": z["name"] + " (" + ", ".join(c["name"] for c in pending_flat) + ")", "pairs": [(c["id"], z["id"]) for c in pending_flat]}
-                 for z in data["zones"]]
+        cands = [{"label": z["name"] + " (" + ", ".join(c["name"] for c in pending_flat) + ")",
+                  "pairs": [(c["id"], z["id"]) for c in pending_flat if _on(c, [z["id"]])]} for z in data["zones"]]
+        cands = [c for c in cands if c["pairs"]]
         return {"ask": f'Which zone: {", ".join(c["name"] for c in pending_flat)}?', "cands": cands}
     if pairs:
         return {"pairs": list(dict.fromkeys(pairs))}
@@ -145,41 +166,44 @@ def _resolve(data: dict, text: str) -> Optional[dict]:
         if len(mine) == 1:
             return {"pairs": [(mine[0]["id"], mine[0]["zone_id"])]}
         return {"ask": "Which job did you mean?", "cands": [{"label": home.label(c, zone_of[c["zone_id"]]), "pairs": [(c["id"], c["zone_id"])]} for c in mine]}
-    return {"ask": "Which job did you mean?", "cands": [{"label": f'{c["name"]} · {home.WHOLE}', "pairs": [(c["id"], z) for z in all_zones]} for c in flat]}
+    return {"ask": "Which job did you mean?", "cands": [{"label": f'{c["name"]} · {home.WHOLE}', "pairs": [(c["id"], z) for z in _on(c, all_zones)]} for c in flat]}
 
 
 def _chore_pairs(c: dict, zones_m: list, all_zones: list, whole: bool) -> list:
     if c["zone_id"] is not None:
         return [(c["id"], c["zone_id"])]
-    return [(c["id"], z) for z in (zones_m or all_zones if whole else [])]
+    return [(c["id"], z) for z in _on(c, zones_m or all_zones if whole else [])]
 
 
 def _when(now: datetime) -> str:
     return f"{now:%d.%m. %H:%M}"
 
 
-def _save(cur, data: dict, raw: int, pairs: list, now: datetime) -> dict:
-    ids = home.stamp(cur, [(int(c), int(z)) for c, z in pairs], "chat", raw, home.today(cur))
-    return {"outcome": "saved", "raw_id": raw, "receipt": [f"Home: {_pairs_text(data, pairs)} ({_when(now)})"], "home_ids": ids}
+def _save(cur, data: dict, raw: int, pairs: list, now: datetime, back: int = 0) -> dict:
+    """Done now, or `back` days ago (12:00 of that day; the receipt shows the date)."""
+    day = home.today(cur) - timedelta(days=back)
+    ids = home.stamp(cur, [(int(c), int(z)) for c, z in pairs], "chat", raw, day, dated=back > 0)
+    return {"outcome": "saved", "raw_id": raw, "receipt": [f"Home: {_pairs_text(data, pairs)} ({f'{day:%d.%m.}' if back else _when(now)})"], "home_ids": ids}
 
 
 def read(cur, text: str, now: datetime, channel: str) -> Optional[dict]:
     """The reply for a chore line, or None to let the AI read it (logbook.log)."""
     data = home.load(cur)
-    r = _resolve(data, text)
+    back, line = _when_said(text, data["today"])
+    r = _resolve(data, line)
     if r is None:
         return None
     cur.execute("INSERT INTO raw_inbox (channel, content, metadata) VALUES (%s, %s, %s) RETURNING id", (channel, text, Jsonb({"home_chat": True})))
     raw = cur.fetchone()["id"]
     if "pairs" in r:
-        return _save(cur, data, raw, r["pairs"], now)
+        return _save(cur, data, raw, r["pairs"], now, back)
     pid = "p" + secrets.token_hex(4)
     cands = [{"label": c["label"], "pairs": [list(p) for p in c["pairs"]]} for c in r["cands"] if c["pairs"]]
     if len(cands) < 2:
         return {"outcome": "kept", "raw_id": raw, "reason": "Kept as text: no clear chore in it."}
     question = r["ask"] + " " + "; ".join(f"{i}. {c['label']}" for i, c in enumerate(cands, 1)) + " (or all of them)."
     cur.execute("INSERT INTO pending (id, tool, payload, reason, expires_at) VALUES (%s, 'home_choice', %s, %s, %s)",
-                (pid, Jsonb({"text": text, "raw_id": raw, "cands": cands, "now": now.isoformat()}), question[:500], now + timedelta(hours=QUESTION_HOURS)))
+                (pid, Jsonb({"text": text, "raw_id": raw, "cands": cands, "now": now.isoformat(), "back": back}), question[:500], now + timedelta(hours=QUESTION_HOURS)))
     return {"outcome": "needs_choice", "raw_id": raw, "questions": [{"pending_id": pid, "question": question}]}
 
 
@@ -206,6 +230,6 @@ def answer(cur, p: dict, reply: str, now: datetime) -> dict:
     if not pairs:
         return {"outcome": "needs_choice", "reason": "I did not get which one: answer with its number, its name or all.",
                 "questions": [{"pending_id": p["id"], "question": p["reason"]}]}
-    out = _save(cur, home.load(cur), d["raw_id"], pairs, now)
+    out = _save(cur, home.load(cur), d["raw_id"], pairs, now, int(d.get("back") or 0))
     cur.execute("UPDATE pending SET resolved_at = now(), resolution = 'confirmed' WHERE id = %s", (p["id"],))
     return out

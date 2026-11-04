@@ -35,7 +35,7 @@ _HEADERS = {"Cache-Control": "no-store", "X-Frame-Options": "DENY", "Referrer-Po
             "Content-Security-Policy": "default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self'; "
                                        "form-action 'self'; frame-ancestors 'none'; base-uri 'none'; manifest-src 'self'"}
 # Where a form on the entry box or the reply may send the browser back to: any signed-in page of the app, with its query.
-BACK_ANY = re.compile(r"/web(/(questions|food(/catalogue|/usual|/trends)?|ideas(/todoist)?|health|habits|gym(/exercises|/plan|/progress|/activity|/history)?|home(/zones|/history|/edit|/pick)?|coach|week|search|private|usage|labs(/tests|/meds)?|settings|recent|insights))?/?"
+BACK_ANY = re.compile(r"/web(/(questions|food(/catalogue|/usual|/trends)?|ideas(/todoist)?|health|habits|gym(/exercises|/plan|/progress|/activity|/history)?|home(/zones|/history|/edit|/pick|/chore)?|coach|week|search|private|usage|labs(/tests|/meds)?|settings|recent|insights))?/?"
                       r"(\?[A-Za-z0-9=&._%+-]*)?")
 _STATIC_DIR = pathlib.Path(__file__).resolve().parent / "static"
 _STATIC = {"app.css": "text/css; charset=utf-8", "app.js": "text/javascript; charset=utf-8", "theme.js": "text/javascript; charset=utf-8",
@@ -521,7 +521,8 @@ def add_routes(mcp) -> None:
         mcp.custom_route(f"/web/gym/{_name}", methods=["POST"])(gym_form(_fn))
 
     for _path, _render in (("/web/home", homepage.render_now), ("/web/home/zones", homepage.render_zones), ("/web/home/history", homepage.render_history),
-                           ("/web/home/edit", homepage.render_edit), ("/web/home/pick", homepage.render_pick)):  # the Home page (03.11.2026)
+                           ("/web/home/edit", homepage.render_edit), ("/web/home/pick", homepage.render_pick),
+                           ("/web/home/chore", homepage.render_chore)):  # the Home page (03.11.2026; a chore's page since 04.11.2026)
         mcp.custom_route(_path, methods=["GET"])(gym_tab(_render, active="home"))
 
     mcp.custom_route("/web/coach", methods=["GET"])(gym_tab(coachpage.render, active="coach"))  # coaching (web item 52, 04.11.2026)

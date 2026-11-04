@@ -62,7 +62,7 @@ def test_ages_and_intervals_are_plain_words():
 
 # ---- the order ---------------------------------------------------------------------------------------
 
-def test_never_done_comes_first_with_shorter_intervals_first_then_the_most_overdue(starter):
+def test_never_done_ranks_as_one_and_a_half_times_late_shorter_intervals_first(starter):
     with connect() as conn, conn.cursor() as cur:
         pairs = home.load(cur)["pairs"]
     assert (pairs[0]["chore"]["name"], pairs[0]["zone"]["name"], pairs[0]["age"]) == ("Vacuum", "Bathroom", None)  # weekly beats every 2 weeks
@@ -73,9 +73,14 @@ def test_never_done_comes_first_with_shorter_intervals_first_then_the_most_overd
         rows = home.worst(home.load(cur)["pairs"])
     names = [(p["chore"]["name"], p["zone"]["name"]) for p in rows]
     assert len(names) == 20 and len({p["chore"]["id"] for p in rows}) == 20  # one row per chore
-    assert names[0] == ("Vacuum", "Bathroom")  # its other zones were never done
-    # Dust: the Workstation is 100 days old, every other zone never done: the zone shown is one never done
-    assert dict(names)["Dust"] != "Workstation"
+    assert names[0] == ("Dust", "Workstation")  # 100 / 14 = 7 times late: before the never-done jobs (1.5 times late, round 2 step B)
+    assert names[1] == ("Vacuum", "Bathroom")  # its other zones were never done
+    age_days("Dust", "Workstation", 0)  # done today: the never-done zones come first again
+    age_days("Bathtub", "Bathroom", 28)  # 28 / 14 = 2 times late: before a never-done job
+    with connect() as conn, conn.cursor() as cur:
+        rows = home.worst(home.load(cur)["pairs"])
+    assert [(p["chore"]["name"], p["age"]) for p in rows[:2]] == [("Bathtub", 28), ("Vacuum", None)]
+    assert dict((p["chore"]["name"], p["zone"]["name"]) for p in rows)["Dust"] != "Workstation"
 
 
 def test_the_most_overdue_comes_before_a_less_overdue_one(starter):

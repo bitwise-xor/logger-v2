@@ -163,7 +163,7 @@ def _gym(cur, start: date, end: date) -> dict:
 
 def _home(cur, start: date, end: date) -> dict:
     cur.execute("""SELECT d.day, c.name AS chore, z.name AS zone FROM home_done d JOIN home_chores c ON c.id = d.chore_id
-                   JOIN home_zones z ON z.id = d.zone_id WHERE d.day BETWEEN %s AND %s ORDER BY d.done_at""", (start, end))
+                   JOIN home_zones z ON z.id = d.zone_id WHERE d.day BETWEEN %s AND %s AND d.source <> 'start' ORDER BY d.done_at""", (start, end))
     out: dict = {}
     for r in cur.fetchall():
         out.setdefault(r["day"], []).append(f'{r["chore"]} · {r["zone"]}')

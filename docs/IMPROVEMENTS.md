@@ -42,7 +42,7 @@ wanted), 18 link thoughts (M), 56 T2 body measurements (M), 57 a notification wh
 **Parked or dropped:** 42 and 16 lab report upload (owner, 02.11.2026: "not interested at the moment"), 35 swipe (not needed), 41 weight
 trend (dropped), 44 photo on a food entry (disk), 47 home-screen shortcuts (iOS limits), 51 server-side voice (only if Safari's fails),
 20/21 chat usual meal and exchange log (no ask since 29.10.), core 6 shorter prompt (not worth it now).
-**Done since 02.11.:** Home page round 2, step A (deploy 53, 04.11.; step B next), 52 coaching (deploy 51, 04.11.), 29 + core 26 complete Usage page and Home after Gym in the menus (deploy 50, 04.11.), 53, 54, 55 and the Medical name (deploy 49, 04.11.), 37 mood and energy (deploy 44), 46 one-tap usual meals (43), 56 body measurements T1 (46), the Home page (47 and 48;
+**Done since 02.11.:** Home page round 2, steps A and B (deploys 53 and 57, 04.11.), 52 coaching (deploy 51, 04.11.), 29 + core 26 complete Usage page and Home after Gym in the menus (deploy 50, 04.11.), 53, 54, 55 and the Medical name (deploy 49, 04.11.), 37 mood and energy (deploy 44), 46 one-tap usual meals (43), 56 body measurements T1 (46), the Home page (47 and 48;
 spec on the branch `docs/home-page-spec`), core 5 (42), 9 and 28 (45), 27.
 
 ## Status (31.10.2026; the first build run of 29.10. is described in `docs/reports/web-app-2026-10-29.md`)

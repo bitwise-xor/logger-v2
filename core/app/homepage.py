@@ -1,10 +1,11 @@
 """The web app's Home page (03.11.2026, step 1 of the plan in the doc "Logger v2: status and web app plan", tab Current; mockups in
 docs/specs/home-page-mockup/ on the branch docs/home-page-spec): the Now tab (the chores waiting longest, each with a tick circle,
 and what was done lately), the Zones tab (the whole-flat chores zone by zone with "All done", then each zone's chores), the
-History tab (what was ticked, with Remove) and Edit zones (zones and chores; retired, never deleted), plus the Home card on
+History tab (what was ticked, with Remove; grouped by day since round 2) and Edit zones (zones and chores; retired, never deleted), plus the Home card on
 Today. Ages are plain text, never red. Step 2 (03.11.2026): the time chips and "Pick a job for me" on Now, the Pick page with its
-timer (the end is kept on the server; app.js only draws the countdown), "This week N of 3", and the weekly goal on Edit zones. The
-actions are in home.py."""
+timer (the end is kept on the server; app.js only draws the countdown), "This week N of 3", and the weekly goal on Edit zones. Round 2,
+step B (04.11.2026): the starting point card on Zones, zone cards with Dust, Vacuum and Mop, "Done, next job", "Done it earlier?",
+whole-flat chores per zone on Edit zones, a page per chore and History by day. The actions are in home.py."""
 from . import home, rules
 from .db import connect
 from .webentry import esc, here, hidden, icon, key
@@ -27,6 +28,11 @@ def _when(ts) -> str:
     return f"{ts.astimezone(rules.BERLIN):%d.%m. %H:%M}"
 
 
+def _at(e: dict) -> str:
+    """When a history entry was done: date and time, or the date only for a job done earlier or a starting point."""
+    return f'{e["day"]:%d.%m.}' if e["dated"] else _when(e["at"])
+
+
 def _n(n: int, word: str) -> str:
     return f"{n} {word}{'' if n == 1 else 's'}"
 
@@ -43,8 +49,8 @@ def _row(p: dict, csrf: str, back: str, zone_first: bool = False, plain_name: bo
     name = c["name"] if plain_name else home.label(c, z)
     age, every = home.age_text(p["age"]), home.interval_text(p["interval"])
     meta = f"{every} · {age}" if zone_first else f"{age} · {every}"
-    return (f'<div class="horow">{_tick(p, csrf, back, home.label(c, z))}<div class="hobody"><b>{esc(name)}</b><span class="small">{esc(meta)}</span></div>'
-            f'<span class="small homin">{c["minutes"]} min</span></div>')
+    return (f'<div class="horow">{_tick(p, csrf, back, home.label(c, z))}<div class="hobody"><a class="holink" href="/web/home/chore?id={c["id"]}"><b>{esc(name)}</b></a>'
+            f'<span class="small">{esc(meta)}</span></div><span class="small homin">{p["minutes"]} min</span></div>')
 
 
 def _minutes(q) -> int:
@@ -93,7 +99,7 @@ def render_now(csrf: str, q=None) -> str:
     rows = home.worst(shown)
     top = "".join(_row(p, csrf, "/web/home") for p in rows[:SHOWN])
     more = f'<p class="row"><a href="/web/home/zones">Show all {len(rows)} chores</a></p>' + _hidden_line(d, shown) if len(rows) > SHOWN else _hidden_line(d, shown)
-    lately = "".join(f'<li><span>{esc(e["label"])}</span><span class="small">{_when(e["at"])}</span></li>' for e in done)
+    lately = "".join(f'<li><span>{esc(e["label"])}</span><span class="small">{_at(e)}</span></li>' for e in done)
     return (_tabs("now") + (_timer_banner(t, job) if t and job else "") + _time_card(minutes) + _week_card(w)
             + f'<div class="card"><h2><span>Longest since last done</span><span class="small">{_n(len(rows), "chore")}</span></h2>{top}{more}</div>'
             + ('<div class="card"><h2>Recently done</h2><ul class="horecent">' + lately + "</ul></div>" if lately else ""))
@@ -163,7 +169,9 @@ def render_pick(csrf: str, q=None) -> str:
         ctl = (_post("pause", back, csrf, tid, "Pause", "primary", attrs=" data-gone-at-zero") if t["state"] == "running" else
                _post("resume", back, csrf, tid, "Resume", "primary") if t["state"] == "paused" else "")
         timer = f'<div class="card hotimer">{_clock(t, minutes)}<div class="row">{ctl}</div></div>'
-        buttons = (_post("pickdone", "/web/home", csrf, {"pairs": pairs, "timer": str(t["id"])}, "Done", "primary", True)
+        nxt = (_post("picknext", "/web/home/pick", csrf, {"pairs": pairs, "timer": str(t["id"])}, "Done, next job", "ghost", True, attrs=" data-gone-at-zero")
+               if t["state"] == "running" and t["left"] >= home.NEXT_FROM * 60 else "")  # the timer goes on with the next job that fits
+        buttons = (_post("pickdone", "/web/home", csrf, {"pairs": pairs, "timer": str(t["id"])}, "Done", "primary", True) + nxt
                    + _post("stop", back, csrf, {"timer": str(t["id"])}, "Finished" if t["state"] == "over" else "Stop timer",
                            attrs=' data-finish-at-zero' if t["state"] == "running" else ""))
         also = ""
@@ -178,7 +186,16 @@ def render_pick(csrf: str, q=None) -> str:
         more = list(dict(more).items())
         also = (f'<h3 class="small">Also fits in {minutes} minutes</h3><ul class="horecent">'
                 + "".join(f'<li><a href="/web/home/pick?min={minutes}&n={i}">{esc(j["title"])}</a></li>' for i, j in more) + "</ul>") if more else ""
+        also = _earlier(pairs, back, csrf) + also
     return (top + f'<h1>Your {TITLE.get(minutes, str(minutes) + " minutes")}</h1>{card}{timer}<div class="hobtns">{buttons}</div>{also}')
+
+
+def _earlier(pairs: str, back: str, csrf: str) -> str:
+    """"Earlier?" on a job: done yesterday, 2 days ago or on a date (12:00 that day; History shows the date only)."""
+    quick = "".join(_post("earlier", back, csrf, {"pairs": pairs, "when": w}, label, "ghost sm", True) for w, label in (("1", "Yesterday"), ("2", "2 days ago")))
+    return (f'<details class="lookup hoearlier"><summary class="ghost">Done it earlier?</summary><div class="row">{quick}</div>'
+            f'<form class="row" method="post" action="/web/home/earlier">{hidden("csrf", csrf)}{hidden("pairs", pairs)}{hidden("back", back)}{hidden("key", key())}'
+            '<label>On <input type="date" name="when" required></label><button class="ghost sm" type="submit">Save</button></form></details>')
 
 
 def _tile(p: dict, csrf: str, back: str) -> str:
@@ -190,6 +207,18 @@ def _tile(p: dict, csrf: str, back: str) -> str:
             f'<span>{esc(home.age_short(p["age"]))}</span></button></form>')
 
 
+def _per_zone(c: dict, zones: list) -> str:
+    """A whole-flat chore's interval with the zones that differ: "every 2 weeks; Bath, Kitchen weekly; not in Maintenance"."""
+    base, off, groups = c["interval_days"], {int(x) for x in c["zone_off"]}, {}
+    for z in zones:
+        days = int(c["zone_days"].get(str(z["id"]), base))
+        if z["id"] not in off and days != base:
+            groups.setdefault(days, []).append(z["short"])
+    parts = [home.interval_text(base)] + [f'{", ".join(names)} {home.interval_text(days)}' for days, names in sorted(groups.items())]
+    gone = [z["short"] for z in zones if z["id"] in off]
+    return "; ".join(parts + ([f'not in {", ".join(gone)}'] if gone else []))
+
+
 def _flat(d: dict, csrf: str) -> str:
     out = []
     for c in (c for c in d["chores"] if c["zone_id"] is None):
@@ -197,7 +226,8 @@ def _flat(d: dict, csrf: str) -> str:
         mine.sort(key=lambda p: p["zone"]["sort_order"])
         all_today = bool(mine) and all(p["age"] == 0 for p in mine)  # a second tap takes today's ticks back, like a tile
         label = ("All done ✓", ' aria-pressed="true" title="Done in every zone today. Tap again to take it back."') if all_today else ("All done", "")
-        out.append(f'<div class="hoflat"><div class="hoflathead"><h3>{esc(c["name"])} <span class="small">· {esc(home.interval_text(c["interval_days"]))}</span></h3>'
+        out.append(f'<div class="hoflat"><div class="hoflathead"><h3><a class="holink" href="/web/home/chore?id={c["id"]}">{esc(c["name"])}</a> '
+                   f'<span class="small">· {esc(_per_zone(c, d["zones"]))}</span></h3>'
                    f'<form method="post" action="/web/home/alldone">{hidden("csrf", csrf)}{hidden("chore", str(c["id"]))}{hidden("key", key())}{here("/web/home/zones")}'
                    f'<button class="ghost sm" type="submit"{label[1]}>{label[0]}</button></form></div>'
                    f'<div class="hotiles">{"".join(_tile(p, csrf, "/web/home/zones") for p in mine)}</div></div>')
@@ -207,39 +237,168 @@ def _flat(d: dict, csrf: str) -> str:
 
 
 def _zone(z: dict, d: dict, csrf: str) -> str:
-    mine = [p for p in d["pairs"] if p["zone"]["id"] == z["id"] and p["chore"]["zone_id"] == z["id"]]
+    """A zone's card: its own chores and its share of the whole-flat ones (Dust first, Vacuum and Mop last); a tick on Dust here is the
+    same as the zone's Dust tile."""
+    mine = [p for p in d["pairs"] if p["zone"]["id"] == z["id"]]
+    own = [p for p in mine if p["chore"]["zone_id"] == z["id"]]
+    store = (f'<a class="holink small" href="/web/ideas/todoist">sorting jobs in Todoist ›</a>' if z["name"].lower() == "storage" and not own else "")
     if not mine:
-        if z["name"].lower() == "storage":
+        if store:
             return f'<a class="hozrow" href="/web/ideas/todoist"><b>{esc(z["name"])}</b><span class="small">sorting jobs in Todoist ›</span></a>'
         return f'<div class="hozrow"><b>{esc(z["name"])}</b><span class="small">no recurring chores</span></div>'
-    mine.sort(key=lambda p: (p["chore"]["sort_order"], p["chore"]["id"]))
+    mine.sort(key=home._place)
     oldest = min(mine, key=lambda p: p["rank"])
-    recent = any(p["age"] is not None and p["age"] <= 14 for p in mine)
+    recent = any(p["age"] is not None and p["age"] <= 14 for p in own)
     rows = "".join(_row(p, csrf, "/web/home/zones", zone_first=True, plain_name=True) for p in mine)
     return (f'<details class="card hozone"{" open" if recent else ""}><summary><b>{esc(z["name"])}</b>'
-            f'<span class="small">{_n(len(mine), "chore")} · oldest {"not yet" if oldest["age"] is None else home.age_text(oldest["age"])}</span></summary>{rows}</details>')
+            f'<span class="small">{_n(len(mine), "chore")} · oldest {"not yet" if oldest["age"] is None else home.age_text(oldest["age"])}</span></summary>'
+            f'{rows}{f"<p>{store}</p>" if store else ""}</details>')
+
+
+START_SHOWN = 5
+START_CHIPS = (("week", "This week"), ("month", "This month"), ("longer", "Longer ago"), ("unknown", "Don’t know"))
+
+
+def _start_card(rows: list, csrf: str) -> str:
+    """"When did you last do these?": the jobs never logged, a whole-flat chore as one row for its zones, with four chips each."""
+    jobs: dict = {}
+    for p in rows:  # in the Now list's order
+        jobs.setdefault(p["chore"]["id"], []).append(p)
+    if not jobs:
+        return ""
+    back = "/web/home/zones"
+    out = []
+    for ps in list(jobs.values())[:START_SHOWN]:
+        c = ps[0]["chore"]
+        where = ps[0]["zone"]["name"] if len(ps) == 1 else _n(len(ps), "zone")
+        pairs = home.pairs_value([(p["chore"]["id"], p["zone"]["id"]) for p in ps])
+        chips = "".join(_post("startpoint", back, csrf, {"pairs": pairs, "ago": a}, label, "ghost sm", True) for a, label in START_CHIPS)
+        out.append(f'<div class="hostart"><p><b>{esc(c["name"])} · {esc(where)}</b> <span class="small">{esc(home.interval_text(ps[0]["interval"]))}</span></p>'
+                   f'<div class="hostartchips">{chips}</div></div>')
+    more = len(jobs) - START_SHOWN
+    return ('<div class="card"><h2>When did you last do these?</h2><p class="small">A rough answer is enough: it gives the job a starting point. '
+            'It is not a session and not under Recently done.</p>' + "".join(out)
+            + (f'<p class="small">{_n(more, "more job")} after these.</p>' if more > 0 else "") + "</div>")
 
 
 def render_zones(csrf: str, q=None) -> str:
     with connect() as conn, conn.cursor() as cur:
         d = home.load(cur)
+        never = home.never_done(cur, d)
     edit = '<p class="row"><a class="ghost" href="/web/home/edit">Edit zones</a></p>'
     if not d["chores"]:
         return _tabs("zones") + edit + '<div class="card"><p class="empty">No zones or chores yet.</p></div>'
-    return _tabs("zones") + edit + _flat(d, csrf) + "".join(_zone(z, d, csrf) for z in d["zones"])
+    return _tabs("zones") + edit + _start_card(never, csrf) + _flat(d, csrf) + "".join(_zone(z, d, csrf) for z in d["zones"])
+
+
+HISTORY_MAX = 600
+
+
+def _day_head(day) -> str:
+    return f"{day:%A %d.%m.}"
+
+
+def _earlier_form(d: dict, csrf: str, back: str) -> str:
+    """"+ Add one done earlier" on History: a job (one zone of a whole-flat chore) and a date before today."""
+    opts = "".join(f'<option value="{p["chore"]["id"]}-{p["zone"]["id"]}">{esc(home.label(p["chore"], p["zone"]))}</option>'
+                   for p in sorted(d["pairs"], key=lambda p: (p["chore"]["name"].lower(), p["zone"]["sort_order"])))
+    return (f'<details class="lookup"><summary class="ghost">+ Add one done earlier</summary><form class="fbox" method="post" action="/web/home/earlier">'
+            f'{hidden("csrf", csrf)}{hidden("back", back)}{hidden("key", key())}<div class="fields"><label>Job<select name="pairs">{opts}</select></label>'
+            '<label>Done on<input type="date" name="when" required></label></div>'
+            '<p class="row"><button class="primary sm" type="submit">Save</button><span class="small">It gets 12:00 on that day.</span></p></form></details>')
 
 
 def render_history(csrf: str, q=None) -> str:
+    """What was ticked, grouped by logging day ("Tuesday 03.11."), with how ("ticked", "chat", "timer", "earlier", "starting point")."""
+    try:
+        limit = min(HISTORY_MAX, max(HISTORY, int((q or {}).get("n", HISTORY))))
+    except (TypeError, ValueError):
+        limit = HISTORY
     with connect() as conn, conn.cursor() as cur:
-        rows = home.recent(cur, HISTORY)
+        rows = home.recent(cur, limit, starts=True)
+        d = home.load(cur)
+    back = "/web/home/history" + (f"?n={limit}" if limit != HISTORY else "")
+    add = f'<div class="card">{_earlier_form(d, csrf, back)}</div>' if d["pairs"] else ""
     if not rows:
-        return _tabs("history") + '<div class="card"><p class="empty">Nothing ticked yet.</p></div>'
-    lines = "".join(
-        f'<tr><td>{_when(e["at"])}</td><td>{esc(e["label"])}</td><td class="small">{esc(e["source"])}</td>'
-        f'<td><form method="post" action="/web/home/remove">{hidden("csrf", csrf)}{hidden("ids", ",".join(str(i) for i in e["ids"]))}{here("/web/home/history")}'
-        f'<button class="icon" type="submit" aria-label="Remove {esc(e["label"])}" title="Remove">&times;</button></form></td></tr>' for e in rows)
-    return (_tabs("history") + f'<div class="card"><h2><span>Ticked lately</span><span class="small">last {len(rows)}</span></h2>'
-            f'<div class="tablewrap"><table class="ft plain"><tbody>{lines}</tbody></table></div></div>')
+        return _tabs("history") + add + '<div class="card"><p class="empty">Nothing ticked yet.</p></div>'
+    days: dict = {}
+    for e in rows:
+        days.setdefault(e["day"], []).append(e)
+    out = []
+    for day, es in days.items():
+        lines = "".join(
+            f'<tr><td class="small">{"" if e["dated"] else e["at"].astimezone(rules.BERLIN).strftime("%H:%M")}</td>'
+            f'<td>{esc(e["label"])}</td><td class="small">{esc("earlier" if e["dated"] and e["source"] != "start" else home.SOURCE_TEXT.get(e["source"], e["source"]))}</td>'
+            f'<td><form method="post" action="/web/home/remove">{hidden("csrf", csrf)}{hidden("ids", ",".join(str(i) for i in e["ids"]))}{here(back)}'
+            f'<button class="icon" type="submit" aria-label="Remove {esc(e["label"])}" title="Remove">&times;</button></form></td></tr>' for e in es)
+        out.append(f'<h3 class="hoday">{_day_head(day)}</h3><div class="tablewrap"><table class="ft plain"><tbody>{lines}</tbody></table></div>')
+    more = (f'<p class="row"><a class="ghost" href="/web/home/history?n={limit + HISTORY}">Show more</a></p>'
+            if len(rows) == limit and limit < HISTORY_MAX else "")
+    return (_tabs("history") + add + f'<div class="card"><h2><span>Ticked lately</span><span class="small">last {len(rows)}</span></h2>{"".join(out)}{more}</div>')
+
+
+# ---- a chore's own page ----------------------------------------------------------------------------
+
+LAST = 10
+
+
+def _usually(days: list) -> str:
+    """"usually every 9 days": the median gap between the done days (3 or more days; starting points left out)."""
+    days = sorted(set(days))
+    if len(days) < 3:
+        return ""
+    gaps = sorted((b - a).days for a, b in zip(days, days[1:]))
+    return f"usually every {_n(gaps[len(gaps) // 2], 'day')}"
+
+
+def _date(day, year) -> str:
+    return f"{day:%d.%m.}" if day.year == year else f"{day:%d.%m.%Y}"
+
+
+def render_chore(csrf: str, q=None) -> str:
+    """Tap a chore: its interval, minutes, steps, the last 10 dates (per zone for a whole-flat chore), "usually every N days" and Edit."""
+    top = '<p class="row"><a href="/web/home/zones">‹ Zones</a></p>'
+    cid = home._id((q or {}).get("id"))
+    with connect() as conn, conn.cursor() as cur:
+        d = home.load(cur)
+        c = next((c for c in d["all_chores"] if c["id"] == cid), None)
+        rows = []
+        if c:
+            cur.execute("SELECT zone_id, day, source FROM home_done WHERE chore_id = %s ORDER BY done_at DESC, id DESC", (cid,))
+            rows = cur.fetchall()
+    if not c:
+        return top + '<div class="card"><p class="empty">That chore is not in the list.</p></div>'
+    year = d["today"].year
+    flat = c["zone_id"] is None
+    zones = {z["id"]: z for z in d["all_zones"]}
+    where = home.WHOLE if flat else zones[c["zone_id"]]["name"]
+    meta = f'{home.interval_text(c["interval_days"])} · {c["minutes"]} min · {where}' + ("" if c["active"] else " · retired")
+    steps = ('<ol class="steps">' + "".join(f"<li>{esc(x)}</li>" for x in c["steps"]) + "</ol>") if c["steps"] else ""
+    howto = f'<p class="small">{esc(c["howto"])}</p>' if c["howto"] else ""
+    head = (f'<div class="card"><h1>{esc(c["name"])}</h1><p class="small">{esc(meta)}</p>{steps}{howto}'
+            f'<p class="row"><a class="ghost sm" href="/web/home/edit#chore-{c["id"]}">Edit</a></p></div>')
+
+    def dates(rs: list) -> str:
+        rs = rs[:LAST]
+        return " · ".join(_date(r["day"], year) + (" (starting point)" if r["source"] == "start" else "") for r in rs) or "not logged yet"
+
+    if flat:
+        pairs = {p["zone"]["id"]: p for p in d["pairs"] if p["chore"]["id"] == c["id"]}
+        items = []
+        for z in d["zones"]:
+            mine = [r for r in rows if r["zone_id"] == z["id"]]
+            if z["id"] not in pairs and not mine:
+                continue
+            p = pairs.get(z["id"])
+            extra = (f'{home.interval_text(p["interval"])} · {p["minutes"]} min' if p else "not done here")
+            often = _usually([r["day"] for r in mine if r["source"] != "start"])
+            items.append(f'<li><b>{esc(z["name"])}</b> <span class="small">{esc(extra)}{" · " + often if often else ""}</span>'
+                         f'<br><span class="small">{dates(mine)}</span></li>')
+        body = f'<ul class="hodates">{"".join(items)}</ul>'
+    else:
+        often = _usually([r["day"] for r in rows if r["source"] != "start"])
+        body = (f'<p>{dates(rows)}</p>' + (f'<p class="small">{often}</p>' if often else ""))
+    return top + head + f'<div class="card"><h2>Last done</h2>{body}</div>'
 
 
 # ---- Edit zones ------------------------------------------------------------------------------------
@@ -264,13 +423,30 @@ def _chore_form(c: dict | None, zones: list, csrf: str, action: str, button: str
             f'</div><p class="row"><button class="primary sm" type="submit">{button}</button></p></form>')
 
 
+def _zones_form(c: dict, zones: list, csrf: str, back: str) -> str:
+    """A whole-flat chore per zone: on or off, its own interval and minutes (blank = the chore's)."""
+    off = {int(x) for x in c["zone_off"]}
+    rows = "".join(
+        f'<tr><td><label class="hocheck"><input type="checkbox" name="on_{z["id"]}" value="1"{"" if z["id"] in off else " checked"}> {esc(z["name"])}</label></td>'
+        f'<td><input type="number" name="days_{z["id"]}" min="1" max="730" inputmode="numeric" aria-label="{esc(z["name"])}: every … days" '
+        f'placeholder="{c["interval_days"]}" value="{c["zone_days"].get(str(z["id"]), "")}"></td>'
+        f'<td><input type="number" name="min_{z["id"]}" min="1" max="240" inputmode="numeric" aria-label="{esc(z["name"])}: minutes" '
+        f'placeholder="{c["minutes"]}" value="{c["zone_minutes"].get(str(z["id"]), "")}"></td></tr>' for z in zones if z["active"])
+    return (f'<details class="lookup"><summary class="ghost sm">Per zone</summary><form class="fbox" method="post" action="/web/home/chorezones">'
+            f'{hidden("csrf", csrf)}{hidden("chore", str(c["id"]))}{here(back)}<div class="tablewrap"><table class="ft plain hozones">'
+            '<thead><tr><th>Zone</th><th>Every … days</th><th>Minutes</th></tr></thead>'
+            f'<tbody>{rows}</tbody></table></div><p class="small">Blank = the chore’s ({esc(home.interval_text(c["interval_days"]))}, {c["minutes"]} min). '
+            'Untick a zone where it is not done.</p><p class="row"><button class="primary sm" type="submit">Save</button></p></form></details>')
+
+
 def _chore_edit(c: dict, zones: list, csrf: str, back: str) -> str:
     on = c["active"]
     toggle = (f'<form method="post" action="/web/home/choreactive">{hidden("csrf", csrf)}{hidden("chore", str(c["id"]))}{hidden("on", "0" if on else "1")}{here(back)}'
               f'<button class="ghost sm" type="submit">{"Retire" if on else "Bring back"}</button></form>')
     meta = f'{home.interval_text(c["interval_days"])} · {c["minutes"]} min' + ("" if on else " · retired")
-    return (f'<div class="hm{"" if on else " retired"}"><details class="hm-pop"><summary class="hm-main">{esc(c["name"])}<span class="small">{esc(meta)}</span></summary>'
-            f'{_chore_form(c, zones, csrf, "choreedit", "Save", back)}</details><div class="hm-ctl">{toggle}</div></div>')
+    per_zone = _zones_form(c, zones, csrf, back) if c["zone_id"] is None and on else ""
+    return (f'<div class="hm{"" if on else " retired"}" id="chore-{c["id"]}"><details class="hm-pop"><summary class="hm-main">{esc(c["name"])}<span class="small">{esc(meta)}</span></summary>'
+            f'{_chore_form(c, zones, csrf, "choreedit", "Save", back)}{per_zone}</details><div class="hm-ctl">{toggle}</div></div>')
 
 
 def _zone_edit(z: dict, d: dict, csrf: str, back: str) -> str:

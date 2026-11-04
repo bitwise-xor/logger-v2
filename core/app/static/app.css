@@ -829,6 +829,26 @@ ol.steps{padding-left:1.2rem;display:grid;gap:.35rem}
 .hobtns>a{flex:1 1 0}
 .homecard .hobtns{margin:.7rem 0 0}
 
+/* Home page round 2, step B (04.11.2026): chore links, the starting point card, History by day, a chore's page, per-zone settings */
+.holink{color:inherit;text-decoration:none}
+.holink:hover b,.holink:hover{text-decoration:underline}
+.hostart{padding:.55rem 0;border-top:1px solid var(--line)}
+.card h2+.small+.hostart{border-top:0}
+.hostart p{margin:0 0 .4rem}
+.hostartchips{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.35rem}
+.hostartchips form,.hostartchips button{width:100%}
+.hostartchips button{min-height:2.6rem;padding:.3rem .2rem;white-space:normal;line-height:1.2}
+@media (max-width:420px){.hostartchips{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.hoday{margin:.9rem 0 .2rem;font-size:.95rem}
+.card h2+.hoday{margin-top:.2rem}
+.hodates{list-style:none;margin:0;padding:0}
+.hodates li{padding:.5rem 0;border-top:1px solid var(--line)}
+.hodates li:first-child{border-top:0}
+.hoearlier{margin:0 0 .9rem}
+.hoearlier .row{flex-wrap:wrap;gap:.5rem;margin:.5rem 0}
+.hozones input[type=number]{width:5rem}
+.hocheck{display:flex;align-items:center;gap:.4rem;white-space:nowrap}
+
 /* Coaching (04.11.2026): the Coach card on Today, the Week review card, the Coach page */
 .coachcard h2 svg.ic{color:var(--accent);margin-right:.35rem}
 .coachcard p{margin:.2rem 0 .6rem}

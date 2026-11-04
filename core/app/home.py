@@ -2,14 +2,15 @@
 spec docs/specs/home-page-spec.md on the branch docs/home-page-spec): household chores with an interval and a "last done", apart
 from the habits. A chore belongs to one zone or to the whole flat (Dust, Vacuum, Mop), and then each zone is tracked on its own,
 so a done row always names its zone. The page lists (chore, zone) pairs by how far past its interval each is (time since last done
-divided by the interval; never done counts as the most overdue, shorter intervals first). Ages are plain text: no colour, no
+divided by the interval; never done counts as 1.5 times late since round 2, shorter intervals first). Ages are plain text: no colour, no
 counts of overdue things. Each action takes (form, key, session) like the Gym's and returns the reply shown under the entry box;
 the tap is the owner's yes. A tick writes a raw_inbox row ("home: Dust · Sleeping") so Recent shows it. Days are log_day().
 Step 2 (03.11.2026): the jobs that fit a time budget (candidates), "Not today", the pick timer (kept on the server), the sessions
-of the weekly goal and the goal itself."""
+of the weekly goal and the goal itself. Round 2, step B (04.11.2026): whole-flat chores per zone (on/off, interval, minutes),
+"Vacuum the whole flat" as a job, starting points for never-logged jobs, jobs done earlier, and "Done, next job" while the timer runs."""
 import hashlib
 import json
-from datetime import timedelta
+from datetime import date, timedelta
 from typing import Optional
 
 from psycopg.types.json import Jsonb
@@ -19,12 +20,20 @@ from .db import connect
 
 SOURCES = ("web", "chat", "pick")
 HOURS = (5, 15, 30, 60)  # the time chips
+WHOLE_FROM = 30  # "Vacuum the whole flat" is offered from 30 minutes on
+NEXT_FROM = 3  # "Done, next job" needs this many minutes left
+EARLIER_DAYS = 365  # a job done earlier: at most this many days back
 DEFAULT_MINUTES = 15
 STEPS = 5  # a job shows 2 to 5 steps
 GOAL_KEY = "home"  # ui_settings: {"goal": 3}
 GOAL = 3
 UNDO_TABLES = ("home_zones", "home_chores", "home_done")  # the order rows are put back in
 WHOLE = "whole flat"
+NEVER = 1.5  # how late a job never logged counts (round 2, item 1)
+START_AGO = {"week": 3, "month": 14}  # "When did you last do these?": days ago; "longer" = twice the interval ago
+NOON = 12  # a job done earlier (or a starting point) gets 12:00 on its day
+UNKNOWN_KEY = "home_unknown"  # ui_settings: {"pairs": [[chore id, zone id], ...]} answered "Don't know" on the starting point card
+SOURCE_TEXT = {"web": "ticked", "chat": "chat", "pick": "timer", "start": "starting point"}
 
 
 def interval_text(days: int) -> str:
@@ -123,14 +132,27 @@ def load(cur) -> dict:
     last = {(r["chore_id"], r["zone_id"]): r for r in cur.fetchall()}
     pairs = []
     for c in chores:
-        for z in (zones if c["zone_id"] is None else [by_zone[c["zone_id"]]] if c["zone_id"] in by_zone and by_zone[c["zone_id"]]["active"] else []):
+        for z in (flat_zones(c, zones) if c["zone_id"] is None else [by_zone[c["zone_id"]]] if c["zone_id"] in by_zone and by_zone[c["zone_id"]]["active"] else []):
             interval = int(c["zone_days"].get(str(z["id"]), c["interval_days"]))
             seen = last.get((c["id"], z["id"]))
             age = (day - seen["day"]).days if seen else None
-            rank = (0, interval, c["sort_order"], z["sort_order"]) if age is None else (1, -age / interval, interval, c["sort_order"], z["sort_order"])
-            pairs.append({"chore": c, "zone": z, "interval": interval, "age": age, "done_at": seen and seen["done_at"], "rank": rank})
+            late = NEVER if age is None else age / interval  # never logged: 1.5 times late (just behind one twice as late)
+            rank = (-late, interval, c["sort_order"], z["sort_order"])
+            pairs.append({"chore": c, "zone": z, "interval": interval, "age": age, "done_at": seen and seen["done_at"], "rank": rank,
+                          "minutes": zone_minutes(c, z["id"])})
     pairs.sort(key=lambda p: p["rank"])
     return {"today": day, "zones": zones, "all_zones": all_zones, "chores": chores, "all_chores": all_chores, "pairs": pairs}
+
+
+def flat_zones(c: dict, zones: list) -> list:
+    """The zones a whole-flat chore is done in: all of them but those switched off for it (zone_off)."""
+    off = {int(x) for x in c.get("zone_off") or []}
+    return [z for z in zones if (z["id"] if isinstance(z, dict) else z) not in off]
+
+
+def zone_minutes(c: dict, zone_id: int) -> int:
+    """The minutes of a chore in a zone: the zone's own (zone_minutes) for a whole-flat chore, else the chore's."""
+    return int((c.get("zone_minutes") or {}).get(str(zone_id)) or c["minutes"])
 
 
 def visible(pairs: list[dict], hidden: set) -> list[dict]:
@@ -152,27 +174,28 @@ def label(chore: dict, zone: dict) -> str:
     return f'{chore["name"]} · {zone["name"]}'
 
 
-def recent(cur, limit: int = 5) -> list[dict]:
+def recent(cur, limit: int = 5, starts: bool = False) -> list[dict]:
     """The last done rows, newest first; rows stamped together (All done, "dusted everything") come back as one entry.
-    Each: ids, at, label, source, zones."""
-    cur.execute("""SELECT d.id, d.done_at, d.source, d.chore_id, d.zone_id, c.name AS chore, c.zone_id AS chore_zone, z.name AS zone
-                   FROM home_done d JOIN home_chores c ON c.id = d.chore_id JOIN home_zones z ON z.id = d.zone_id
-                   ORDER BY d.done_at DESC, d.id DESC LIMIT %s""", (limit * 9 + 9,))
+    Each: ids, at, day, dated, label, source, zones. Starting points only with starts=True (History)."""
+    cur.execute(f"""SELECT d.id, d.done_at, d.day, d.dated, d.source, d.chore_id, d.zone_id, c.name AS chore, c.zone_id AS chore_zone, c.zone_off, z.name AS zone
+                    FROM home_done d JOIN home_chores c ON c.id = d.chore_id JOIN home_zones z ON z.id = d.zone_id
+                    {"" if starts else "WHERE d.source <> 'start'"} ORDER BY d.done_at DESC, d.id DESC LIMIT %s""", (limit * 9 + 9,))
     rows = cur.fetchall()
-    cur.execute("SELECT count(*) AS n FROM home_zones WHERE active")
-    n_zones = cur.fetchone()["n"]
+    cur.execute("SELECT id FROM home_zones WHERE active")
+    active = [r["id"] for r in cur.fetchall()]
     out: list[dict] = []
     for r in rows:
         if out and out[-1]["chore_id"] == r["chore_id"] and out[-1]["at"] == r["done_at"] and r["chore_zone"] is None:
             out[-1]["ids"].append(r["id"])
             out[-1]["zones"].append(r["zone"])
             continue
-        out.append({"ids": [r["id"]], "at": r["done_at"], "source": r["source"], "chore_id": r["chore_id"], "chore": r["chore"],
-                    "zones": [r["zone"]], "flat": r["chore_zone"] is None})
+        out.append({"ids": [r["id"]], "at": r["done_at"], "day": r["day"], "dated": r["dated"], "source": r["source"], "chore_id": r["chore_id"],
+                    "chore": r["chore"], "zones": [r["zone"]], "flat": r["chore_zone"] is None,
+                    "n_zones": len(flat_zones({"zone_off": r["zone_off"]}, active))})
     for e in out:
         if not e["flat"]:
             e["label"] = f'{e["chore"]} · {e["zones"][0]}'
-        elif len(e["zones"]) >= n_zones > 1:
+        elif len(e["zones"]) >= e["n_zones"] > 1:
             e["label"] = f'{e["chore"]} · {WHOLE}'
         else:
             e["label"] = f'{e["chore"]} · {", ".join(sorted(e["zones"]))}'
@@ -181,14 +204,18 @@ def recent(cur, limit: int = 5) -> list[dict]:
 
 # ---- ticking ---------------------------------------------------------------------------------------
 
-def stamp(cur, pairs: list[tuple[int, int]], source: str, raw_id: Optional[int], day) -> list[int]:
-    """Done rows for these (chore id, zone id) pairs, all with the same time. -> their ids."""
+def stamp(cur, pairs: list[tuple[int, int]], source: str, raw_id: Optional[int], day, dated: bool = False) -> list[int]:
+    """Done rows for these (chore id, zone id) pairs, all with the same time: now, or 12:00 (Berlin) on `day` when dated (a job done
+    earlier, a starting point). -> their ids."""
     ids = []
-    cur.execute("SELECT now() AS t")
+    if dated:
+        cur.execute("SELECT (%s::date + make_interval(hours => %s)) AT TIME ZONE 'Europe/Berlin' AS t", (day, NOON))
+    else:
+        cur.execute("SELECT now() AS t")
     at = cur.fetchone()["t"]
     for chore_id, zone_id in pairs:
-        cur.execute("INSERT INTO home_done (chore_id, zone_id, done_at, day, source, raw_id) VALUES (%s, %s, %s, %s, %s, %s) RETURNING id",
-                    (chore_id, zone_id, at, day, source, raw_id))
+        cur.execute("INSERT INTO home_done (chore_id, zone_id, done_at, day, source, raw_id, dated) VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id",
+                    (chore_id, zone_id, at, day, source, raw_id, dated))
         ids.append(cur.fetchone()["id"])
     return ids
 
@@ -222,7 +249,7 @@ def tick(form, key=None, session=None) -> dict:
         c = cur.fetchone()
         cur.execute("SELECT * FROM home_zones WHERE id = %s AND active", (zone_id,))
         z = cur.fetchone()
-        if not c or not z or c["zone_id"] not in (None, z["id"]):
+        if not c or not z or c["zone_id"] not in (None, z["id"]) or not flat_zones(c, [z["id"]]):
             return _rejected("That chore is not in the list.")
         day = today(cur)
         cur.execute("SELECT to_jsonb(d) AS j FROM home_done d WHERE chore_id = %s AND zone_id = %s AND day = %s ORDER BY id", (c["id"], z["id"], day))
@@ -257,7 +284,7 @@ def all_done(form, key=None, session=None) -> dict:
         if not c:
             return _rejected("That is not a whole-flat chore.")
         cur.execute("SELECT id FROM home_zones WHERE active ORDER BY sort_order, id")
-        every = [z["id"] for z in cur.fetchall()]
+        every = flat_zones(c, [z["id"] for z in cur.fetchall()])
         day = today(cur)
         said = f'{c["name"]} · {WHOLE}'
         cur.execute("SELECT to_jsonb(d) AS j FROM home_done d WHERE chore_id = %s AND day = %s ORDER BY id", (c["id"], day))
@@ -303,6 +330,10 @@ def undo(h: dict) -> dict:
             for chore_id, zone_id, day in h["unskip"]:
                 cur.execute("DELETE FROM home_skips WHERE chore_id = %s AND zone_id = %s AND day = %s", (chore_id, zone_id, day))
             head = "Undone: the job is back in the list."
+        elif h.get("known"):  # a "Don't know" taken back: the job is on the starting point card again
+            gone = {tuple(x) for x in h["known"]}
+            _set_unknown(cur, [x for x in unknown(cur) if x not in gone])
+            head = "Undone: the job is back on the card."
         elif h.get("delete"):
             cur.execute("DELETE FROM home_done WHERE id = ANY(%s)", (h["delete"],))
             head = "Undone: the tick is gone."
@@ -458,7 +489,7 @@ def _single(p: dict, over: bool = False) -> dict:
     own; the zone's spots only when the chore has none (Dust)."""
     c, z = p["chore"], p["zone"]
     flat = c["zone_id"] is None
-    return {"pairs": [(c["id"], z["id"])], "session": False, "over": over, "zone": z["name"], "age": p["age"], "minutes": c["minutes"],
+    return {"pairs": [(c["id"], z["id"])], "session": False, "over": over, "zone": z["name"], "age": p["age"], "minutes": p["minutes"],
             "title": f'{c["name"]} the {z["name"].lower()}' if flat else c["name"],
             "steps": list(c["steps"] or (z["spots"] if flat else []))[:STEPS], "howto": c["howto"]}
 
@@ -478,8 +509,18 @@ def _session(chosen: list[dict]) -> dict:
     ages = [p["age"] for p in chosen]
     z = chosen[0]["zone"]
     return {"pairs": [(p["chore"]["id"], p["zone"]["id"]) for p in chosen], "session": True, "over": False, "zone": z["name"],
-            "age": None if None in ages else max(ages), "minutes": sum(p["chore"]["minutes"] for p in chosen), "title": f'{z["name"]}: {len(chosen)} jobs',
-            "steps": [f'{p["chore"]["name"]} ({p["chore"]["minutes"]} min)' for p in chosen], "howto": None}
+            "age": None if None in ages else max(ages), "minutes": sum(p["minutes"] for p in chosen), "title": f'{z["name"]}: {len(chosen)} jobs',
+            "steps": [f'{p["chore"]["name"]} ({p["minutes"]} min)' for p in chosen], "howto": None}
+
+
+def _whole(mine: list[dict]) -> dict:
+    """"Vacuum the whole flat": one whole-flat chore in every zone still waiting today, zone by zone (their steps)."""
+    c = mine[0]["chore"]
+    mine = sorted(mine, key=lambda p: p["zone"]["sort_order"])
+    ages = [p["age"] for p in mine]
+    return {"pairs": [(c["id"], p["zone"]["id"]) for p in mine], "session": True, "over": False, "zone": WHOLE.capitalize(),
+            "age": None if None in ages else max(ages), "minutes": sum(p["minutes"] for p in mine), "title": f'{c["name"]} the {WHOLE}',
+            "steps": [f'{p["zone"]["name"]} ({p["minutes"]} min)' for p in mine], "howto": c["howto"]}
 
 
 def candidates(d: dict, minutes: int, hidden: set) -> list[dict]:
@@ -488,15 +529,15 @@ def candidates(d: dict, minutes: int, hidden: set) -> list[dict]:
     _place) comes first when two or more fit. When nothing fits, the shortest job is offered with over = True ("do what fits, stopping
     counts")."""
     avail = [p for p in d["pairs"] if p["age"] != 0 and (p["chore"]["id"], p["zone"]["id"]) not in hidden]
-    fits = [p for p in avail if p["chore"]["minutes"] <= minutes]
+    fits = [p for p in avail if p["minutes"] <= minutes]
     jobs: list[dict] = []
     if minutes >= 60 and fits:
         z = fits[0]["zone"]
         total, chosen = 0, []
         for p in (p for p in fits if p["zone"]["id"] == z["id"]):
-            if total + p["chore"]["minutes"] <= minutes:
+            if total + p["minutes"] <= minutes:
                 chosen.append(p)
-                total += p["chore"]["minutes"]
+                total += p["minutes"]
         if len(chosen) >= 2:
             jobs.append(_session(chosen))
     seen = set()
@@ -504,11 +545,19 @@ def candidates(d: dict, minutes: int, hidden: set) -> list[dict]:
         if p["chore"]["id"] not in seen:
             seen.add(p["chore"]["id"])
             jobs.append(_single(p))
+    if minutes >= WHOLE_FROM and jobs:  # "Vacuum the whole flat" right after the first job, when all its waiting zones fit together
+        wholes = []
+        for c in (c for c in d["chores"] if c["zone_id"] is None):
+            mine = [p for p in avail if p["chore"]["id"] == c["id"]]
+            if len(mine) >= 2 and sum(p["minutes"] for p in mine) <= minutes and any(p["age"] is None or p["age"] >= p["interval"] for p in mine):
+                wholes.append(_whole(mine))
+        at = 2 if jobs[0]["session"] else 1
+        jobs[at:at] = wholes
     if not jobs and avail:
         first: dict = {}
         for p in avail:
             first.setdefault(p["chore"]["id"], p)
-        jobs.append(_single(min(first.values(), key=lambda p: (p["chore"]["minutes"], p["rank"])), over=True))
+        jobs.append(_single(min(first.values(), key=lambda p: (p["minutes"], p["rank"])), over=True))
     return jobs
 
 
@@ -518,7 +567,10 @@ def job_of(d: dict, pairs: list[tuple[int, int]]) -> Optional[dict]:
     found = [by[x] for x in pairs if x in by]
     if not found:
         return None
-    return _single(found[0]) if len(found) == 1 else _session(found)
+    if len(found) == 1:
+        return _single(found[0])
+    one = {p["chore"]["id"] for p in found}
+    return _whole(found) if len(one) == 1 and found[0]["chore"]["zone_id"] is None else _session(found)
 
 
 def _valid(cur, pairs: list) -> list[tuple[int, int]]:
@@ -526,7 +578,7 @@ def _valid(cur, pairs: list) -> list[tuple[int, int]]:
     good = []
     for c, z in pairs:
         cur.execute("""SELECT 1 FROM home_chores c, home_zones z WHERE c.id = %s AND z.id = %s AND c.active AND z.active
-                       AND (c.zone_id IS NULL OR c.zone_id = z.id)""", (c, z))
+                       AND (c.zone_id IS NULL AND NOT c.zone_off @> to_jsonb(z.id) OR c.zone_id = z.id)""", (c, z))
         if cur.fetchone():
             good.append((c, z))
     return good
@@ -646,6 +698,170 @@ def skip(form, key=None, session=None) -> dict:
     return {"outcome": "changed", "head": f"Not today: {said}"[:160], "home_undo": {"unskip": new}} if new else {"outcome": "changed", "head": "Hidden already."}
 
 
+# ---- round 2, step B: per-zone settings, starting points, jobs done earlier, Done next job ------------------------------------------
+
+def chore_zones(form, key=None, session=None) -> dict:
+    """A whole-flat chore's settings per zone: on_<zone id>=1 (done there), days_<zone id> and min_<zone id> (blank = the chore's)."""
+    with connect() as conn, conn.cursor() as cur:
+        cur.execute("SELECT * FROM home_chores WHERE id = %s AND zone_id IS NULL", (_id(form.get("chore")),))
+        c = cur.fetchone()
+        if not c:
+            return _rejected("That is not a whole-flat chore.")
+        cur.execute("SELECT id FROM home_zones WHERE active ORDER BY sort_order, id")
+        zones = [r["id"] for r in cur.fetchall()]
+        off, days, mins = [x for x in c["zone_off"] if x not in zones], {k: v for k, v in c["zone_days"].items() if int(k) not in zones}, \
+            {k: v for k, v in c["zone_minutes"].items() if int(k) not in zones}  # retired zones keep what they had
+        for z in zones:
+            if form.get(f"on_{z}") != "1":
+                off.append(z)
+            for field, into, top in (("days", days, 730), ("min", mins, 240)):
+                v = str(form.get(f"{field}_{z}", "")).strip()
+                if not v:
+                    continue
+                if not v.isdigit() or not 1 <= int(v) <= top:
+                    return _rejected("Give the days (1 to 730) and minutes (1 to 240) as whole numbers, or leave them blank.")
+                if int(v) != (c["interval_days"] if field == "days" else c["minutes"]):
+                    into[str(z)] = int(v)
+        if all(z in off for z in zones):
+            return _rejected(f'{c["name"]} needs at least one zone. Retire it instead.')
+        cur.execute("UPDATE home_chores SET zone_off = %s, zone_days = %s, zone_minutes = %s WHERE id = %s",
+                    (Jsonb(sorted(off)), Jsonb(days), Jsonb(mins), c["id"]))
+        logbook._audit(cur, "home", "changed", {"what": "chore zones"}, logbook.WEB)
+    return {"outcome": "changed", "head": f'Saved {c["name"]} per zone.'}
+
+
+def unknown(cur) -> list[tuple[int, int]]:
+    """The jobs answered "Don't know" on the starting point card (they stay "not logged yet")."""
+    cur.execute("SELECT value FROM ui_settings WHERE key = %s", (UNKNOWN_KEY,))
+    r = cur.fetchone()
+    return [tuple(x) for x in ((r["value"] if r else {}).get("pairs") or []) if isinstance(x, list) and len(x) == 2]
+
+
+def _set_unknown(cur, pairs: list) -> None:
+    cur.execute("""INSERT INTO ui_settings (key, value) VALUES (%s, %s)
+                   ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()""", (UNKNOWN_KEY, Jsonb({"pairs": [list(x) for x in pairs]})))
+
+
+def never_done(cur, d: dict) -> list[dict]:
+    """The pairs for the starting point card: never logged and not answered "Don't know", in the Now list's order."""
+    skip = set(unknown(cur))
+    return [p for p in d["pairs"] if p["age"] is None and (p["chore"]["id"], p["zone"]["id"]) not in skip]
+
+
+def start_point(form, key=None, session=None) -> dict:
+    """"When did you last do these?": pairs=3-5, ago=week (3 days ago) / month (2 weeks ago) / longer (twice the interval ago) / unknown.
+    A starting point is a done row of source 'start' at 12:00 of that day: not a session, not under Recently done."""
+    ago = str(form.get("ago", ""))
+    req = hashlib.sha256(json.dumps(["start", str(form.get("pairs")), ago]).encode()).hexdigest()
+    with connect() as conn, conn.cursor() as cur:
+        seen = _once(cur, key, req)
+        if seen:
+            return seen
+        pairs = _valid(cur, parse_pairs(form.get("pairs")))
+        if not pairs or ago not in ("week", "month", "longer", "unknown"):
+            return _rejected("That job is not in the list any more.")
+        said = _names(cur, pairs)
+        if ago == "unknown":
+            had = unknown(cur)
+            new = [x for x in pairs if x not in had]
+            _set_unknown(cur, had + new)
+            out = {"outcome": "changed", "head": f"Left as not logged yet: {said}"[:160], "home_undo": {"known": [list(x) for x in new]}}
+        else:
+            day, ids = today(cur), []
+            for c, z in pairs:
+                cur.execute("SELECT 1 FROM home_done WHERE chore_id = %s AND zone_id = %s", (c, z))
+                if cur.fetchone():
+                    continue  # logged meanwhile: nothing to start from
+                if ago == "longer":
+                    cur.execute("SELECT interval_days, zone_days FROM home_chores WHERE id = %s", (c,))
+                    r = cur.fetchone()
+                    back = 2 * int(r["zone_days"].get(str(z), r["interval_days"]))
+                else:
+                    back = START_AGO[ago]
+                ids += stamp(cur, [(c, z)], "start", None, day - timedelta(days=back), dated=True)
+            out = ({"outcome": "changed", "head": f"Starting point: {said}"[:160], "home_undo": {"delete": ids}} if ids
+                   else {"outcome": "changed", "head": "Logged already."})
+        logbook._audit(cur, "home", "changed", {"what": "starting point", "pairs": len(pairs)}, logbook.WEB)
+        _remember(cur, key, req, out)
+    return out
+
+
+def earlier_day(cur, when: str):
+    """when = 1 (yesterday), 2 (2 days ago) or a date (YYYY-MM-DD) within the last year, before today. -> the day, or None."""
+    day = today(cur)
+    when = str(when or "").strip()
+    if when.isdigit() and 1 <= int(when) <= 7:
+        return day - timedelta(days=int(when))
+    try:
+        got = date.fromisoformat(when[:10])
+    except ValueError:
+        return None
+    return got if day - timedelta(days=EARLIER_DAYS) <= got < day else None
+
+
+def earlier(form, key=None, session=None) -> dict:
+    """A job done earlier (pairs=3-5, when=1 / 2 / a date): done rows at 12:00 of that day (History shows the date only)."""
+    req = hashlib.sha256(json.dumps(["earlier", str(form.get("pairs")), str(form.get("when"))]).encode()).hexdigest()
+    with connect() as conn, conn.cursor() as cur:
+        seen = _once(cur, key, req)
+        if seen:
+            return seen
+        pairs = _valid(cur, parse_pairs(form.get("pairs")))
+        if not pairs:
+            return _rejected("Pick a job from the list.")
+        day = earlier_day(cur, form.get("when"))
+        if day is None:
+            return _rejected("Pick a day before today, in the last year.")
+        said = _names(cur, pairs)
+        cur.execute("INSERT INTO raw_inbox (channel, content, metadata) VALUES ('web', %s, %s) RETURNING id",
+                    (f"home: {said} (done {day:%d.%m.%Y})", Jsonb({"home": True})))
+        raw = cur.fetchone()["id"]
+        ids = stamp(cur, pairs, "web", raw, day, dated=True)
+        out = {"outcome": "saved", "head": f"Saved: {said} on {day:%d.%m.}"[:160], "home_undo": {"delete": ids}}
+        logbook._audit(cur, "home", "saved", {"raw_id": raw, "earlier": True}, logbook.WEB)
+        _remember(cur, key, req, out)
+    return out
+
+
+def pick_next(form, key=None, session=None) -> dict:
+    """"Done, next job" while the timer runs: the job is ticked (source pick) and the timer goes on with the next job that fits the time
+    left. With nothing that fits (or under 3 minutes left) it is "Done": the timer closes."""
+    pairs_in = parse_pairs(form.get("pairs"))
+    req = hashlib.sha256(json.dumps(["next", pairs_in]).encode()).hexdigest()
+    with connect() as conn, conn.cursor() as cur:
+        seen = _once(cur, key, req)
+        if seen:
+            return seen
+        t = timer_open(cur)
+        pairs = _valid(cur, pairs_in)
+        if not t or t["id"] != _id(form.get("timer")) or t["state"] != "running" or not pairs:
+            return _rejected("That timer is not running.")
+        day = today(cur)
+        cur.execute("SELECT chore_id, zone_id FROM home_done WHERE day = %s AND chore_id = ANY(%s)", (day, [c for c, _ in pairs]))
+        have = {(r["chore_id"], r["zone_id"]) for r in cur.fetchall()}
+        new = [x for x in pairs if x not in have]
+        ids, said = [], _names(cur, new or pairs)
+        if new:
+            cur.execute("INSERT INTO raw_inbox (channel, content, metadata) VALUES ('web', %s, %s) RETURNING id", (f"home: {said}", Jsonb({"home": True})))
+            raw = cur.fetchone()["id"]
+            ids = stamp(cur, new, "pick", raw, day)
+            logbook._audit(cur, "home", "saved", {"raw_id": raw, "pick": True}, logbook.WEB)
+        left = t["left"] // 60
+        nxt = candidates(load(cur), left, skipped(cur, day)) if t["left"] >= NEXT_FROM * 60 else []
+        nxt = [j for j in nxt if not j["over"]]
+        if nxt:
+            cur.execute("UPDATE home_timers SET pairs = %s WHERE id = %s", (Jsonb([list(x) for x in nxt[0]["pairs"]]), t["id"]))
+            head = f'Saved: {said}. Next: {nxt[0]["title"]}'
+        else:
+            _close_open(cur)
+            head = f"Saved: {said}. Nothing else fits in the time left; the timer is closed."
+        out = {"outcome": "saved" if ids else "changed", "head": head[:160]}
+        if ids:
+            out["home_undo"] = {"delete": ids}
+        _remember(cur, key, req, out)
+    return out
+
+
 # ---- the weekly goal ------------------------------------------------------------------------------------
 
 def goal(cur) -> int:
@@ -677,7 +893,7 @@ def week(cur) -> dict:
     day = today(cur)
     monday = day - timedelta(days=day.weekday())
     start = monday - timedelta(days=28)
-    cur.execute("""SELECT day FROM home_done WHERE day >= %s UNION
+    cur.execute("""SELECT day FROM home_done WHERE day >= %s AND source <> 'start' UNION
                    SELECT day FROM home_timers WHERE ends_at IS NOT NULL AND ends_at <= now() AND day >= %s""", (start, start))
     days = {r["day"] for r in cur.fetchall()}
     return {"goal": goal(cur), "this": sum(1 for x in days if x >= monday),
@@ -686,7 +902,8 @@ def week(cur) -> dict:
 
 ACTIONS = {"tick": tick, "alldone": all_done, "remove": remove, "zonenew": zone_new, "zoneedit": zone_edit, "zoneactive": zone_active,
            "chorenew": chore_new, "choreedit": chore_edit, "choreactive": chore_active,
-           "start": start, "pause": pause, "resume": resume, "stop": stop, "pickdone": pick_done, "skip": skip, "goalset": goal_set}
+           "start": start, "pause": pause, "resume": resume, "stop": stop, "pickdone": pick_done, "skip": skip, "goalset": goal_set,
+           "chorezones": chore_zones, "startpoint": start_point, "earlier": earlier, "picknext": pick_next}
 
 
 # ---- the starter list (the owner's 25 chores of the spec, section 7; made once by `python -m app.homeseed`) -------------------------
