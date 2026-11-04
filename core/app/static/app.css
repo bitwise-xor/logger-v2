@@ -35,7 +35,7 @@ header{position:sticky;top:0;z-index:4;background:var(--card);box-shadow:0 1px 0
 .brand svg.ic{width:26px;height:26px;color:var(--accent)}
 nav{display:flex;gap:.15rem;flex:1}
 nav.top{flex-wrap:wrap;align-items:center}
-nav.top>a,nav.top summary{display:inline-flex;align-items:center;gap:.45rem;padding:.45rem .7rem;border-radius:10px;color:var(--dim);
+nav.top>a,nav.top summary{display:inline-flex;align-items:center;gap:.4rem;padding:.45rem .6rem;border-radius:10px;color:var(--dim);
      text-decoration:none;font-weight:500;font-size:.92rem;list-style:none;cursor:pointer;white-space:nowrap}
 nav.top>a svg,nav.top summary svg,.tabs a svg,.tabs summary svg,.panel a svg{order:-1}
 nav.top>a:hover,nav.top summary:hover{color:var(--ink);background:var(--field)}

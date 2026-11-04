@@ -18,8 +18,8 @@ the doc's Current tab first.
 
 1. **Next major build: 53 + 54 + 55: done 04.11.2026, deploy 49**, with "Labs and medication" renamed to "Medical" (name only) and
    core 29 resolved (old flakes, no code change).
-2. **29 + core 26 Usage page complete** (S): every AI cost on the Usage page (label photos, food look-ups and lab reports with their
-   tokens). Needed before coaching adds Opus calls.
+2. **29 + core 26 Usage page complete: done 04.11.2026, deploy 50** (with Home moved right after Gym in both menus): every kind of AI
+   call records its tokens, answers that call the AI are recorded, the page names each kind with its tokens, phone notifications counted.
 3. **52 Coaching** (M-L): the most value left; the data (food, health, sleep, habits, gym, mood, body, home) is rich enough. Plan and a
    clickable mockup first; 4 open questions in its section below.
 4. **45 + core 19 Export of everything** (S-M): one CSV/JSON download, apart from the Sheet and the encrypted backup; useful before the
@@ -42,7 +42,7 @@ wanted), 18 link thoughts (M), 56 T2 body measurements (M), 57 a notification wh
 **Parked or dropped:** 42 and 16 lab report upload (owner, 02.11.2026: "not interested at the moment"), 35 swipe (not needed), 41 weight
 trend (dropped), 44 photo on a food entry (disk), 47 home-screen shortcuts (iOS limits), 51 server-side voice (only if Safari's fails),
 20/21 chat usual meal and exchange log (no ask since 29.10.), core 6 shorter prompt (not worth it now).
-**Done since 02.11.:** 53, 54, 55 and the Medical name (deploy 49, 04.11.), 37 mood and energy (deploy 44), 46 one-tap usual meals (43), 56 body measurements T1 (46), the Home page (47 and 48;
+**Done since 02.11.:** 29 + core 26 complete Usage page and Home after Gym in the menus (deploy 50, 04.11.), 53, 54, 55 and the Medical name (deploy 49, 04.11.), 37 mood and energy (deploy 44), 46 one-tap usual meals (43), 56 body measurements T1 (46), the Home page (47 and 48;
 spec on the branch `docs/home-page-spec`), core 5 (42), 9 and 28 (45), 27.
 
 ## Status (31.10.2026; the first build run of 29.10. is described in `docs/reports/web-app-2026-10-29.md`)
@@ -131,7 +131,7 @@ spec on the branch `docs/home-page-spec`), core 5 (42), 9 and 28 (45), 27.
 | # | Idea | Why | Size |
 |---|---|---|---|
 | 28 | Check that prompt caching works (it is switched on, but the audit log cannot show whether it is used; see `docs/CORE-IMPROVEMENTS.md` items 3 to 6 for AI cost) | Each AI call sends about 7,000 input tokens, mostly the same prompt every time; input is about 98% of the tokens | S |
-| 29 | Token counts for food lookups and lab reports on the Usage page | Known gap: only model and cost are recorded for them | S |
+| 29 | **Done 04.11.2026, deploy 50.** Token counts for food lookups and lab reports on the Usage page | Known gap: only model and cost are recorded for them | S |
 
 ## 8. Open ideas after the 31.10.2026 rounds
 

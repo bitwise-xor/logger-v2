@@ -46,10 +46,11 @@ def test_totals_by_kind_and_the_most_expensive(web):
     page = html.unescape(web[0].get("/web/usage").text)
     assert 'href="/web/usage" aria-current="page">Usage' in page and 'href="/web/usage?r=7" aria-current="page"' in page
     assert re.search(r'AI calls</div><span class="n num">4<', page) and re.search(r'Cost</div><span class="n num">\$0\.021<', page)
-    assert "$0.008</span> <span class=\"of\">2 messages" in page and "18k / 0k" in page and "messages only" in page
-    assert "<td>message</td><td>3</td><td>$0.016</td>" in page and "<td>food lookup</td><td>1</td><td>$0.005</td>" in page
+    assert "$0.008</span> <span class=\"of\">2 messages" in page and "18k / 0k" in page and "some older calls have none" in page
+    assert "<td>message</td><td>3</td><td>18.0k</td><td>0.4k</td><td>$0.016</td>" in page
+    assert "<td>food look-up</td><td>1</td><td>0.0k*</td><td>0.0k*</td><td>$0.005</td>" in page and "no token counts" in page
     top = page.split("Most expensive messages")[1]
-    assert top.index("lunch: dal 300 g and rice") < top.index("food lookup") and "read again by the larger model" in top
+    assert top.index("lunch: dal 300 g and rice") < top.index("food look-up") and "read again by the larger model" in top
     assert "with a big salad on the side and a lassi" not in top  # first 60 characters only
     assert '<span class="pill">private</span>' in top and "tick meds" not in top and "an older message" not in top
 

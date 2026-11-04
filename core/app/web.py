@@ -140,10 +140,10 @@ def shell(session, body: str, status: int = 200, active: str = "") -> HTMLRespon
                 + f'<details class="more"><summary{current if active in rest else ""}>More{icon("more")}</summary>'
                 + f'<div class="panel">{"".join(link(k, *by_key[k]) for k in rest)}</div></details>')
 
-    # Wide screens: the main links in the top bar, the rest under More. Phones: Today, Food, Health, Ideas, Gym and More in a bar at
-    # the bottom (Gym since 02.11.2026: between Habits and Ideas on wide screens).
-    items = menu(("today", "food", "health", "habits", "gym", "ideas", "week", "search"))
-    tabs = menu(("today", "food", "health", "ideas", "gym"), short=True)
+    # Wide screens: the main links in the top bar, the rest under More. Phones: Today, Food, Health, Ideas, Gym, Home and More in a bar at
+    # the bottom (Gym since 02.11.2026: between Habits and Ideas on wide screens; Home right after Gym since 04.11.2026).
+    items = menu(("today", "food", "health", "habits", "gym", "home", "ideas", "week", "search"))
+    tabs = menu(("today", "food", "health", "ideas", "gym", "home"), short=True)
     csrf = session["csrf"]
     bar = (f'<header><div class="bar"><a class="brand" href="/web/">{icon("logo")}Logger</a><nav class="top" aria-label="Main">{items}</nav>'
            f'<button class="iconbtn themebtn" type="button" data-theme-toggle aria-label="Switch between light and dark">'

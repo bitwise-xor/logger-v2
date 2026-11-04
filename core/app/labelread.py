@@ -38,7 +38,7 @@ def read(photo: bytes, media_type: str) -> dict:
         return {"ok": False, "reason": f"Claude could not read it ({e}). Try again, or type the values on the Food page."}
     with connect() as conn, conn.cursor() as cur:  # the cost log, like the other AI calls (no photo, no values)
         logbook._audit(cur, "label_photo", "read" if out.get("readable") else "unreadable",
-                       {"ai": [{"model": usage.model, "usd": round(usage.usd, 6)}]}, logbook.WEB)
+                       {"ai": logbook._ai([usage])}, logbook.WEB)
     if not out.get("readable") or any(out.get(k) is None for k in ("kcal", "protein", "fat", "carbs")):
         return {"ok": False, "reason": (out.get("note") or "No nutrition table could be read.") + " Try a sharper photo of the table, straight on."}
     values = {k: _round(out.get(k)) for k in FIELDS}

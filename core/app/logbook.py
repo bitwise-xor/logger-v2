@@ -50,6 +50,14 @@ def _audit(cur, tool: str, outcome: str, detail: dict, client: str = CHANNEL) ->
     cur.execute("INSERT INTO audit_log (tool, outcome, client, detail) VALUES (%s, %s, %s, %s)", (tool, outcome, client, Jsonb(detail)))
 
 
+def _ai(usages: list) -> list[dict]:
+    """The AI calls of one audit row as the Usage page reads them: model, tokens ("in" is all input tokens; the cached share is kept
+    apart to show whether prompt caching is used), dollars and seconds. Every kind of call writes these (04.11.2026, core item 26)."""
+    return [{"model": u.model, "in": u.input_tokens + u.cache_read_tokens + u.cache_write_tokens, "out": u.output_tokens,
+             "cache_read": u.cache_read_tokens, "cache_write": u.cache_write_tokens, "usd": round(u.usd, 6), "s": round(u.seconds, 2)}
+            for u in usages]
+
+
 def _context(cur, now: datetime) -> tuple[list, list]:
     """The parser's context: the last few messages of the 6 hours before `now`, and what was eaten and drunk that day.
     `now` is a kept message's own time when it is read again later, so later messages are left out."""
@@ -289,11 +297,7 @@ def _save(cur, text: str, now: datetime, r: record.Reading, usages: list, escala
                                         "questions": [q["pending_id"] for q in out.get("questions", [])], "escalated": escalated,
                                         "escalation": r.escalation, **({"tries": tries} if tries > 1 else {}),
                                         **({"secs": round(time.monotonic() - started, 2)} if started is not None else {}),
-                                        "steps": out.get("steps") or out.get("command", {}).get("steps"),
-                                        # "in" is all input tokens; the cached share is kept apart to show whether prompt caching is used
-                                        "ai": [{"model": u.model, "in": u.input_tokens + u.cache_read_tokens + u.cache_write_tokens,
-                                                "out": u.output_tokens, "cache_read": u.cache_read_tokens, "cache_write": u.cache_write_tokens,
-                                                "usd": round(u.usd, 6), "s": round(u.seconds, 2)} for u in usages]}, channel)
+                                        "steps": out.get("steps") or out.get("command", {}).get("steps"), "ai": _ai(usages)}, channel)
     return out
 
 
@@ -353,8 +357,7 @@ def food_lookup(barcode: Optional[str] = None, name: Optional[str] = None, quest
             out = {"outcome": "needs_confirmation", "read_back": cand["offer"] + ".",
                    "questions": [{"pending_id": pid, "question": "Show the user these values; add it (yes) or not (no)?"}]}
         resp = _public(out)
-        _audit(cur, "food_lookup", out["outcome"], {"question_id": question_id, "barcode": bool(barcode),
-                                                    "ai": [{"model": u.model, "usd": round(u.usd, 6)} for u in usages]})
+        _audit(cur, "food_lookup", out["outcome"], {"question_id": question_id, "barcode": bool(barcode), "ai": _ai(usages)})
         return resp
 
 
@@ -377,7 +380,7 @@ def lab_report(text: str, corrections: Optional[str] = None, source: str = "imag
             out = {"outcome": "needs_confirmation", "read_back": rb["read_back"],
                    "questions": [{"pending_id": pid, "question": "Is the whole table right (yes), or what is wrong?"}]}
         resp = _public(out)
-        _audit(cur, "lab_report", out["outcome"], {"ai": [{"model": u.model, "usd": round(u.usd, 6)} for u in usages]})  # no values
+        _audit(cur, "lab_report", out["outcome"], {"ai": _ai(usages)})  # no values
         return resp
 
 
@@ -398,6 +401,7 @@ def answer(question_id: str, reply: str, channel: str = CHANNEL) -> dict[str, An
             _audit(cur, "answer", "rejected", {"why": "unknown question"}, channel)
             return {"outcome": "rejected", "message": "There is no such open question."}
         yes = bool(YES.match(reply))
+        used: list = []  # the AI calls this answer makes (a change command read again, a new to-do), for the Usage page
         if p["tool"] == "log" and p["payload"].get("kind") != "todo" and not (p["payload"].get("lookup") and yes):
             out = record.answer(cur, question_id, reply, now)
         elif p["resolved_at"] is not None or p["expires_at"] < now:
@@ -406,12 +410,13 @@ def answer(question_id: str, reply: str, channel: str = CHANNEL) -> dict[str, An
             out = lookup.accept(cur, p["payload"]["lookup"], now, question_id, p["payload"]["item"]["food"])
         elif p["tool"] == "log":  # which shopping item was meant
             out = todos.answer(cur, provider(), p, reply, now)
+            used = out.pop("usages", None) or []
         elif p["tool"] == "home_choice":  # which chore was meant (homechat.py)
             from . import homechat
             out = homechat.answer(cur, p, reply, now)
         elif p["tool"] == "command":  # which entry was meant: read the request again with the answer
             prev, _ = _context(cur, now)
-            out, _ = commands.handle(cur, provider(), f"{p['payload']['text']}\n(Asked: {p['reason']} Answer: {reply})", now, prev)
+            out, used = commands.handle(cur, provider(), f"{p['payload']['text']}\n(Asked: {p['reason']} Answer: {reply})", now, prev)
             cur.execute("UPDATE pending SET resolved_at = now(), resolution = 'confirmed' WHERE id = %s", (question_id,))
         elif p["tool"] == "command_confirm" and p["payload"].get("ask_past") and (yes or re.match(r"^\s*(no|nein)\b", reply, re.I)):
             out = commands.apply(cur, p["payload"], now, past="yes" if yes else "no")
@@ -455,5 +460,6 @@ def answer(question_id: str, reply: str, channel: str = CHANNEL) -> dict[str, An
         if "question" in out and "questions" not in out:  # a follow-up question about the same item
             out["questions"] = [{"pending_id": question_id, "question": out.pop("question")}]
         resp = _public(out)
-        _audit(cur, "answer", out["outcome"], {"question_id": question_id, "raw_id": out.get("raw_id"), "steps": out.get("steps")}, channel)
+        _audit(cur, "answer", out["outcome"], {"question_id": question_id, "raw_id": out.get("raw_id"), "steps": out.get("steps"),
+                                               **({"ai": _ai(used)} if used else {})}, channel)
         return resp

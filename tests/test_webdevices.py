@@ -27,11 +27,11 @@ IPHONE = {"User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) 
 def test_wide_screens_get_every_link_and_phones_a_tab_bar_with_more(web):
     page = web[0].get("/web/health").text
     top = re.search(r'<nav class="top" aria-label="Main">(.*?)</nav>', page, re.S)[1]
-    for label in ("Today", "Food", "Ideas", "Health", "Habits", "Week", "Private", "Usage", "Medical", "Search", "Settings"):
+    for label in ("Today", "Food", "Ideas", "Health", "Habits", "Gym", "Home", "Week", "Private", "Usage", "Medical", "Search", "Settings"):
         assert f">{label}" in top
     tabs = re.search(r'<nav class="tabs" aria-label="Main menu">(.*?)</nav>', page, re.S)[1]
     bar, panel = tabs.split('<details class="more">')
-    assert [m for m in re.findall(r">(Today|Food|Health|Ideas)<", bar)] == ["Today", "Food", "Health", "Ideas"]
+    assert [m for m in re.findall(r">(Today|Food|Health|Ideas|Gym|Home)<", bar)] == ["Today", "Food", "Health", "Ideas", "Gym", "Home"]
     for label in ("Habits", "Week", "Private", "Usage", "Medical", "Search", "Settings"):
         assert f">{label}" in panel and f">{label}" not in bar
     assert "<summary>More<svg" in panel and 'aria-current="page">Health' in bar

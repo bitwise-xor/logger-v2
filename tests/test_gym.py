@@ -31,7 +31,7 @@ def test_the_gym_pages_need_sign_in_and_show_in_the_menu(web):
     assert "<h1>Gym</h1>" in page and "No exercises yet" in page and 'action="/web/gym/new"' in page
     assert page.count('href="/web/gym"') >= 3  # the top bar, the phone's bottom bar, the tab
     bottom = page[page.index('<nav class="tabs"'):]
-    assert [m for m in re.findall(r'href="/web/(\w*)"', bottom.split("<details")[0])] == ["", "food", "health", "ideas", "gym"]
+    assert [m for m in re.findall(r'href="/web/(\w*)"', bottom.split("<details")[0])] == ["", "food", "health", "ideas", "gym", "home"]
     assert c.get("/web/gym/exercises").status_code == 200
 
 

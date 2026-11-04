@@ -15,7 +15,7 @@ For the core, in order:
 
 1. **29 Night-time test failures: resolved 04.11.2026 without a code change**: the failures were the clock-dependent tests fixed on 30.10.
    (`fd60ce3`) and one chance failure on 02.11. (fixed in `31c49f9`); all 19 runs since passed, and the full suite passes at a simulated 03:15.
-2. **26 Usage page complete** (S): label photos and push as kinds; token counts for food look-ups and lab reports (web 29). Before coaching.
+2. **26 Usage page complete: done 04.11.2026, deploy 50** (`logbook._ai` for every kind; `answer()` records the AI calls it makes; label photos named; notifications counted).
 3. **19 Export** (S-M): with web 45.
 4. **16 `answer()` handlers** (S-M): one small handler per question kind; there are 9 kinds now (`home_choice` added 03.11.2026). Before
    Telegram or coaching add more.
@@ -113,7 +113,7 @@ token counts for food look-ups and lab reports (web list 21, 20, 29).
 | # | Idea | Why | Size |
 |---|---|---|---|
 | 25 | Telegram as a second channel for the nudges, a digest and replies (links items 17 and 18; speech-to-text there is on the "decide later" list) | Notifications now reach only the phone that turned them on; Telegram would also work away from the home network and Tailscale | M-L |
-| 26 | Show the cost of label photos and push messages on the Usage page | `label_photo` rows are in `audit_log`; the Usage page does not list them as a kind yet | S |
+| 26 | **Done 04.11.2026, deploy 50.** Show the cost of label photos and push messages on the Usage page | `label_photo` rows are in `audit_log`; the Usage page does not list them as a kind yet | S |
 
 ## 8. New after 02.11.2026
 
