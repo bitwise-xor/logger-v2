@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 
 from psycopg.types.json import Jsonb
 
-from . import logbook, webpush
+from . import habitaim, logbook, webpush
 from .db import connect
 from .when import BERLIN
 
@@ -54,8 +54,9 @@ def due(cur, now: datetime) -> list[dict]:
         if not cur.fetchone():
             out.append({"kind": "weight", "title": "Weight", "body": "No weight logged yet today."})
     if s["habits"] and now >= wake + timedelta(hours=float(s["habits_after"])):
-        cur.execute("SELECT label FROM checklist_status(%s) WHERE NOT complete", (day,))
-        still = [r["label"] for r in cur.fetchall()]
+        avoid = habitaim.avoid(cur)  # a habit to avoid is never "still open" (04.11.2026)
+        cur.execute("SELECT type_name, label FROM checklist_status(%s) WHERE NOT complete", (day,))
+        still = [r["label"] for r in cur.fetchall() if r["type_name"] not in avoid]
         if still:
             out.append({"kind": "habits", "title": "Habits still open", "body": ", ".join(still)})
     if s["idle"]:

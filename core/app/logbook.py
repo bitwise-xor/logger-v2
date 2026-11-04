@@ -114,11 +114,14 @@ def _public(out: dict) -> dict:
     return out
 
 
-def log(text: str, idempotency_key: Optional[str] = None, pred: Optional[dict] = None, channel: str = CHANNEL) -> dict[str, Any]:
+def log(text: str, idempotency_key: Optional[str] = None, pred: Optional[dict] = None, channel: str = CHANNEL,
+        button: bool = False) -> dict[str, Any]:
     """pred: a ready parser answer (the web app's quick buttons, or tape.read for a line of body measurements); the AI then
     does not read the text and the message is saved at once. Without one, the words are kept first (held.py) and then read and saved by read_held, so an AI or save
     failure cannot lose them (01.11.2026).
-    channel: where the message came from (CHANNEL or WEB), stored with it and in the audit log."""
+    channel: where the message came from (CHANNEL or WEB), stored with it and in the audit log.
+    button: a tap on a button that ticks or toggles (a habit, the check-in): the same words again within 30 minutes are meant
+    (tick, untick, tick again) and do not ask "log it again?"; a double tap is still stopped by the idempotency key (04.11.2026)."""
     now = clock()
     if not text or not text.strip():
         return {"outcome": "rejected", "message": "Nothing saved: the message is empty."}
@@ -138,10 +141,12 @@ def log(text: str, idempotency_key: Optional[str] = None, pred: Optional[dict] =
             pred = tape.read(cur, text)
         hid = held.find(cur, idempotency_key) if pred is None else None  # sent again while it waits: read the kept one
         if hid is None:
-            cur.execute("""SELECT received_at FROM raw_inbox WHERE channel = ANY(%s) AND lower(content) = lower(%s)
-                           AND received_at > %s - interval '30 minutes' AND NOT (metadata ? 'unprocessed')
-                           ORDER BY received_at DESC LIMIT 1""", (LIVE_CHANNELS, text, now))
-            same = cur.fetchone()
+            same = None
+            if not button:
+                cur.execute("""SELECT received_at FROM raw_inbox WHERE channel = ANY(%s) AND lower(content) = lower(%s)
+                               AND received_at > %s - interval '30 minutes' AND NOT (metadata ? 'unprocessed')
+                               ORDER BY received_at DESC LIMIT 1""", (LIVE_CHANNELS, text, now))
+                same = cur.fetchone()
             waiting = held.waiting_same(cur, text, now) if pred is None and not same else None
             if same or waiting:  # the same words again within 30 minutes: ask before saving twice
                 pid = "p" + secrets.token_hex(4)

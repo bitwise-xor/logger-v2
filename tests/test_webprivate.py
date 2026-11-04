@@ -101,3 +101,20 @@ def test_bad_input_changes_nothing(web, fake):
     assert "from the lists" in act(web, "/web/private/entry", id=f"P{pid}", act="save", summary="x", thought_type="poem").text
     assert "hh:mm" in act(web, "/web/private/entry", id=f"P{pid}", act="save", summary="x", day=day().isoformat(), time="25:00").text
     assert [r["content"] for r in rows()] == ["gratitude: keep me"]
+
+
+def test_a_gratitude_entry_after_midnight_belongs_to_the_evening_before(web, fake):
+    """Logging days run to 05:00, like Today (midnight to midnight hid such entries until 04.11.2026)."""
+    d = day()
+    entry("gratitude", "gratitude: late night tea", days_ago=1, hm="01:30")  # 01:30 after the day two days back
+    c, _ = web
+    assert "late night tea" in c.get(f"/web/private?view=grat&day={(d - timedelta(days=2)).isoformat()}").text
+    assert "late night tea" not in c.get(f"/web/private?view=grat&day={(d - timedelta(days=1)).isoformat()}").text
+    week = c.get(f"/web/private?view=grat&mode=week&day={(d - timedelta(days=2)).isoformat()}").text
+    assert f"{d - timedelta(days=2):%a %d.%m.}" in week
+
+
+def test_a_search_with_a_space_survives_an_action():
+    from app import ideaspage, privatepage
+    assert ideaspage.safe_back("/web/ideas?q=new+app&open=12") == "/web/ideas?q=new+app&open=12"
+    assert privatepage.safe_back("/web/private?q=two+words") == "/web/private?q=two+words"

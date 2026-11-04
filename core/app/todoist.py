@@ -1,6 +1,8 @@
 """Todoist behind one small interface, so tests (and a later replacement) can swap it. TodoistAPI talks to Todoist's
 current API (api/v1; the old REST v2 answers 410 since 2026). FakeTodoist keeps tasks in memory for tests and replays."""
+import contextlib
 import json
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -9,6 +11,19 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional, Protocol
 
 BASE = "https://api.todoist.com/api/v1"
+QUICK_TIMEOUT = 5  # a page waiting for Todoist (04.11.2026): 5 s and no second try, instead of up to about 30 s
+_quick = threading.local()
+
+
+@contextlib.contextmanager
+def quick():
+    """Calls made in this thread inside the block wait QUICK_TIMEOUT once (the Todoist page); the chat's keep the long wait."""
+    before = getattr(_quick, "on", False)
+    _quick.on = True
+    try:
+        yield
+    finally:
+        _quick.on = before
 
 
 class TodoistError(Exception):
@@ -38,18 +53,19 @@ class TodoistAPI:
         data = json.dumps(body).encode() if body is not None else None
         req = urllib.request.Request(url, data=data, method=method, headers={
             "Authorization": "Bearer " + self.token, **({"Content-Type": "application/json"} if data else {})})
-        for attempt in (1, 2):
+        fast = getattr(_quick, "on", False)
+        for attempt in ((1,) if fast else (1, 2)):
             try:
-                with urllib.request.urlopen(req, timeout=self.timeout) as r:
+                with urllib.request.urlopen(req, timeout=QUICK_TIMEOUT if fast else self.timeout) as r:
                     raw = r.read()
                     return json.loads(raw) if raw else None
             except urllib.error.HTTPError as e:
-                if e.code in (429, 500, 502, 503, 504) and attempt == 1:
+                if e.code in (429, 500, 502, 503, 504) and attempt == 1 and not fast:
                     time.sleep(1.5)
                     continue
                 raise TodoistError(f"Todoist answered {e.code} for {method} {path}") from e
             except (urllib.error.URLError, TimeoutError) as e:
-                if attempt == 1:
+                if attempt == 1 and not fast:
                     time.sleep(1.5)
                     continue
                 raise TodoistError(f"Todoist is not reachable ({type(e).__name__})") from e

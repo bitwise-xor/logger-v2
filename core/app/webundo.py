@@ -3,6 +3,7 @@ stays until the device's next action (web.py done keeps it in web_sessions.undo)
 a value, a usual meal, an Again chip) is undone by the chat's own undo of that message; a delete or a correction of a
 food entry, a tick or a health value is undone by putting the rows back as they were just before it."""
 import secrets
+import time
 from typing import Optional
 
 from psycopg.types.json import Jsonb
@@ -29,8 +30,21 @@ def snapshot(refs: list[str]) -> list[dict]:
     return rows
 
 
+MAX_AGE_S = 15 * 60  # the Undo bar goes after 15 minutes: an old copy put back could undo a later change made elsewhere (04.11.2026)
+
+
+def fresh(rec) -> bool:
+    """Whether an Undo record is still offered (records from before 04.11.2026 have no time and are not)."""
+    return bool(rec) and time.time() - float(rec.get("at") or 0) < MAX_AGE_S
+
+
 def record(resp: dict, rows: Optional[list] = None) -> Optional[dict]:
-    """What the Undo bar offers after this reply, or None (then the bar goes away)."""
+    """What the Undo bar offers after this reply (with the time it was made), or None (then the bar goes away)."""
+    rec = _record(resp, rows)
+    return rec and {**rec, "at": time.time()}
+
+
+def _record(resp: dict, rows: Optional[list] = None) -> Optional[dict]:
     if resp.get("held_undo"):  # an unread message deleted on Today or Recent (held.py)
         return {"token": secrets.token_urlsafe(12), "head": resp.get("head") or "Deleted.", "held": int(resp["held_undo"])}
     if resp.get("gym_undo") and not resp.get("replayed"):  # a gym tick or a removed gym row (gym.py)

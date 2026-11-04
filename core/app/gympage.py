@@ -25,7 +25,12 @@ VALS = ("sets", "reps", "kg", "minutes", "km")
 
 
 def _tabs(on: str) -> str:
-    links = "".join(f'<a href="{href}"' + (' aria-current="page"' if k == on else "") + f">{label}</a>" for k, href, label in TABS)
+    """The Activity tab shows once watch data has come (04.11.2026: until then it was set-up steps only; they are linked from
+    Settings > Devices)."""
+    with connect() as c:
+        watch = c.execute("SELECT EXISTS (SELECT 1 FROM watch_metrics) OR EXISTS (SELECT 1 FROM watch_workouts) AS any").fetchone()["any"]
+    links = "".join(f'<a href="{href}"' + (' aria-current="page"' if k == on else "") + f">{label}</a>" for k, href, label in TABS
+                    if k != "activity" or watch or on == "activity")
     return f'<div class="head"><h1>Gym</h1><nav class="seg" aria-label="Gym">{links}</nav></div>'
 
 
@@ -74,10 +79,18 @@ def _field(ex_id: int, kind: str, vals: dict) -> str:
 def _row(ex: dict, d: dict, csrf: str, plan: dict | None = None, first: bool = True) -> str:
     mine = [r for r in d["now"] if r["exercise_id"] == ex["id"]]
     prev = d["last"].get(ex["id"], [])
-    pre = mine[-1] if mine else prev[0] if prev else None  # today's last row, else the last session's first row
+    # today's last row, else the last session's heaviest row (its first until 04.11.2026: the lightest of a pyramid)
+    top = max(prev, key=lambda r: (float(r["kg"] or 0), float(r["minutes"] or 0))) if prev else None
+    pre = mine[-1] if mine else top
     vals = {k: pre[k] for k in VALS} if pre else dict(DEFAULT[ex["kind"]])
     if not pre and plan and plan["sets"] and ex["kind"] != "cardio":  # the first time: the plan's sets × reps
         vals.update(sets=plan["sets"], reps=plan["reps"])
+    if not pre:  # the first time with complete numbers (cardio's 20 minutes, the plan's sets × reps): the circle logs them too
+        try:
+            gym.values(ex["kind"], {k: _plain(v) for k, v in vals.items() if v is not None})
+            pre = vals
+        except ValueError:
+            pass
     up = ""
     if mine and prev and ex["kind"] == "weights":
         top_now, top_then = max(float(r["kg"] or 0) for r in mine), max(float(r["kg"] or 0) for r in prev)
@@ -102,16 +115,18 @@ def _row(ex: dict, d: dict, csrf: str, plan: dict | None = None, first: bool = T
                    for r in mine) if len(mine) > 1 else ""
     editor = (f'<form class="fe-form gform" method="post" action="/web/gym/tick">{base}{hidden("key", key())}{_field(ex["id"], ex["kind"], vals)}'
               f'<button class="primary sm" type="submit">{"Add another row" if mine else "Log"}</button></form>{rows}')
-    return (f'<div class="gx{" done" if mine else ""}">{tick}<details class="gedit"{"" if pre or mine or not first else " open"}>'
+    return (f'<div class="gx{" done" if mine else ""}" id="x{ex["id"]}">{tick}<details class="gedit"{"" if pre or mine or not first else " open"}>'
             f'<summary><span class="gname">{esc(ex["name"])}</span><span class="gval">{esc(said)}{up}</span>'
             f'<span class="small">{esc(lastline)}</span></summary>{editor}</details></div>')
 
 
-def _new(csrf: str, d: dict, back: str, open_: bool = False) -> str:
+def _new(csrf: str, d: dict, back: str, open_: bool = False, today: bool = False) -> str:
+    """today: the Workout tab's form, which also puts the exercise on today's day of the split (04.11.2026: it went to the
+    closed "Other exercises" and seemed lost)."""
     gone = "".join(f'<option value="{esc(x["name"])}"></option>' for x in d["exercises"] if not x["active"])
     kinds = "".join(f'<option value="{k}">{v}</option>' for k, v in gym.KINDS.items())
     return (f'<details class="lookup"{" open" if open_ else ""}><summary class="ghost">+ {"New" if open_ else "Add"} exercise</summary>'
-            f'<form class="fbox" method="post" action="/web/gym/new">{hidden("csrf", csrf)}{here(back)}<div class="fields">'
+            f'<form class="fbox" method="post" action="/web/gym/new">{hidden("csrf", csrf)}{here(back)}{hidden("today", "1") if today else ""}<div class="fields">'
             '<label>Name<input name="name" maxlength="60" required list="gym-retired" autocomplete="off" placeholder="e.g. Bench press"></label>'
             f'<label>Kind<select name="kind">{kinds}</select></label>'
             '<label>Other words (optional)<input name="words" maxlength="200" placeholder="e.g. bench, chest press"></label></div>'
@@ -204,7 +219,7 @@ def render_workout(csrf: str, q=None) -> str:
     hint = ('<p class="small hint">Tap the circle to log the numbers shown, tap the name to change them. Undo is in the bar above.</p>'
             if shown or other else "")
     return (_tabs("workout") + f'<div class="card"><h2><span>{title}</span><span class="small">{status}</span></h2>{_daypick(sp, csrf)}'
-            f'<div class="gx-list">{rows}</div>{other}{hint}{_new(csrf, d, "/web/gym")}</div>{_split_card(d)}<div class="card">{_weeks(d)}</div>')
+            f'<div class="gx-list">{rows}</div>{other}{hint}{_new(csrf, d, "/web/gym", today=True)}</div>{_split_card(d)}<div class="card">{_weeks(d)}</div>')
 
 
 def _numbers(item_id: int, item: dict | None, csrf: str, action: str, extra: str = "", button: str = "Save") -> str:
@@ -426,7 +441,6 @@ def _best_row(kind: str, rows: list) -> dict:
 def render_history(csrf: str, q=None) -> str:
     """Workouts by date, newest first, with their day of the split and what was done (the last 60)."""
     with connect() as conn, conn.cursor() as cur:
-        ds = gym.days(cur)
         cur.execute("""SELECT w.id, w.day, w.started_at, w.ended_at, d.id AS split_id, d.name AS split_name
                        FROM workouts w LEFT JOIN workout_days d ON d.id = w.split_day_id ORDER BY w.day DESC, w.id DESC LIMIT 60""")
         ws = cur.fetchall()
@@ -439,7 +453,7 @@ def render_history(csrf: str, q=None) -> str:
         return _tabs("history") + '<div class="card"><p class="empty">No workouts yet.</p></div>'
     cards = []
     for w in ws:
-        split = (gym.label(ds, {"id": w["split_id"], "name": w["split_name"]}) if w["split_id"] else "Free workout")
+        split = w["split_name"] if w["split_id"] else "Free workout"  # the name only: a number followed today's days (until 04.11.2026)
         start = w["started_at"].astimezone(rules.BERLIN)
         ticks = [r["logged_at"] for r in sets.get(w["id"], [])]
         end = w["ended_at"] or (max(ticks) if ticks else None)  # no Finish button: the last tick ends it

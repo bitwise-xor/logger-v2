@@ -5,7 +5,7 @@ import re
 from datetime import date, timedelta
 from urllib.parse import urlencode
 
-from . import rules
+from . import rules, trendspage
 from .db import connect
 from .todaypage import MACROS, _cols, _head, _n, _plain
 from .webentry import esc, hidden, key
@@ -27,7 +27,7 @@ SORTS = (("eaten", "Most eaten", "count(e.id) DESC, lower(f.name)"),
          ("name", "Name A to Z", "lower(f.name)"))
 MAX_RANGE = 366
 LIST_LIMIT = 400
-BACK = re.compile(r"/web/(food(/catalogue|/usual)?)?(\?[A-Za-z0-9=&._%-]*)?")  # the Food page, or Today (its food editor)
+BACK = re.compile(r"/web/(food(/catalogue|/usual)?)?(\?[A-Za-z0-9=&._%+-]*)?")  # the Food page, or Today (its food editor)
 ADD_ROWS = 5  # empty "add a food" rows in the editor of a usual meal
 
 
@@ -57,11 +57,6 @@ def _dm(d: date) -> str:
     return d.strftime("%a %d.%m.")
 
 
-def _food_options(cur, selected=None) -> str:
-    cur.execute("SELECT id, name FROM foods WHERE active ORDER BY lower(name)")
-    return "".join(f'<option value="{r["id"]}"{" selected" if r["id"] == selected else ""}>{esc(r["name"])}</option>' for r in cur.fetchall())
-
-
 # ---- one day ---------------------------------------------------------------------------------------
 
 def _day_rows(cur, day: date):
@@ -75,16 +70,26 @@ def _day_rows(cur, day: date):
 
 
 def _entry_panel(cur, csrf: str, i: dict, back: str) -> str:
+    """An entry's editor. Since 04.11.2026 the food is typed (the list narrows while typing) instead of picked from a list of
+    every food, and the amount can be given in one of the food's units ("2 slice")."""
     t = i["time"].strftime("%H:%M") if i["time"] and i["time_known"] else ""
-    base = hidden("csrf", csrf) + hidden("id", f"f{i['id']}") + hidden("back", back)
-    return (f'<tr class="panel"><td colspan="5"><form class="fbox" method="post" action="/web/food/entry">{base}<div class="fields">'
-            f'<label>Food<select name="food">{_food_options(cur, i["food_id"])}</select></label>'
-            f'<label>Amount ({esc(i["unit"])})<input type="number" name="amount" min="0" step="any" inputmode="decimal" value="{_plain(i["amount"])}"></label>'
+    base = hidden("csrf", csrf) + hidden("id", f"f{i['id']}") + hidden("back", back) + hidden("food", str(i["food_id"]))
+    cur.execute("SELECT name FROM foods WHERE active OR id = %s ORDER BY lower(name)", (i["food_id"],))
+    datalist = '<datalist id="foods-dl">' + "".join(f'<option value="{esc(r["name"])}">' for r in cur.fetchall()) + "</datalist>"
+    cur.execute("SELECT f.basis, u.unit, u.grams FROM foods f LEFT JOIN food_units u ON u.food_id = f.id WHERE f.id = %s ORDER BY u.grams", (i["food_id"],))
+    us = cur.fetchall()
+    basis = us[0]["basis"] if us else i["unit"]
+    units = f'<option value="{esc(basis)}" selected>{esc(basis)}</option>' + "".join(
+        f'<option value="{esc(u["unit"])}">{esc(u["unit"])} ({_plain(u["grams"])} {esc(basis)})</option>' for u in us if u["unit"])
+    return (f'<tr class="panel"><td colspan="5">{datalist}<form class="fbox" method="post" action="/web/food/entry">{base}<div class="fields">'
+            f'<label>Food<input name="food_name" list="foods-dl" autocomplete="off" value="{esc(i["food"])}" required></label>'
+            f'<label>Amount<span class="row"><input type="number" name="amount" min="0" step="any" inputmode="decimal" value="{_plain(i["amount"])}">'
+            f'<select name="unit" aria-label="Unit">{units}</select></span></label>'
             f'<label>Time<input type="time" name="time" value="{t}"></label></div>'
             '<p class="row"><button class="primary sm" type="submit" name="act" value="save">Save</button>'
             '<button class="ghost sm bad" type="submit" name="act" value="delete">Delete</button>'
             f'<a class="ghost sm dim" href="{esc(back)}">Cancel</a>'
-            '<span class="small">You see the change first, then Yes. The meal follows the time (2-hour rule).</span></p></form></td></tr>')
+            '<span class="small">Saved at once; Undo is on the reply. The meal follows the time (2-hour rule).</span></p></form></td></tr>')
 
 
 def _note_panel(csrf: str, i: dict, back: str) -> str:
@@ -197,14 +202,16 @@ def _range_view(cur, csrf: str, start: date, end: date, today: date, open_day) -
     heads = "".join(f'<th><span class="long">{lg}</span><span class="short">{sh}</span>'
                     + (f' <span class="small">/ {_n(newest["target_" + k])}</span>' if newest and newest["target_" + k] else "") + "</th>"
                     for k, lg, sh in keys)
-    rows, full = [], []
+    rows, full, skipped = [], [], []
     d = end
     while d >= start:
         r = tot.get(d)
         here = url("/web/food", **{"from": start.isoformat(), "to": end.isoformat()})
         if r and r["kcal"] is not None:
-            if d != today:
+            if d != today and not trendspage.partly(r):  # a partly logged day stays out of the average (04.11.2026)
                 full.append(r)
+            elif d != today:
+                skipped.append(d)
             cells = ""
             for k, _l, _s in keys:
                 t, v = r["target_" + k], r[k]
@@ -221,7 +228,8 @@ def _range_view(cur, csrf: str, start: date, end: date, today: date, open_day) -
         d -= timedelta(days=1)
     if full:
         avg = "".join(f"<td>{_n(sum(float(r[k]) for r in full) / len(full))}</td>" for k, _l, _s in keys)
-        rows.append(f'<tr class="sum"><td>Average <span class="small">{len(full)} full days</span></td>{avg}</tr>')
+        rows.append(f'<tr class="sum"><td>Average <span class="small">{len(full)} full days'
+                    + (f', {len(skipped)} partly logged left out' if skipped else "") + f'</span></td>{avg}</tr>')
     m0 = today.replace(day=1)
     lm_end = m0 - timedelta(days=1)
     quick = (("7 days", today - timedelta(days=6), today), ("30 days", today - timedelta(days=29), today),
@@ -317,7 +325,16 @@ def _food_detail(cur, csrf: str, fid: int, back: str, close: str = "") -> str:
             f'<div><p class="small">Words the logger knows it by</p><div class="row">{words or "<span class=empty>none</span>"}'
             f'<form class="row" method="post" action="/web/food/words">{base}{hidden("act", "add")}'
             '<input name="word" maxlength="60" placeholder="add a word" aria-label="Add a word"><button class="ghost sm" type="submit">Add</button></form></div></div>'
-            f'<div class="grid2"><div><p class="small">Units</p>{"<br>".join(f"1 {esc(u["unit"])} = {_plain(u["grams"])} {esc(f["basis"])}" for u in units) or "<span class=empty>none</span>"}</div>'
+            f'<form method="post" action="/web/food/basics">{base}<p class="small">Name and use</p><div class="fields">'
+            f'<label class="wide">Name<input name="name" value="{esc(f["name"])}" maxlength="120" required></label>'
+            f'<label class="row small"><input type="checkbox" name="drink" value="1"{" checked" if f["is_drink"] else ""}> Is a drink</label>'
+            f'<label class="row small"><input type="checkbox" name="hide" value="1"{"" if f["active"] else " checked"}> Hide from the lists</label></div>'
+            '<p class="row"><button class="primary sm" type="submit">Save</button><span class="small">Saved at once. A hidden food keeps its '
+            'past entries; it no longer shows in suggestions, chips or the catalogue.</span></p></form>'
+            f'<div class="grid2"><div><p class="small">Units</p>{"<br>".join(f"1 {esc(u["unit"])} = {_plain(u["grams"])} {esc(f["basis"])}" for u in units) or "<span class=empty>none</span>"}'
+            f'<form class="row" method="post" action="/web/food/unit">{base}<input name="unit" maxlength="30" placeholder="slice" aria-label="Unit name" class="grow">'
+            f'<label class="small">= <input type="number" name="grams" min="0" step="any" inputmode="decimal" placeholder="35" aria-label="Weight of one"> {esc(f["basis"])}</label>'
+            '<button class="ghost sm" type="submit">Add unit</button></form></div>'
             f'<form method="post" action="/web/food/barcode">{base}<p class="small">Barcode</p><div class="row">'
             f'<input name="barcode" value="{esc(f["barcode"] or "")}" inputmode="numeric" maxlength="14" placeholder="type or paste" aria-label="Barcode">'
             f'<button class="primary sm" type="submit">Save</button></div></form></div>{f"<p class=row>{shut}</p>" if shut else ""}</div>')
@@ -340,7 +357,8 @@ def _usual_meals(cur, csrf: str, um, back: str) -> str:
         head = (f'<p class="row"><a href="{esc(link)}#U{uid}" id="U{uid}"><b>{esc(name)}</b></a>'
                 f'<span class="small">{len(items)} items · {_n(kcal)} kcal · P {_n(prot)}</span></p>')
         if open_:
-            rows = "".join(f'<tr><td><select name="food_{k}" aria-label="Food">{_food_options(cur, i["food_id"])}</select></td>'
+            rows = "".join(f'<tr><td><input name="food_{k}" list="foods-dl" autocomplete="off" value="{esc(i["food"])}" aria-label="Food" required>'
+                           f'{hidden(f"was_{k}", i["food"])}{hidden(f"fid_{k}", str(i["food_id"]))}</td>'  # typed, not a list of every food (04.11.2026)
                            f'<td><input type="number" name="g_{k}" min="0" step="any" value="{_plain(i["grams"])}" aria-label="Amount"> {esc(i["basis"])}</td>'
                            f'<td><label class="small"><input type="checkbox" name="rm_{k}" value="1"> remove</label></td></tr>'
                            for k, i in enumerate(items))
@@ -396,7 +414,7 @@ def render_catalogue(csrf: str, q) -> str:
     lookup = (f'<details class="lookup"><summary class="ghost sm">New food</summary><form class="fbox row" method="post" action="/web/food/lookup">'
               f'{hidden("csrf", csrf)}<input name="name" maxlength="120" required class="grow" placeholder="Food name or barcode" aria-label="Food name or barcode">'
               '<button class="primary sm" type="submit">Look up</button><span class="small">USDA and Open Food Facts, like the chat. '
-              'The result waits on Questions for your Add.</span></form></details>')
+              'The result shows on Today with Yes to add it.</span></form></details>')
     more = f'<p class="small">Showing the first {LIST_LIMIT}; search to find others.</p>' if len(rows) == LIST_LIMIT else ""
     table = (f'<div class="tablewrap"><table class="ft"><thead><tr><th>Food <span class="small">per 100 g or ml</span></th><th>kcal</th>'
              '<th><span class="long">Protein</span><span class="short">P</span></th><th><span class="long">Fat</span><span class="short">F</span></th>'

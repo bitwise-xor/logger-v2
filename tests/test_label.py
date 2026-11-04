@@ -92,3 +92,23 @@ def test_missing_or_impossible_values_add_nothing(web, fake):
 def test_today_has_the_photo_button_and_the_form_to_check(web):
     page = web[0].get("/web/").text
     assert "data-label-file" in page and 'capture="environment"' in page and 'action="/web/food/labeladd"' in page and "data-label-form hidden" in page
+
+
+def test_the_scanner_asks_open_food_facts_in_the_dialog_and_add_logs_it(web, fake, monkeypatch):
+    """04.11.2026: "Look it up" fills the label form from Open Food Facts (nothing saved); Add with an amount saves and logs."""
+    from app import foodfacts
+    prod = {"product_name": "Test oat drink", "brands": "Testmarke", "quantity": "1 l",
+            "nutriments": {"energy-kcal_100g": 46, "proteins_100g": 1, "fat_100g": 1.5, "carbohydrates_100g": 6.6, "salt_100g": 0.1}}
+    monkeypatch.setattr(foodfacts, "product", lambda code: prod if code == "4012345678901" else None)
+    c, _ = web
+    j = c.get("/web/foods/off.json?code=4012345678901").json()
+    assert j["ok"] and j["basis"] == "ml" and j["values"]["kcal"] == 46 and j["values"]["salt_g"] == 0.1 and j["brand"] == "Testmarke"
+    miss = c.get("/web/foods/off.json?code=4000000000000").json()
+    assert not miss["ok"] and "photo of the label" in miss["reason"]
+    assert owner_sql("SELECT count(*) AS n FROM foods")[0]["n"] == 0  # nothing saved by the look-up
+    page = act(web, "/web/food/labeladd", name="Test oat drink (Testmarke)", basis="ml", kcal="46", protein="1", fat="1.5", carbs="6.6",
+               salt_g="0.1", barcode="4012345678901", amount="250", time="09:00", key="off1", **{"from": "off"}).text
+    assert "Added Test oat drink (Testmarke)" in page
+    f = owner_sql("SELECT source, barcode, source_note FROM foods")[0]
+    assert (f["source"], f["barcode"]) == ("database", "4012345678901") and f["source_note"].startswith("Open Food Facts")
+    assert owner_sql("SELECT count(*) AS n FROM food_entries")[0]["n"] == 1

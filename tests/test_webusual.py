@@ -103,3 +103,20 @@ def test_added_rows_are_checked_and_empty_rows_are_ignored(web, fake):
     assert "Nothing changed." in act(web, "/web/food/usualmeal", **blank).text
     one = act(web, "/web/food/usualmeal", **{**blank, "add_name_4": "Test milk", "add_g_4": "120"})  # a single food in the last row still works
     assert "Test milk 120 added" in html.unescape(one.text)
+
+
+def test_a_usual_meals_food_is_swapped_by_typing_its_name(web, fake):
+    """04.11.2026: the editor's rows are typed foods (the list narrows while typing), not a list of every food."""
+    oats = food("Test oats", 400, 13, 7, 60)
+    food("Test skyr", 63, 11, 0.2, 4)
+    mid = owner_sql("INSERT INTO usual_meals (name) VALUES ('test bowl') RETURNING id")[0]["id"]
+    owner_sql("INSERT INTO usual_meal_items (meal_id, food_id, grams, sort_order) VALUES (%s, %s, 60, 10)", mid, oats)
+    page = web[0].get(f"/web/food/usual?um=U{mid}").text
+    assert 'name="food_0" list="foods-dl" autocomplete="off" value="Test oats"' in page and "<select name=\"food_0\"" not in page
+    form = dict(id=f"U{mid}", rows="1", food_0="test skyr", was_0="Test oats", fid_0=str(oats), g_0="150", name="test bowl", act="save")
+    shown = act(web, "/web/food/usualmeal", **form)
+    assert "please confirm" in shown.text
+    act(web, "/web/food/usualmeal", **form, confirmed="1")
+    assert items(mid) == [("Test skyr", 150.0)]
+    wrong = act(web, "/web/food/usualmeal", **{**form, "food_0": "nope"})
+    assert "Pick each food from the list" in wrong.text

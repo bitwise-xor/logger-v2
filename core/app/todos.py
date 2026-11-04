@@ -29,6 +29,7 @@ WAIT_DAYS = 3
 
 CLIENT: Optional[Todoist] = None  # created on first use; tests put a fake here
 _cache: dict = {}
+_last: dict = {}  # key -> (time read, value): the last good answer, kept when the cache is cleared (the page's fallback)
 
 
 def client() -> Todoist:
@@ -44,7 +45,15 @@ def _cached(key, fetch):
         return hit[1]
     value = fetch()
     _cache[key] = (time.monotonic(), value)
+    _last[key] = (datetime.now(), value)
     return value
+
+
+def last_good(*keys):
+    """(the oldest read time, [values]) of the last good answers for all keys, or None (none yet since the start)."""
+    if not all(k in _last for k in keys):
+        return None
+    return min(_last[k][0] for k in keys), [_last[k][1] for k in keys]
 
 
 def forget() -> None:

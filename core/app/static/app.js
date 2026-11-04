@@ -80,14 +80,63 @@ document.addEventListener("DOMContentLoaded", () => {
   // Barcode scanner on Today (31.10.2026)
   const scan = document.querySelector("button[data-scan]");
   if (scan) setupScan(scan);
-  document.addEventListener("submit", () => document.body.classList.add("busy"));
-  window.addEventListener("pageshow", () => document.body.classList.remove("busy"));
+  // Saving keeps your place (04.11.2026): the page comes back scrolled to the block the form was in (its nearest id, at the same
+  // height on the screen), not at the top. Not when the reply needs you (a question or a refusal shows at the top). The Undo bar
+  // then floats near the bottom for a few seconds, so it stays in reach.
+  document.addEventListener("submit", e => {
+    const f = e.target;
+    if (e.defaultPrevented || (f.getAttribute("method") || "get").toLowerCase() !== "post") return;
+    const a = f.id ? f : f.closest("[id]:not(main):not(body)");
+    try {
+      sessionStorage.setItem("keep", JSON.stringify({p: location.pathname, a: a ? a.id : "", o: a ? a.getBoundingClientRect().top : 0,
+                                                    y: window.scrollY, t: Date.now()}));
+    } catch (err) { /* private mode: the page starts at the top as before */ }
+  });
+  // A sent form's buttons lock until the next page, so a second tap cannot send it again (a double tap wiped the Undo bar until
+  // 04.11.2026). After the values are read (setTimeout), so the pressed button's own value still goes; back after 8 s just in case.
+  document.addEventListener("submit", e => {
+    document.body.classList.add("busy");
+    const f = e.target;
+    if (e.defaultPrevented || (f.getAttribute("method") || "get").toLowerCase() !== "post") return;
+    setTimeout(() => {
+      const bs = [...f.querySelectorAll("button:not([type=button])")].filter(b => !b.disabled);
+      bs.forEach(b => { b.disabled = true; b.dataset.sent = "1"; });
+      setTimeout(() => bs.forEach(b => { b.disabled = false; delete b.dataset.sent; }), 8000);
+    }, 0);
+  });
+  window.addEventListener("pageshow", () => {
+    document.body.classList.remove("busy");
+    document.querySelectorAll("button[data-sent]").forEach(b => { b.disabled = false; delete b.dataset.sent; });
+  });
+
+  // Time fields that start at "now" follow the clock until they are changed: the home-screen app keeps a page for hours, and
+  // a tap should log the time of the tap, not of the page (04.11.2026). Today, opened again after 30 minutes with nothing
+  // typed, loads afresh (new day after 05:00, ticks made elsewhere).
+  const nowFields = [...document.querySelectorAll("input[data-nowtime]")];
+  const hhmm = () => { const d = new Date(); return String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0"); };
+  nowFields.forEach(i => i.addEventListener("input", () => { i.dataset.touched = "1"; }));
+  const freshTimes = () => nowFields.forEach(i => { if (!i.dataset.touched) i.value = hhmm(); });
+  document.addEventListener("submit", e => {  // before the form's values are read
+    e.target.querySelectorAll("input[data-nowtime]").forEach(i => { if (!i.dataset.touched) i.value = hhmm(); });
+  }, true);
+  const builtAt = Date.now();
+  const untouched = () => (!box || !box.value.trim()) && !nowFields.some(i => i.dataset.touched)
+    && !document.querySelector("dialog[open], details[open], input:focus, textarea:focus");
+  const comeBack = () => {
+    if (document.hidden) return;
+    if (location.pathname === "/web/" && Date.now() - builtAt > 30 * 60000 && untouched()) { location.reload(); return; }
+    freshTimes();
+  };
+  document.addEventListener("visibilitychange", comeBack);
+  window.addEventListener("pageshow", e => { if (e.persisted) comeBack(); });
+  if (nowFields.length) setInterval(freshTimes, 30000);
 
   // "Correct it" / "Log again": the original message goes back into the entry box
   document.querySelectorAll("[data-fill]").forEach(b => b.addEventListener("click", e => {
     if (!box) return;
     e.preventDefault();
     box.value = b.dataset.fill;
+    box.style.height = ""; box.style.height = box.scrollHeight + "px";  // the box grows to show all of it (04.11.2026)
     box.focus();
     window.scrollTo({top: 0});
   }));
@@ -160,13 +209,32 @@ document.addEventListener("DOMContentLoaded", () => {
   if (wait) {
     let tries = 0;
     const poll = setInterval(async () => {
-      if (++tries > 60) { clearInterval(poll); return; }
+      if (++tries > 60) {  // 5 minutes: load the page again (a cut-off coaching then shows as failed), or say so while words are typed
+        clearInterval(poll);
+        if (!(box && box.value.trim())) location.reload();
+        else { const s = wait.querySelector(".small"); if (s) s.textContent = "Taking longer than usual: open this page again in a few minutes."; }
+        return;
+      }
       try {
         const r = await fetch(`/web/coach/status?id=${encodeURIComponent(wait.dataset.coachWait)}`, { credentials: "same-origin", cache: "no-store" });
         const s = (await r.json()).status;
         if (s !== "working" && !(box && box.value.trim())) { clearInterval(poll); location.reload(); }
       } catch (e) { /* offline for a moment: the next try asks again */ }
     }, 5000);
+  }
+
+  // Saving keeps your place: scroll back (last, after the charts are drawn)
+  let keep = null;
+  try { keep = JSON.parse(sessionStorage.getItem("keep") || "null"); sessionStorage.removeItem("keep"); } catch (err) { keep = null; }
+  if (keep && keep.p === location.pathname && Date.now() - keep.t < 30000 && !location.hash
+      && !document.querySelector(".reply.warn")) {
+    const a = keep.a && document.getElementById(keep.a);
+    window.scrollTo(0, a ? a.getBoundingClientRect().top + window.scrollY - keep.o : keep.y);
+    const bar = document.querySelector(".undobar") || document.querySelector(".reply:not(.warn)");  // Undo, or a reply with its own Undo
+    if (bar && window.scrollY > 200) {
+      bar.classList.add("pinned");
+      setTimeout(() => bar.classList.remove("pinned"), 6000);
+    }
   }
 });
 
@@ -257,6 +325,35 @@ function setupScan(btn) {
   // "Photo of the label": the camera stops first (a phone gives the camera to one user at a time), the photo is made
   // smaller in the browser, Claude reads it on the server, and the values come back into a form to check
   dlg.querySelector("[data-label-pick]").addEventListener("click", stop);
+  // The values (from the label photo or Open Food Facts) go into one form to check; Add saves the food and, with an amount, logs it
+  const fill = (j, from) => {
+    const set = (k, v) => { const i = lform.querySelector(`[name=${k}]`); if (i) i.value = v == null ? "" : v; };
+    set("name", j.name ? (j.brand && !j.name.toLowerCase().includes(j.brand.toLowerCase()) ? `${j.name} (${j.brand})` : j.name) : "");
+    set("basis", j.basis);
+    Object.entries(j.values).forEach(([k, v]) => set(k, v));
+    set("barcode", lastCode); set("from", from);
+    lform.querySelector("[data-label-note]").textContent = (j.note ? j.note + " " : "") + "Values per 100 " + j.basis + ". Correct anything that is off.";
+    msg.textContent = "Check the values, give an amount to log it now, then Add.";
+    lform.hidden = false;
+    lform.querySelector("[name=name]").focus();
+  };
+  // "Look it up on Open Food Facts" (04.11.2026): asked here, so the barcode, the values and the log stay in the dialog;
+  // nothing found: the label photo is the next step, and it keeps the barcode
+  look.addEventListener("submit", async e => {
+    e.preventDefault();
+    const code = look.querySelector("[name=name]").value;
+    msg.textContent = "Asking Open Food Facts…";
+    look.hidden = true;
+    try {
+      const r = await fetch("/web/foods/off.json?code=" + encodeURIComponent(code), {credentials: "same-origin", cache: "no-store"});
+      const j = await r.json().catch(() => ({ok: false}));
+      if (j.ok) fill(j, "off");
+      else msg.textContent = (j.reason || "That did not work.") + " Use Photo of the label below.";
+    } catch (err) {
+      msg.textContent = "Open Food Facts did not answer. Try again, or use Photo of the label below.";
+      look.hidden = false;
+    }
+  });
   file.addEventListener("change", async () => {
     const f = file.files && file.files[0];
     if (!f) return;
@@ -268,15 +365,7 @@ function setupScan(btn) {
       const r = await fetch("/web/food/label", {method: "POST", credentials: "same-origin", headers: {"X-CSRF": dlg.dataset.csrf}, body});
       const j = await r.json().catch(() => ({ok: false}));
       if (!j.ok) { msg.textContent = j.reason || "That did not work; try again."; return; }
-      const set = (k, v) => { lform.querySelector(`[name=${k}]`).value = v == null ? "" : v; };
-      set("name", j.name ? (j.brand && !j.name.toLowerCase().includes(j.brand.toLowerCase()) ? `${j.name} (${j.brand})` : j.name) : "");
-      set("basis", j.basis);
-      Object.entries(j.values).forEach(([k, v]) => set(k, v));
-      set("barcode", lastCode);
-      lform.querySelector("[data-label-note]").textContent = (j.note ? j.note + " " : "") + "Values per 100 " + j.basis + ". Correct anything that is off.";
-      msg.textContent = "Check the values, then Add.";
-      lform.hidden = false;
-      lform.querySelector("[name=name]").focus();
+      fill(j, "label");
     } catch (e) {
       msg.textContent = "That did not work: " + (e && e.message ? e.message : e);
     } finally {
@@ -399,14 +488,17 @@ function suggestFoods(box) {
     // a food found by one of its words shows that word; the most recently eaten come first
     const match = f => {
       const name = fold(f.n), cut = s => s.split(/[\s,()/-]+/);
-      if (name.startsWith(q)) return {s: 3};
-      if (cut(name).some(w => w.startsWith(q))) return {s: 2};
-      if (name.includes(q)) return {s: 1};
-      const word = (f.w || []).find(w => cut(fold(w)).some(x => x.startsWith(q))) || (f.w || []).find(w => fold(w).includes(q));
+      if (cut(name).some(w => w.startsWith(q))) return {s: 2};  // the name or one of its words starts with the letters
+      const start = (f.w || []).find(w => cut(fold(w)).some(x => x.startsWith(q)));
+      if (start) return {s: 2, word: start};
+      if (name.includes(q)) return {s: 1};  // only inside a word ("veg-eta-bles" for "eta")
+      const word = (f.w || []).find(w => fold(w).includes(q));
       return word ? {s: 1, word} : null;
     };
+    // 04.11.2026: words that start with the letters first, then the most recently eaten, then the most eaten; matches inside a
+    // word only fill up the list (before, any recent match came first: "eg" offered vegetables and vinegar, not eggs)
     const found = foods.map(f => [match(f), f]).filter(x => x[0]);
-    shown = found.sort((a, b) => (b[1].t || 0) - (a[1].t || 0) || b[0].s - a[0].s || b[1].c - a[1].c).slice(0, 6);
+    shown = found.sort((a, b) => b[0].s - a[0].s || (b[1].t || 0) - (a[1].t || 0) || b[1].c - a[1].c).slice(0, 6);
     if (!shown.length) { close(); return; }
     shown = shown.map(([m, f]) => ({...f, word: m.word}));
     list.replaceChildren(...shown.map((f, i) => {

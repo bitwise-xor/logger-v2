@@ -9,8 +9,18 @@ from .webentry import esc
 LIMIT = 15
 
 
+def fold(s: str) -> str:
+    """ü, ö, ä, ß as ue, oe, ae, ss, like the entry box's suggestions (04.11.2026: "muesli" did not find "Müsli")."""
+    return s.lower().replace("ä", "ae").replace("ö", "oe").replace("ü", "ue").replace("ß", "ss")
+
+
+def F(col: str) -> str:
+    """The same folding in SQL, for a column (a fixed name)."""
+    return f"replace(replace(replace(replace(lower({col}), 'ä', 'ae'), 'ö', 'oe'), 'ü', 'ue'), 'ß', 'ss')"
+
+
 def _like(term: str) -> str:
-    return "%" + re.sub(r"([%_\\])", r"\\\1", term) + "%"
+    return "%" + re.sub(r"([%_\\])", r"\\\1", fold(term)) + "%"
 
 
 def _section(title: str, rows: list[str], more: str = "") -> str:
@@ -28,19 +38,21 @@ def render(csrf: str, q) -> str:
         return head + '<p class="small hint">Type at least two letters. Private and gratitude entries are searched on the Private page only.</p></div>'
     like = _like(term)
     with connect() as conn, conn.cursor() as cur:
-        cur.execute("""SELECT id, name FROM foods WHERE active AND (name ILIKE %s OR EXISTS (SELECT 1 FROM unnest(aliases) a WHERE a ILIKE %s))
-                       ORDER BY lower(name) LIMIT %s""", (like, like, LIMIT))
+        cur.execute(f"""SELECT id, name FROM foods WHERE active AND ({F("name")} LIKE %s OR EXISTS (SELECT 1 FROM unnest(aliases) a WHERE {F("a")} LIKE %s))
+                        ORDER BY lower(name) LIMIT %s""", (like, like, LIMIT))
         foods = [f'<p><a href="/web/food/catalogue?{esc(urlencode({"q": term, "food": f"N{r["id"]}"}))}#N{r["id"]}"><span class="small">N{r["id"]}</span> {esc(r["name"])}</a></p>'
                  for r in cur.fetchall()]
-        cur.execute("""SELECT e.day, f.name, e.amount, f.basis, e.note FROM food_entries e JOIN foods f ON f.id = e.food_id
-                       WHERE f.name ILIKE %s OR e.note ILIKE %s ORDER BY e.day DESC, e.id DESC LIMIT %s""", (like, like, LIMIT))
+        cur.execute(f"""SELECT e.day, f.name, e.amount, f.basis, e.note FROM food_entries e JOIN foods f ON f.id = e.food_id
+                        WHERE {F("f.name")} LIKE %s OR {F("coalesce(e.note, '')")} LIKE %s
+                              OR EXISTS (SELECT 1 FROM unnest(f.aliases) a WHERE {F("a")} LIKE %s)
+                        ORDER BY e.day DESC, e.id DESC LIMIT %s""", (like, like, like, LIMIT))
         ate = [f'<p><a href="/web/food?day={r["day"].isoformat()}">{r["day"]:%a %d.%m.%Y}</a> · {esc(r["name"])} <span class="small">{r["amount"]:g} {r["basis"]}</span>'
                + (f'<span class="notel">{esc(r["note"])}</span>' if r["note"] else "") + "</p>" for r in cur.fetchall()]
-        cur.execute("""SELECT id, summary, stage, thought_type, logged_at FROM thoughts WHERE summary ILIKE %s OR original_text ILIKE %s
-                       ORDER BY logged_at DESC LIMIT %s""", (like, like, LIMIT))
+        cur.execute(f"""SELECT id, summary, stage, thought_type, logged_at FROM thoughts WHERE {F("summary")} LIKE %s OR {F("original_text")} LIKE %s
+                        ORDER BY logged_at DESC LIMIT %s""", (like, like, LIMIT))
         thoughts = [f'<p><a href="/web/ideas?{esc(urlencode({"q": term, "stage": "all", "open": r["id"]}))}">{esc(r["summary"])}</a> '
                     f'<span class="small">{r["logged_at"]:%d.%m.%Y} · {esc(r["thought_type"] or "note")} · {esc(r["stage"])}</span></p>' for r in cur.fetchall()]
-        cur.execute("SELECT name FROM lab_tests WHERE name ILIKE %s ORDER BY lower(name) LIMIT %s", (like, LIMIT))
+        cur.execute(f"SELECT name FROM lab_tests WHERE {F('name')} LIKE %s ORDER BY lower(name) LIMIT %s", (like, LIMIT))
         labs = [f'<p>{esc(r["name"])}</p>' for r in cur.fetchall()]
     return (head + '<p class="small hint">Private and gratitude entries are searched on the Private page only.</p></div>'
             + _section("Foods in the catalogue", foods) + _section("What you ate", ate) + _section("Thoughts", thoughts)

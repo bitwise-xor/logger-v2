@@ -161,7 +161,8 @@ def test_every_action_needs_a_session_the_token_and_the_app_origin(web):
     c, csrf = web
     paths = ("/web/log", "/web/answer", "/web/lookup", "/web/habit", "/web/usual", "/web/health", "/web/review")
     for p in paths:
-        assert c.post(p, data={"csrf": "wrong"}, headers=ORIGIN).status_code == 403, p
+        wrong = c.post(p, data={"csrf": "wrong"}, headers=ORIGIN)  # an out-of-date page: back, nothing done (04.11.2026)
+        assert wrong.status_code == 303 and wrong.headers["location"] == "/web/", p
         assert c.post(p, data={"csrf": csrf}, headers={}).status_code == 403, p
         assert c.post(p, data={"csrf": csrf}, headers={"Origin": "https://evil.example"}).status_code == 403, p
         assert c.post(p, data={"csrf": csrf}, headers={**ORIGIN, "CF-Ray": "x"}).status_code == 404, p
@@ -174,3 +175,28 @@ def test_the_reply_shows_once(web):
     page = act(web, "/web/answer", question_id="p1", reply="")
     assert "Type an answer first." in page.text
     assert "Type an answer first." not in web[0].get("/web/").text
+
+
+def test_an_out_of_date_page_gives_the_typed_words_back(web):
+    c, _ = web
+    r = c.post("/web/log", data={"csrf": "old", "text": "porridge 60 g", "back": "/web/food"}, headers=ORIGIN)
+    assert r.status_code == 303 and r.headers["location"] == "/web/food"
+    page = c.get("/web/food").text
+    assert "That page was out of date" in page and ">porridge 60 g</textarea>" in page
+    assert n("SELECT count(*) AS n FROM raw_inbox") == 0
+
+
+def test_signing_out_when_already_signed_out_goes_to_the_sign_in(web):
+    c, csrf = web
+    owner_sql("DELETE FROM web_sessions")  # "Sign out all other devices" on another device
+    r = c.post("/web/logout", data={"csrf": csrf}, headers=ORIGIN)
+    assert r.status_code == 303 and r.headers["location"] == "/web/login"
+
+
+def test_a_device_in_use_stays_signed_in(web):
+    c, _ = web
+    owner_sql("UPDATE web_sessions SET expires_at = now() + interval '2 days'")
+    r = c.get("/web/")
+    assert "__Host-logger_session=" in r.headers.get("set-cookie", "")
+    assert n("SELECT count(*) AS n FROM web_sessions WHERE expires_at > now() + interval '29 days'") == 1
+    assert "set-cookie" not in c.get("/web/food").headers  # once a day at most

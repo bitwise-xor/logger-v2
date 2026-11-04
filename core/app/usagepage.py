@@ -89,7 +89,8 @@ def render(r: str) -> str:
         if row["tool"] == "log":
             msgs += 1
             msg_cost += row_cost
-        tops.append((row_cost, row, sorted({_family(c.get("model")) for c in ai})))
+        if row["tool"] != "coaching":  # coachings cost more than any message and have no words: "By kind" lists them (04.11.2026)
+            tops.append((row_cost, row, sorted({_family(c.get("model")) for c in ai})))
     since = f'Recorded since {d["first"]:%d.%m.%Y} (the v2 trial); v1 kept no costs.'
     tiles = (f'<div class="totals"><div class="total"><div class="lbl">AI calls</div><span class="n num">{calls:,}</span></div>'
              f'<div class="total"><div class="lbl">Cost</div><span class="n num">{_usd(cost)}</span></div>'
@@ -137,4 +138,5 @@ def render(r: str) -> str:
             f'<div class="card"><h2>Most expensive messages</h2>'
             + (f'<div class="tablewrap"><table class="ft"><thead><tr><th>When</th><th class="l">Message</th><th class="l">Kind</th>'
                f'<th class="l">Model</th><th>Cost</th></tr></thead><tbody>{top_rows}</tbody></table></div>' if top else empty)
-            + '<p class="small hint">Private entries never show their words. Food look-ups, lab reports and label photos show no words.</p></div>')
+            + '<p class="small hint">Private entries never show their words. Food look-ups, lab reports and label photos show no words. '
+              'Coachings are under By kind and on the Coach page.</p></div>')

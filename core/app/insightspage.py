@@ -30,11 +30,9 @@ def load() -> dict:
         cur.execute("""SELECT e.day, min(e.event_at) AS at FROM events e JOIN log_types t ON t.id = e.type_id
                        WHERE t.name = 'wake' AND e.day >= %s GROUP BY e.day""", (start,))
         wake = {r["day"]: r["at"] for r in cur.fetchall()}
-        # a bed time belongs to the night before the day it ends in (noon to noon, as on the Health page)
-        cur.execute("""SELECT ((e.event_at AT TIME ZONE 'Europe/Berlin') + interval '12 hours')::date AS d, max(e.event_at) AS at
-                       FROM events e JOIN log_types t ON t.id = e.type_id WHERE t.name = 'bed' AND e.event_at >= %s GROUP BY 1""",
-                    (start - timedelta(days=1),))
-        bed = {r["d"]: r["at"] for r in cur.fetchall()}
+        # a bed time belongs to the day of the wake-up it pairs with (v_sleep; was noon to noon until 04.11.2026)
+        cur.execute("SELECT wake_day, bed_at FROM v_sleep WHERE wake_day >= %s ORDER BY wake_at", (start,))
+        bed = {r["wake_day"]: r["bed_at"] for r in cur.fetchall()}
         cur.execute("SELECT day, max(eaten_at) FILTER (WHERE time_known) AS last FROM food_entries WHERE day >= %s GROUP BY day", (start,))
         last = {r["day"]: r["last"] for r in cur.fetchall() if r["last"]}
         cur.execute("SELECT day, protein, carbs, fat FROM v_food_day WHERE meal IS NULL AND day >= %s AND day < %s", (start, today))

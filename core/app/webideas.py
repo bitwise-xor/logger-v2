@@ -139,13 +139,24 @@ def task(form, key: Optional[str]) -> dict:
         if form.get("confirmed") != "1":
             return {"outcome": "needs_confirmation", "read_back": "Change this task in Todoist?\n" + "\n".join(lines),
                     "confirm": {"action": "/web/ideas/task", "label": "Yes, change", "no": back, "fields": _again(form) | {"confirmed": "1"}}}
-        if content != t["content"]:
-            todos.client().update(tid, content)
-        if place != ideaspage.place_of(t):
-            kind, pid = place.split(":", 1)
-            todos.client().move(tid, section_id=pid if kind == "s" else None, project_id=pid if kind == "p" else None)
-        if new_due != old_due:
-            todos.client().set_due(tid, new_due.isoformat() if new_due else None)
+        done: list = []  # three calls: when a later one fails, say what did change (it said "nothing changed" until 04.11.2026)
+        try:
+            if content != t["content"]:
+                todos.client().update(tid, content)
+                done.append("the text")
+            if place != ideaspage.place_of(t):
+                kind, pid = place.split(":", 1)
+                todos.client().move(tid, section_id=pid if kind == "s" else None, project_id=pid if kind == "p" else None)
+                done.append("the section")
+            if new_due != old_due:
+                todos.client().set_due(tid, new_due.isoformat() if new_due else None)
+                done.append("the due date")
+        except TodoistError:
+            if not done:
+                raise
+            todos.forget()
+            return _rejected(f"Todoist stopped answering part-way: {' and '.join(done)} changed, the rest did not. "
+                             "Look at the task and try again.")
         with connect() as conn, conn.cursor() as cur:
             logbook._audit(cur, "web_todo", "changed", {"task": tid, "text": content != t["content"], "moved": place != ideaspage.place_of(t),
                                                         "due": new_due != old_due}, logbook.WEB)

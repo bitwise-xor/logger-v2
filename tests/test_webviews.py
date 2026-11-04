@@ -35,7 +35,7 @@ def test_trends_show_calories_protein_and_fat_over_complete_days(web):
     page = web[0].get("/web/food/trends")
     assert 'href="/web/food/trends" aria-current="page">Trends' in page.text and "Last 30 complete days" in page.text and "today not counted" in page.text
     ch = charts(page)
-    assert set(k for k in ch if k.startswith("c-trend-")) == {"c-trend-kcal", "c-trend-protein", "c-trend-fat"}
+    assert set(k for k in ch if k.startswith("c-trend-")) == {"c-trend-kcal", "c-trend-protein", "c-trend-fat", "c-trend-carbs"}
     kcal = ch["c-trend-kcal"]
     assert kcal["days"] == 30 and kcal["min"] == 0 and kcal["lines"] == [[2000.0, "t", "2,000"]]
     bars, avg = kcal["series"]
@@ -93,7 +93,7 @@ def test_the_week_has_food_against_targets_health_foods_and_the_days(web):
     assert "Test oats" in t and "Test skyr" in t and "Most calories" in t and "Eaten most often" in t
     assert t.count('<tr><td>') >= 3 and "The days" in t
     ch = charts(page)
-    assert set(k for k in ch if k.startswith("c-trend-")) == {"c-trend-kcal", "c-trend-protein", "c-trend-fat"} and ch["c-trend-kcal"]["days"] == 7
+    assert set(k for k in ch if k.startswith("c-trend-")) == {"c-trend-kcal", "c-trend-protein", "c-trend-fat", "c-trend-carbs"} and ch["c-trend-kcal"]["days"] == 7
 
 
 def test_other_periods_and_an_unknown_one(web):
@@ -132,3 +132,19 @@ def test_search_treats_percent_and_underscore_as_plain_letters(web):
     page = web[0].get("/web/search?q=50%25").text
     assert "Half 50% juice" in page and "Fifty juice" not in page
     assert "Nothing found." in web[0].get("/web/search?q=a_c").text
+
+
+def test_a_partly_logged_day_is_left_out_of_the_averages(web):
+    """04.11.2026: a day under half its calorie target is probably not fully logged; its bar shows, the averages skip it."""
+    from test_webfood import eat_on
+    from test_webtoday import day, food
+    owner_sql("DELETE FROM food_targets")
+    owner_sql("INSERT INTO food_targets (valid_from, kcal, protein, fat, carbs) VALUES ('2020-01-01', 2000, 100, 70, 200)")
+    oats = food("Test oats", 400, 13, 7, 60)
+    d = day()
+    eat_on(d - timedelta(days=1), "09:00", oats, 100, kcal=1800)
+    eat_on(d - timedelta(days=2), "09:00", oats, 100, kcal=500)
+    page = web[0].get("/web/food/trends?r=7").text
+    assert "average <b>1,800 kcal</b>" in page and "1 partly logged day left out" in page
+    week = web[0].get("/web/week?p=7").text
+    assert "1 partly logged day left out" in week

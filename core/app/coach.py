@@ -14,7 +14,7 @@ from typing import Optional
 
 from psycopg.types.json import Jsonb
 
-from . import gym, logbook
+from . import gym, habitaim, logbook
 from .ai.provider import AnthropicProvider, Provider
 from .db import connect
 from .when import BERLIN
@@ -146,8 +146,10 @@ def _sleep(cur, start: date, end: date) -> dict:
 
 
 def _habits(cur, day: date) -> list:
-    cur.execute("SELECT label, done, target FROM checklist_status(%s)", (day,))
-    return [f'{r["label"]} {r["done"]}/{r["target"]}' for r in cur.fetchall()]
+    avoid = habitaim.avoid(cur)
+    cur.execute("SELECT type_name, label, done, target FROM checklist_status(%s)", (day,))
+    return [f'{r["label"]} {r["done"]}/{r["target"]}' + (" (a habit to avoid: 0 is the aim)" if r["type_name"] in avoid else "")
+            for r in cur.fetchall()]
 
 
 def _gym(cur, start: date, end: date) -> dict:
@@ -312,10 +314,13 @@ def latest(cur, kind: str, a: date, b: date) -> Optional[dict]:
 
 
 def status(cid: int) -> str:
+    """working, done, failed or gone; a "working" row older than STALE_MINUTES was cut off (a restart) and is "failed", so the
+    waiting card stops asking (until 04.11.2026 it kept spinning)."""
     with connect() as conn, conn.cursor() as cur:
-        cur.execute("SELECT status FROM coachings WHERE id = %s", (cid,))
+        cur.execute(f"""SELECT status, status = 'working' AND created_at < now() - interval '{STALE_MINUTES} minutes' AS stale
+                        FROM coachings WHERE id = %s""", (cid,))
         r = cur.fetchone()
-    return r["status"] if r else "gone"
+    return "gone" if not r else "failed" if r["stale"] else r["status"]
 
 
 ACTIONS = {"start": start}

@@ -2,6 +2,7 @@
 logbook.answer) or from a web action; open questions are not repeated here, they have their own section."""
 import html
 import secrets
+import time
 
 MAX_TEXT = 4000
 MAX_REPLY = 1000
@@ -54,7 +55,7 @@ def undo_form(resp: dict, csrf: str) -> str:
 
 def undo_bar(rec, csrf: str) -> str:
     """The Undo bar (31.10.2026): the device's last action, with Undo, until its next action (webundo.record)."""
-    if not rec:
+    if not rec or time.time() - float(rec.get("at") or 0) >= 15 * 60:  # webundo.MAX_AGE_S: gone after 15 minutes (04.11.2026)
         return ""
     if rec.get("raw_id"):
         button = undo_form({"raw_id": rec["raw_id"], "outcome": "saved"}, csrf)

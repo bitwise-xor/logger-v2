@@ -57,14 +57,14 @@ def _button(kind: str, a, b, csrf: str, back: str, label: str, primary: bool) ->
             f'<button class="{"primary" if primary else "ghost"}" type="submit">{label}</button></form>')
 
 
-def card(kind: str, a, b, csrf: str, back: str) -> str:
+def card(kind: str, a, b, csrf: str, back: str, first_label: str = "") -> str:
     """The Coach card (day) or the Week review card (week) for one period."""
     with connect() as conn, conn.cursor() as cur:
         row = coach.latest(cur, kind, a, b)
         hidden = frozenset(coach.prefs(cur)["hidden"])
     title = "Coach" if kind == "day" else "Week review"
     again = "Coach me again" if kind == "day" else "Review again"
-    first = "Coach me" if kind == "day" else "Review this week"
+    first = first_label or ("Coach me" if kind == "day" else "Review this week")
     links = '<p class="row small"><a href="/web/coach">All coachings ›</a><a href="/web/settings?tab=coach">Your goals ›</a></p>'
     if row and row["status"] == "working" and not row["stale"]:
         inner = (f'<div class="cowait" data-coach-wait="{row["id"]}" role="status"><b>{WAIT[kind]}</b>'
@@ -89,7 +89,17 @@ def today_card(day, csrf: str) -> str:
 
 
 def week_card(a, b, p: str, csrf: str) -> str:
-    return card("week", a, b, csrf, f"/web/week?p={p}")
+    """The review is for a Monday-to-Sunday week (04.11.2026): a rolling 7 or 30 days found no review the next day, and the
+    button said "this week" over 30 days. Those periods link to the week and to the latest review instead."""
+    if p in ("last", "this"):
+        return card("week", a, b, csrf, f"/web/week?p={p}", "Review last week" if p == "last" else "Review this week so far")
+    with connect() as conn, conn.cursor() as cur:
+        cur.execute("SELECT start_day, end_day FROM coachings WHERE kind = 'week' AND status = 'done' ORDER BY id DESC LIMIT 1")
+        r = cur.fetchone()
+    latest = (f'<a href="/web/coach?f=weeks">Latest review: {r["start_day"]:%d.%m.} to {r["end_day"]:%d.%m.} ›</a>' if r else "")
+    return (f'<div class="card coachcard"><h2><span>{icon("coach")}Week review</span><span class="small">Monday to Sunday</span></h2>'
+            '<p>The review looks at one week from Monday to Sunday.</p>'
+            f'<p class="row"><a class="ghost sm" href="/web/week?p=last">Last week</a><a class="ghost sm" href="/web/week?p=this">This week so far</a>{latest}</p></div>')
 
 
 FILTERS = (("all", "All"), ("days", "Days"), ("weeks", "Weeks"))

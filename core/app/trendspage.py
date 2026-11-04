@@ -1,4 +1,4 @@
-"""The web app's food trends (decided 29.10.2026): calories, protein and fat per day over 7, 30 or 90 days against the targets, with
+"""The web app's food trends (decided 29.10.2026): calories, protein, fat and carbs per day over 7, 30 or 90 days against the targets, with
 the 7-day average. Only complete days count: today is left out because it is not over yet. The charts are drawn by app.js from
 the numbers in each chart's data-chart attribute. The same charts are used by the Week page."""
 import json
@@ -9,7 +9,8 @@ from .webentry import esc
 
 RANGES = (7, 30, 90)
 DEFAULT_RANGE = 30
-NUTRIENTS = (("kcal", "Calories", " kcal", "kcal"), ("protein", "Protein", " g", "g"), ("fat", "Fat", " g", "g"))
+NUTRIENTS = (("kcal", "Calories", " kcal", "kcal"), ("protein", "Protein", " g", "g"), ("fat", "Fat", " g", "g"),
+             ("carbs", "Carbs", " g", "g"))  # carbs since 04.11.2026: it has a target like the others
 
 
 def _dm(d: date) -> str:
@@ -23,6 +24,28 @@ def day_totals(cur, start: date, end: date) -> dict:
     return {r["day"]: r for r in cur.fetchall()}
 
 
+PARTLY = 0.5  # a day under half its calorie target counts as partly logged (04.11.2026)
+
+
+def partly(r) -> bool:
+    """A day probably not fully logged: under half of that day's calorie target. Its bar still shows; averages leave it out."""
+    t = r["target_kcal"]
+    return bool(t) and float(r["kcal"] or 0) < PARTLY * float(t)
+
+
+def full_days(totals: dict) -> dict:
+    return {d: r for d, r in totals.items() if not partly(r)}
+
+
+def left_out(totals: dict) -> str:
+    """" · 1 partly logged day left out (03.11.)", or "" """
+    ds = sorted(d for d, r in totals.items() if partly(r))
+    if not ds:
+        return ""
+    return (f' · {len(ds)} partly logged day{"" if len(ds) == 1 else "s"} left out ({", ".join(f"{d:%d.%m.}" for d in ds[:4])}'
+            f'{"…" if len(ds) > 4 else ""}: under half the calorie target)')
+
+
 def _chart(cid: str, start: date, days: int, series: list, **opts) -> str:
     data = {"start": start.isoformat(), "days": days, "series": series, **opts}
     return f'<div class="chart" id="{cid}" data-chart="{esc(json.dumps(data, separators=(",", ":")))}"></div>'
@@ -31,11 +54,13 @@ def _chart(cid: str, start: date, days: int, series: list, **opts) -> str:
 def cards(totals: dict, start: date, end: date) -> str:
     """One card per nutrient: daily bars, the 7-day average, the target line, a line of numbers."""
     days = (end - start).days + 1
-    have = sorted(totals)
+    every = sorted(totals)
+    have = sorted(full_days(totals))  # averages and counts leave out partly logged days (04.11.2026)
     out = []
     for key, label, unit, short in NUTRIENTS:
         vals = {d: float(totals[d][key]) for d in have}
-        pts = [[(d - start).days, round(v, 1), f"{_dm(d)}: {v:,.0f}{unit}"] for d, v in vals.items()]
+        pts = [[(d - start).days, round(float(totals[d][key]), 1), f"{_dm(d)}: {float(totals[d][key]):,.0f}{unit}" + (" (partly logged)" if partly(totals[d]) else "")]
+               for d in every]
         avg7 = []
         for d in have:
             window = [vals[x] for x in have if d - timedelta(days=6) <= x <= d]
@@ -52,7 +77,7 @@ def cards(totals: dict, start: date, end: date) -> str:
             else:
                 over = sum(1 for d in have if totals[d]["target_" + key] and vals[d] > float(totals[d]["target_" + key]))
                 note = f' · over the target on <b>{over}</b> of {len(have)} days' if target else ""
-            stat = f'average <b>{mean:,.0f}{unit}</b>' + (f" · target {target:,.0f}" if target else "") + note
+            stat = f'average <b>{mean:,.0f}{unit}</b>' + (f" · target {target:,.0f}" if target else "") + note + (left_out(totals) if key == "kcal" else "")
         else:
             stat = "no complete days with food in this range"
         legend = ('<i class="key sq a"></i>day <i class="key line b"></i>7-day average'

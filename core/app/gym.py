@@ -239,16 +239,36 @@ def new_exercise(form, key=None, session=None) -> dict:
         old = cur.fetchone()
         if old and old["active"]:
             return _rejected(f'{old["name"]} is already in your list.')
-        if old:
-            cur.execute("UPDATE exercises SET active = true WHERE id = %s", (old["id"],))
+        if old:  # the kind picked now wins while it has no sets yet (it kept the old kind until 04.11.2026)
+            cur.execute("SELECT 1 FROM workout_sets WHERE exercise_id = %s LIMIT 1", (old["id"],))
+            used = cur.fetchone() is not None
+            new_kind = kind if kind in KINDS and not used else old["kind"]
+            cur.execute("UPDATE exercises SET active = true, kind = %s WHERE id = %s", (new_kind, old["id"]))
             logbook._audit(cur, "gym", "changed", {"what": "exercise back"}, logbook.WEB)
-            return {"outcome": "changed", "head": f'{old["name"]} is back in your list.'}
+            kept = f" It stays {KINDS[old['kind']].lower()}: it has sets logged." if kind in KINDS and kind != old["kind"] and used else ""
+            return {"outcome": "changed", "head": f'{old["name"]} is back in your list ({KINDS[new_kind].lower()}).{kept}' + _on_today(cur, old["id"], form)}
         if kind not in KINDS:
             return _rejected("Pick weights, bodyweight or machine cardio.")
-        cur.execute("INSERT INTO exercises (name, kind, words, sort_order) SELECT %s, %s, %s, coalesce(max(sort_order), 0) + 10 FROM exercises",
-                    (name, kind, words))
+        cur.execute("""INSERT INTO exercises (name, kind, words, sort_order) SELECT %s, %s, %s, coalesce(max(sort_order), 0) + 10 FROM exercises
+                       RETURNING id""", (name, kind, words))
+        eid = cur.fetchone()["id"]
         logbook._audit(cur, "gym", "changed", {"what": "new exercise", "kind": kind}, logbook.WEB)
-    return {"outcome": "changed", "head": f"Added {name} ({KINDS[kind].lower()})."}
+        today = _on_today(cur, eid, form)
+    return {"outcome": "changed", "head": f"Added {name} ({KINDS[kind].lower()}).{today}"}
+
+
+def _on_today(cur, eid: int, form) -> str:
+    """From the Workout tab: the exercise also goes on today's day of the split (04.11.2026), so it shows in today's list."""
+    if form.get("today") != "1":
+        return ""
+    cur.execute("SELECT log_day(now()) AS d")
+    sd = split(cur, cur.fetchone()["d"])["day"]
+    if not sd:
+        return ""
+    cur.execute("""INSERT INTO workout_day_items (day_id, exercise_id, sort_order)
+                   SELECT %s, %s, coalesce(max(sort_order), 0) + 10 FROM workout_day_items WHERE day_id = %s
+                   AND NOT EXISTS (SELECT 1 FROM workout_day_items WHERE day_id = %s AND exercise_id = %s)""", (sd["id"], eid, sd["id"], sd["id"], eid))
+    return f" It is on today’s {sd['name']} now." if cur.rowcount else ""
 
 
 def active(form, key=None, session=None) -> dict:

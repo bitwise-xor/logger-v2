@@ -94,7 +94,8 @@ def habit(name: str, action: str, eid: str, key: Optional[str]) -> dict:
         return _rejected("That habit is not on the checklist.")
     if action == "tick":
         pred = _pred(health=[{"type": t["name"], "value": None, "value2": None, "period": None, "session": None, "when": None}])
-        return logbook.log(f"tick {t['name']}", key, pred, channel=logbook.WEB)
+        # a button: tick, untick, tick again asked "log it again?" until 04.11.2026
+        return logbook.log(f"tick {t['name']}", key, pred, channel=logbook.WEB, button=True)
     if action != "untick" or not eid.isdigit():
         return _rejected("Unknown action.")
     with connect() as c:  # the tick to remove: of this habit, from today
@@ -179,8 +180,20 @@ def checkin(form, key: Optional[str]) -> dict:
     v = _num(form.get("value", ""))
     if v not in (1, 2, 3, 4, 5):
         return _rejected("Pick 1 to 5.")
-    item = {"type": kind, "value": int(v), "value2": None, "period": None, "session": None, "when": None}
-    return logbook.log(f"{kind} {int(v)}", key, _pred(health=[item]), channel=logbook.WEB)
+    when, said = None, ""
+    if str(form.get("day", "")).strip():  # the card asks about yesterday before today's wake-up (04.11.2026)
+        try:
+            d = date.fromisoformat(str(form.get("day")).strip())
+        except ValueError:
+            return _rejected("Unknown day.")
+        with connect() as c:
+            today = c.execute("SELECT log_day(now()) AS d").fetchone()["d"]
+        if d != today - timedelta(days=1) and d != today:
+            return _rejected("Only today or yesterday can be answered here.")
+        if d != today:
+            when, said = d.isoformat(), f" on {d:%d.%m.%Y}"
+    item = {"type": kind, "value": int(v), "value2": None, "period": None, "session": None, "when": when}
+    return logbook.log(f"{kind} {int(v)}{said}", key, _pred(health=[item]), channel=logbook.WEB, button=True)
 
 
 # ---- health ----------------------------------------------------------------------------------------
@@ -199,9 +212,12 @@ def health(row: str, ref: str, form, key: Optional[str]) -> dict:
             return _rejected("Give the time as hh:mm.")
         t = f"{int(m[1]):02d}:{m[2]}"
         vals, fields, said = None, {"when": t}, t
-        if row == "bed":  # the night before: from noon on it is the evening before today, earlier it is after midnight today
+        if row == "bed":  # the sleep that ends with today's wake-up: the last such time before it, or before now (04.11.2026)
             with connect() as c:
-                fields = {"when": _when(c.execute("SELECT log_day(now()) AS d").fetchone()["d"], "bed", t)}
+                d = c.execute("SELECT log_day(now()) AS d").fetchone()["d"]
+                w = c.execute("""SELECT max(e.event_at) AS w FROM events e JOIN log_types lt ON lt.id = e.type_id
+                                 WHERE lt.name = 'wake' AND e.day = %s""", (d,)).fetchone()["w"]
+            fields = {"when": healthpage.bed_when(t, healthpage.bed_anchor(d, d, w))}
     else:
         v1 = _num(form.get("v1", ""))
         v2 = _num(form.get("v2", "")) if ltype == "bp" else None
@@ -237,10 +253,12 @@ def health(row: str, ref: str, form, key: Optional[str]) -> dict:
 _FIELDS = ("w", "bm1", "bm2", "be1", "be2", "s", "bed", "wake", "mo", "en")
 
 
-def _when(day: date, col: str, t: str) -> str:
-    """The date and time for the change function or the parser answer; a bed time from noon on is the evening before."""
-    on = day - timedelta(days=1) if col == "bed" and int(t[:2]) >= 12 else day
-    return f"{on:%d.%m.%Y} {t}"
+def _when(day: date, col: str, t: str, anchor: Optional[datetime] = None) -> str:
+    """The date and time for the change function or the parser answer; a bed time is the last such time before the day's
+    wake-up (healthpage.bed_anchor; was "from noon on, the evening before" until 04.11.2026)."""
+    if col == "bed" and anchor is not None:
+        return healthpage.bed_when(t, anchor)
+    return f"{day:%d.%m.%Y} {t}"
 
 
 def health_day(day_s: str, r: str, form, key: Optional[str]) -> dict:
@@ -258,6 +276,11 @@ def health_day(day_s: str, r: str, form, key: Optional[str]) -> dict:
         now_vals = healthpage.day_values(cur, day, day).get(day, {})
     dm = f"{day:%a %d.%m.}"
     steps, items, words, said, deletes = [], [], [], [], []
+    wake_at = (now_vals.get("wake") or {}).get("at")  # the bed pairs with the row's wake-up, the one typed now if it changed
+    wm = TIME.match(str(form.get("wake") or "").strip())
+    if wm and (not now_vals.get("wake") or now_vals["wake"]["v"][0] != f"{int(wm[1]):02d}:{wm[2]}"):
+        wake_at = datetime(day.year, day.month, day.day, int(wm[1]), int(wm[2]), tzinfo=BERLIN)
+    anchor = healthpage.bed_anchor(day, today, wake_at)
     for col, _h, _s, ltype, period, kind in healthpage.COLS:
         name, cur_v = healthpage.NAMES[col], now_vals.get(col)
         sent = [form.get(f"{col}1"), form.get(f"{col}2")] if kind == 2 else [form.get(col)]
@@ -287,13 +310,13 @@ def health_day(day_s: str, r: str, form, key: Optional[str]) -> dict:
             return _rejected(f"{name}: give both numbers.")
         shown = "/".join(new)
         if cur_v:
-            fields = {"when": _when(day, col, new[0])} if kind == "t" else {"value": nums[0], **({"value2": nums[1]} if kind == 2 else {})}
+            fields = {"when": _when(day, col, new[0], anchor)} if kind == "t" else {"value": nums[0], **({"value2": nums[1]} if kind == 2 else {})}
             if form.get("confirmed") == "1":
                 fields["confirmed"] = True
             steps.append({"action": "change", "args": {"id": cur_v["id"], "fields": fields}})
             said.append(f"{name} {'/'.join(old)} → {shown}")
         else:
-            when = _when(day, col, new[0]) if kind == "t" else (None if day == today else f"{day:%d.%m.%Y}")
+            when = _when(day, col, new[0], anchor) if kind == "t" else (None if day == today else f"{day:%d.%m.%Y}")
             items.append({"type": ltype, "value": nums[0] if nums else None, "value2": nums[1] if kind == 2 else None,
                           "period": period, "session": None, "when": when})
             words.append({"weight": f"weight {shown}", "bp": f"bp {shown} {period}", "blood_sugar": f"sugar {shown} fasted",

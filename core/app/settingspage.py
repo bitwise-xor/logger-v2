@@ -11,7 +11,7 @@ from .db import connect
 from .todaypage import HEALTH_ROWS, _plain
 from .webentry import esc, hidden
 
-TABS = (("targets", "Food targets"), ("habits", "Habits"), ("today", "Today page"), ("body", "Body"), ("coach", "Coach"), ("devices", "Devices"),
+TABS = (("targets", "Food targets"), ("today", "Today page"), ("body", "Body"), ("coach", "Coach"), ("devices", "Devices"),
         ("notify", "Notifications"))
 BACK = re.compile(r"/web/settings(\?[A-Za-z0-9=&._%+-]*)?")
 TARGET_FIELDS = (("kcal", "Calories", "kcal"), ("protein", "Protein", "g"), ("fat", "Fat", "g"), ("sat_fat", "Saturated fat", "g"),
@@ -103,7 +103,7 @@ def _habits(session, csrf: str) -> str:
                             ORDER BY active DESC, sort_order, name""").fetchall()
     out = []
     for r in rows:
-        out.append(f'<form class="habrow" method="post" action="/web/settings/habit">{hidden("csrf", csrf)}{hidden("name", r["name"])}'
+        out.append(f'<form class="habrow" method="post" action="/web/settings/habit">{hidden("csrf", csrf)}{hidden("back", url(tab="habits"))}{hidden("name", r["name"])}'
                    f'<label class="grow">Name shown<input name="label" value="{esc(r["label"])}" maxlength="40" required></label>'
                    f'<label>Times a day<input type="number" name="daily_target" min="1" max="10" value="{r["daily_target"]}"></label>'
                    f'<label>Order<input type="number" name="sort_order" min="0" max="999" value="{r["sort_order"]}"></label>'
@@ -112,7 +112,7 @@ def _habits(session, csrf: str) -> str:
     return (f'<div class="card"><h2>Habits <span class="small">· {sum(1 for r in rows if r["active"])} active</span></h2>{"".join(out)}'
             '<p class="small hint">Order: the smaller number comes first. Taking Active off retires a habit (its history stays; it leaves Today, '
             'the Habits page and the Sheet). Which habits show on the Today page is set under Today page.</p></div>'
-            f'<div class="card"><h2>Add a habit</h2><form class="row" method="post" action="/web/settings/habit_new">{hidden("csrf", csrf)}'
+            f'<div class="card"><h2>Add a habit</h2><form class="row" method="post" action="/web/settings/habit_new">{hidden("csrf", csrf)}{hidden("back", url(tab="habits"))}'
             '<input name="label" maxlength="40" required class="grow" placeholder="Name, e.g. Yoga" aria-label="Name of the new habit">'
             '<label class="small">Times a day <input type="number" name="daily_target" min="1" max="10" value="1"></label>'
             '<button class="primary" type="submit">Add</button></form>'
@@ -143,9 +143,9 @@ def _today_tab(session, csrf: str) -> str:
                        + (f'<td><input type="number" name="pos_{kind}_{i}" min="1" max="99" value="{n}" aria-label="Order of {esc(lbl)}"></td>' if len(items) > 1 else "<td></td>")
                        + "</tr>" for n, (i, lbl) in enumerate(items, 1))
         out.append(f'<h3>{heading}</h3><div class="tablewrap"><table class="ft plain"><tbody>{rows or "<tr><td class=empty>None yet.</td></tr>"}</tbody></table></div>')
-    return (f'<div class="card"><h2>What shows on the Today page</h2><form method="post" action="/web/settings/today">{hidden("csrf", csrf)}'
+    return (f'<div class="card"><h2>What shows on the Today page</h2><form method="post" action="/web/settings/today">{hidden("csrf", csrf)}{hidden("back", url(tab="today"))}'
             f'{"".join(out)}<p class="row"><button class="primary" type="submit">Save</button></p></form>'
-            f'<form class="row" method="post" action="/web/settings/today_reset">{hidden("csrf", csrf)}'
+            f'<form class="row" method="post" action="/web/settings/today_reset">{hidden("csrf", csrf)}{hidden("back", url(tab="today"))}'
             '<button class="ghost" type="submit">Show everything in the default order</button></form>'
             '<p class="small hint">Food and drinks always show. A hidden item is only hidden on the Today page: it stays on the Habits page, in the Sheet '
             'and in your records. Order: the smaller number comes first. A hidden review box still shows one line while something waits for review.</p></div>')
@@ -164,17 +164,19 @@ def _devices(session, csrf: str) -> str:
         made = r["created_at"].astimezone(rules.BERLIN).strftime("%d.%m.%Y")
         until = r["expires_at"].astimezone(rules.BERLIN).strftime("%d.%m.%Y")
         btn = ('<span class="pill ok">this device</span>' if here else
-               f'<form method="post" action="/web/settings/device">{hidden("csrf", csrf)}{hidden("sid", str(r["sid"]))}'
+               f'<form method="post" action="/web/settings/device">{hidden("csrf", csrf)}{hidden("back", url(tab="devices"))}{hidden("sid", str(r["sid"]))}'
                '<button class="ghost sm bad" type="submit">Sign out</button></form>')
         out.append(f'<div class="dev"><div><b>{esc(device_name(r["user_agent"]))}</b>'
                    f'<span class="small">signed in {made} · last used {seen} · stays signed in until {until}</span></div>{btn}</div>')
     others = sum(1 for r in rows if r["token_hash"] != session["token_hash"])
-    allout = (f'<form class="row" method="post" action="/web/settings/others">{hidden("csrf", csrf)}'
+    allout = (f'<form class="row" method="post" action="/web/settings/others">{hidden("csrf", csrf)}{hidden("back", url(tab="devices"))}'
               f'<button class="ghost bad" type="submit">Sign out all {others} other device{"" if others == 1 else "s"}</button></form>'
               if others else "")
     return (f'<div class="card"><h2>Signed-in devices <span class="small">· {len(rows)}</span></h2>{"".join(out)}{allout}'
-            '<p class="small hint">A device stays signed in for 30 days after it signs in. If a phone is lost, sign it out here. '
-            'The Sign out button at the top ends this device only.</p></div>')
+            '<p class="small hint">A device in use stays signed in (30 days from its last use). If a phone is lost, sign it out here. '
+            'Sign out in the menu ends this device only.</p></div>'
+            '<div class="card"><h2>Watch</h2><p class="small">Steps, heart rate, sleep and workouts from the watch show under Gym › Activity '
+            'once they arrive. <a href="/web/gym/activity">How to set it up ›</a></p></div>')
 
 
 # ---- notifications ---------------------------------------------------------------------------------
@@ -182,15 +184,19 @@ def _devices(session, csrf: str) -> str:
 def _notify(session, csrf: str) -> str:
     with connect() as c, c.cursor() as cur:
         s = nudges.load(cur)
-        subs = cur.execute("SELECT id, user_agent, created_at, last_ok FROM push_subscriptions ORDER BY created_at").fetchall()
+        subs = cur.execute("SELECT id, user_agent, created_at, last_ok, session_sid FROM push_subscriptions ORDER BY created_at").fetchall()
     key = webpush.public_key()
     base = hidden("csrf", csrf) + hidden("back", url(tab="notify"))
+    mine = any(r["session_sid"] == session["sid"] for r in subs)  # this device is on (04.11.2026: the page could not tell)
     turn_on = (f'<div class="pushbox" data-push data-key="{esc(key)}" data-csrf="{esc(csrf)}">'
-               '<button class="primary" type="button" data-push-on>Turn on notifications on this device</button>'
+               + ('<p><span class="pill ok">On for this device</span></p>' if mine else "")
+               + f'<button class="{"ghost" if mine else "primary"}" type="button" data-push-on>'
+               + ("Turn on again (if notifications stopped)" if mine else "Turn on notifications on this device") + '</button>'
                '<p class="small" data-push-msg aria-live="polite"></p></div>' if key else
                '<p class="small">Notifications are not set up on the server yet (no key).</p>')
     devices = "".join(
-        f'<div class="dev"><div><b>{esc(device_name(r["user_agent"]))}</b><span class="small">on since {r["created_at"].astimezone(rules.BERLIN):%d.%m.%Y}'
+        f'<div class="dev"><div><b>{esc(device_name(r["user_agent"]))}</b>{" <span class=\"pill ok\">this device</span>" if r["session_sid"] == session["sid"] else ""}'
+        f'<span class="small">on since {r["created_at"].astimezone(rules.BERLIN):%d.%m.%Y}'
         + (f' · last delivered {r["last_ok"].astimezone(rules.BERLIN):%d.%m. %H:%M}' if r["last_ok"] else " · nothing delivered yet") + '</span></div>'
         f'<form method="post" action="/web/settings/push_off">{base}{hidden("id", str(r["id"]))}'
         '<button class="ghost sm bad" type="submit">Turn off</button></form></div>' for r in subs)
@@ -216,6 +222,9 @@ def _notify(session, csrf: str) -> str:
 
 
 def render(session, q) -> str:
+    if q.get("tab") == "habits":  # an old link: habits are managed on the Habits page since 04.11.2026
+        return _tabs("") + ('<div class="card"><h2>Habits</h2><p>Habits are now managed in one place: the Habits page (name, times a day, '
+                            'order, do or avoid, track, retire).</p><p class="row"><a class="primary" href="/web/habits">Open the Habits page</a></p></div>')
     tab = q.get("tab") if q.get("tab") in dict(TABS) else TABS[0][0]
     csrf = session["csrf"]
     return _tabs(tab) + {"targets": _targets, "habits": _habits, "today": _today_tab, "body": _body, "coach": coachpage.settings_tab, "devices": _devices,

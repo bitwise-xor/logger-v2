@@ -1,5 +1,7 @@
 """Open questions, from any channel, each with the form that fits it: food choices as buttons, an amount field,
 a found food with its values, a read-back with Yes / No. Answers go through logbook.answer, like the chat's `answer`."""
+from datetime import timedelta
+
 from . import rules
 from .db import connect
 from .logbook import ANSWER_TOOLS
@@ -50,9 +52,16 @@ def _free(label: str = "Answer", placeholder: str = "Your answer") -> str:
             f'<button class="ghost" type="submit">{esc(label)}</button>{_skip()}</div>')
 
 
+def _logday():
+    with connect() as c:
+        return c.execute("SELECT log_day(now()) AS d").fetchone()["d"]
+
+
 def card(q: dict, csrf: str, back: str = "/web/") -> str:
     p, tool = q["payload"], q["tool"]
-    asked = q["created_at"].astimezone(rules.BERLIN).strftime("%H:%M")
+    at = q["created_at"].astimezone(rules.BERLIN)
+    # questions stay open for days: an earlier one says its day too (04.11.2026)
+    asked = at.strftime("%H:%M") if (at.replace(tzinfo=None) - timedelta(hours=5)).date() == _logday() else at.strftime("%a %d.%m. %H:%M")
     until = q["expires_at"].astimezone(rules.BERLIN).strftime("%d.%m.")
     msg = f' · your message: "{esc(q["message"])}"' if q["message"] else ""
     head = f'<div class="small">{asked}{msg} · open until {until}</div>'

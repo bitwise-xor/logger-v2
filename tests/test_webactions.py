@@ -197,3 +197,12 @@ def test_review_change_and_delete_a_food_entry(web):
 def test_review_refuses_unknown_items(web):
     assert "Unknown item" in act(web, "/web/review", ref="x1", act="ok").text
     assert "Unknown item" in act(web, "/web/review", ref="t1", act="drop").text
+
+
+def test_tick_untick_and_tick_again_ticks_without_asking(web, fake):
+    """The same words twice within 30 minutes ask "log it again?"; a tick's words carry the click time (bug until 04.11.2026)."""
+    act(web, "/web/habit", name="meds", action="tick", key="h7")
+    eid = owner_sql("SELECT id FROM events")[0]["id"]
+    act(web, "/web/habit", name="meds", action="untick", eid=str(eid))
+    page = act(web, "/web/habit", name="meds", action="tick", key="h8")
+    assert "Saved." in page.text and meds() == 1 and "again" not in page.text.split("Saved.")[0][-200:]

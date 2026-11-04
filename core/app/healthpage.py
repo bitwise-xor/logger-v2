@@ -31,10 +31,45 @@ def _hm(ts) -> str:
     return ts.astimezone(rules.BERLIN).strftime("%H:%M")
 
 
-def bed_window(day: date) -> tuple[datetime, datetime]:
-    """The bed time shown on a day's row: the night before, from noon of the day before to noon of the day."""
-    noon = datetime(day.year, day.month, day.day, 12, tzinfo=rules.BERLIN)
-    return noon - timedelta(days=1), noon
+def bed_anchor(day: date, today: date, wake_at=None) -> datetime:
+    """A day's bed time is the sleep that ends with the day's wake-up: the last bed before that wake-up, or without one the
+    last before now (today) or before 22:00 of the day (an earlier day). Was "noon to noon" until 04.11.2026, which put a
+    daytime sleep (to bed after noon, up in the evening) on the day before."""
+    if wake_at:
+        return wake_at.astimezone(rules.BERLIN)
+    if day >= today:
+        return datetime.now(rules.BERLIN)
+    return datetime(day.year, day.month, day.day, 22, tzinfo=rules.BERLIN)
+
+
+def bed_when(t: str, anchor: datetime) -> str:
+    """A typed bed time hh:mm as the latest such moment before anchor ("dd.mm.yyyy hh:mm" for the change function)."""
+    a = anchor.astimezone(rules.BERLIN)
+    at = a.replace(hour=int(t[:2]), minute=int(t[3:5]), second=0, microsecond=0)
+    if at >= a:
+        at -= timedelta(days=1)
+    return f"{at:%d.%m.%Y %H:%M}"
+
+
+def pick_bed(beds: list, wakes: list, anchor: datetime):
+    """The bed of the sleep ending at anchor, as v_sleep pairs them: the latest bed in the 24 h before with no wake-up in
+    between. beds: [(id, event_at)], wakes: [event_at]."""
+    best = None
+    for b in beds:
+        if anchor - timedelta(hours=24) <= b[1] < anchor and not any(b[1] < w < anchor for w in wakes):
+            if best is None or b[1] >= best[1]:
+                best = b
+    return best
+
+
+def beds_near(cur, first: date, last: date) -> tuple[list, list]:
+    """Every bed [(id, at)] and wake-up [at] that the rows first to last can pair with."""
+    lo = datetime(first.year, first.month, first.day, tzinfo=rules.BERLIN) - timedelta(days=2)
+    hi = datetime(last.year, last.month, last.day, tzinfo=rules.BERLIN) + timedelta(days=2)
+    cur.execute("""SELECT e.id, e.event_at, t.name FROM events e JOIN log_types t ON t.id = e.type_id
+                   WHERE t.name IN ('bed', 'wake') AND e.event_at >= %s AND e.event_at < %s ORDER BY e.event_at, e.id""", (lo, hi))
+    rows = cur.fetchall()
+    return [(r["id"], r["event_at"]) for r in rows if r["name"] == "bed"], [r["event_at"] for r in rows if r["name"] == "wake"]
 
 
 def day_values(cur, first: date, last: date) -> dict:
@@ -49,14 +84,16 @@ def day_values(cur, first: date, last: date) -> dict:
     cur.execute("""SELECT e.id, e.day, e.event_at FROM events e JOIN log_types t ON t.id = e.type_id
                    WHERE t.name = 'wake' AND e.day BETWEEN %s AND %s ORDER BY e.event_at, e.id""", (first, last))
     for e in cur.fetchall():
-        out.setdefault(e["day"], {})["wake"] = {"id": f"e{e['id']}", "v": [_hm(e["event_at"])]}
-    lo, hi = bed_window(first)[0], bed_window(last)[1]
-    cur.execute("""SELECT e.id, e.event_at FROM events e JOIN log_types t ON t.id = e.type_id
-                   WHERE t.name = 'bed' AND e.event_at >= %s AND e.event_at < %s ORDER BY e.event_at, e.id""", (lo, hi))
-    for e in cur.fetchall():
-        local = e["event_at"].astimezone(rules.BERLIN)
-        row = local.date() + timedelta(days=1 if local.hour >= 12 else 0)
-        out.setdefault(row, {})["bed"] = {"id": f"e{e['id']}", "v": [local.strftime("%H:%M")]}
+        out.setdefault(e["day"], {})["wake"] = {"id": f"e{e['id']}", "v": [_hm(e["event_at"])], "at": e["event_at"]}
+    cur.execute("SELECT log_day(now()) AS d")
+    today = cur.fetchone()["d"]
+    beds, wakes = beds_near(cur, first, last)
+    day = first
+    while day <= last:
+        b = pick_bed(beds, wakes, bed_anchor(day, today, out.get(day, {}).get("wake", {}).get("at")))
+        if b:
+            out.setdefault(day, {})["bed"] = {"id": f"e{b[0]}", "v": [_hm(b[1])]}
+        day += timedelta(days=1)
     return out
 
 
@@ -188,7 +225,8 @@ def _entries(d: dict, csrf: str, show_all: bool) -> str:
         slept = f"{int(hours)} h {round((hours % 1) * 60):02d}" if 0 < hours < 24 else "–"
         rows.append(f'<tr><td class="stick">{_dm(day)}</td>{cells}<td class="small">{slept}</td>'
                     f'<td><form class="hday" id="{fid}" method="post" action="/web/healthday">{hidden("csrf", csrf)}'
-                    f'{hidden("day", day.isoformat())}{hidden("r", str(d["days"]))}{hidden("key", key())}<button class="primary sm" type="submit">Save</button></form></td></tr>')
+                    f'{hidden("day", day.isoformat())}{hidden("r", str(d["days"]))}{hidden("all", "1") if show_all else ""}{hidden("key", key())}'
+                    '<button class="primary sm" type="submit">Save</button></form></td></tr>')
     heads = "".join(f'<th>{h}{f" <span class=small>{s}</span>" if s else ""}</th>' for _c, h, s, _t, _p, _k in COLS)
     more = ""
     if len(days) > SHOWN_DAYS:

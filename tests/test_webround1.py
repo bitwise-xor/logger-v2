@@ -7,7 +7,7 @@ from conftest import owner_sql
 from test_log import fake  # noqa: F401 - fixture reused
 from test_web import act, client, web  # noqa: F401
 from test_webfood import eat_on, entry, oats
-from test_webtoday import day, no_targets  # noqa: F401 - no_targets: clean targets and usual meals
+from test_webtoday import day, food, no_targets  # noqa: F401 - no_targets: clean targets and usual meals
 
 
 def token(page: str) -> str:
@@ -105,3 +105,20 @@ def test_recent_lists_the_last_messages_and_what_they_saved(web, fake):
     assert "Test oats 45 g again at 09:30" in page and "Test oats 45 g" in page and "Medication" in page
     assert page.index("tick meds") < page.index("Test oats 45 g again")  # newest first
     assert 'data-fill="tick meds"' in page and 'href="/web/?day=' in page
+
+
+def test_search_folds_umlauts_and_reads_a_foods_words(web):
+    """04.11.2026: "muesli" finds "Müsli", like the entry box's suggestions; "What you ate" also matches a food's words."""
+    fid = food("Test Müsli", 380, 10, 6, 60)
+    owner_sql("UPDATE foods SET aliases = ARRAY['breakfast crunch'] WHERE id = %s", fid)
+    eat_on(day(), "08:00", fid, 50)
+    page = web[0].get("/web/search?q=muesli").text
+    assert page.count("Test Müsli") >= 2  # the catalogue and what you ate
+    assert "Test Müsli" in web[0].get("/web/search?q=crunch").text.split("What you ate")[1]
+
+
+def test_use_again_leaves_out_the_buttons_time_and_day():
+    from app.recentpage import again_text
+    assert again_text("Test oats 45 g again at 09:30") == "Test oats 45 g again"
+    assert again_text("tick meds on 01.11.2026 (clicked 21:04:05.123456)") == "tick meds"
+    assert again_text("mood 4 on 03.11.2026") == "mood 4" and again_text("porridge with honey") == "porridge with honey"

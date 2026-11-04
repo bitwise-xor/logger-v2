@@ -164,3 +164,21 @@ def test_the_habits_calendar_moved_to_the_habits_page(web, fake):
     event("meds", today(), "08:00")
     page = web[0].get("/web/health")
     assert "Habits · last" not in page.text and 'class="cal"' not in page.text and 'href="/web/habits"' in page.text
+
+
+def test_a_daytime_sleep_shows_on_the_row_of_its_wake_up_and_saves_there(web, fake):
+    """Bed 12:30, up 20:30 the same day (a daytime sleep): the bed is on that day's row, not the next day's (bug until
+    04.11.2026: noon to noon put it a row late, and a typed 12:30 was saved a day early)."""
+    d = today() - timedelta(days=1)  # earlier days: their times are past at any hour the tests run
+    y = d - timedelta(days=1)
+    event("bed", y, "12:30")
+    event("wake", y, "20:30")
+    event("wake", d, "21:15")
+    page = web[0].get("/web/health")
+    assert (row(page, y)["bed"], row(page, y)["wake"]) == ("12:30", "20:30")
+    assert row(page, d)["bed"] == ""
+    page = save(web, d, bed="15:30")
+    assert row(page, d)["bed"] == "15:30"
+    bed = owner_sql("""SELECT to_char(e.event_at AT TIME ZONE 'Europe/Berlin', 'YYYY-MM-DD HH24:MI') AS t FROM events e
+                       JOIN log_types t ON t.id = e.type_id WHERE t.name = 'bed' ORDER BY e.id DESC LIMIT 1""")[0]["t"]
+    assert bed == f"{d} 15:30"

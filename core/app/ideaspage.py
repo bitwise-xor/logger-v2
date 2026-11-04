@@ -8,14 +8,15 @@ from urllib.parse import urlencode
 from . import todos
 from .db import connect
 from .todaypage import AREAS, THOUGHT_TYPES
+from . import todoist
 from .todoist import TodoistError
-from .webentry import esc, hidden
+from .webentry import esc, hidden, icon
 
 STAGES = ("inbox", "active", "someday", "done", "dropped")
 NEXT_STEPS = ("research", "plan", "do", "read")
 STAGE_BUTTONS = (("active", "Active"), ("done", "Done"), ("dropped", "Drop"), ("someday", "Someday"))
 LIST_LIMIT = 200
-BACK = re.compile(r"/web/ideas(/todoist)?(\?[A-Za-z0-9=&._%-]*)?")
+BACK = re.compile(r"/web/ideas(/todoist)?(\?[A-Za-z0-9=&._%+-]*)?")  # "+": a space in a search or tag (urlencode)
 
 
 def url(path: str, **q) -> str:
@@ -104,7 +105,7 @@ def render_thoughts(csrf: str, q) -> str:
             items.append(f'<div class="th{" sel" if open_ else ""}" id="t{t["id"]}"><a class="top" href="{esc(link)}#t{t["id"]}">'
                          f'<span class="pill">{esc(t["thought_type"] or "thought")}</span><span class="sum">{esc(t["summary"])}'
                          f'<span class="meta">{esc(meta)}</span></span><span class="pill{" ok" if t["stage"] == "active" else ""}">{t["stage"]}</span></a>'
-                         + (_thought_detail(cur, csrf, t, back) if open_ else "") + "</div>")
+                         + (_thought_detail(cur, csrf, t, back) if open_ else _sort_buttons(csrf, t, back) if t["stage"] == "inbox" else "") + "</div>")
     stage_opts = '<option value="">open (inbox + active)</option>' + _opts(STAGES + ("all",), f["stage"] if f["stage"] != "open" else None)
     filters = (f'<form class="row" method="get" action="/web/ideas"><input type="search" name="q" value="{esc(f["q"])}" class="grow" '
                'placeholder="Search your thoughts" aria-label="Search">'
@@ -117,6 +118,15 @@ def render_thoughts(csrf: str, q) -> str:
     return (_tabs("thoughts") + f'<div class="card">{filters}<h2>{len(rows)} {"thought" if len(rows) == 1 else "thoughts"}</h2>'
             f'{"".join(items) or "<p class=empty>Nothing matches these filters.</p>"}{more}'
             '<p class="small hint">Click a thought to see your words and change it. The stage buttons work straight away.</p></div>')
+
+
+def _sort_buttons(csrf: str, t: dict, back: str) -> str:
+    """An inbox thought sorted from the list in one tap, with Undo on the reply (04.11.2026: it took opening it first)."""
+    names = (("active", "Active"), ("someday", "Someday"), ("done", "Done"), ("dropped", "Drop"))
+    return (f'<form class="row thq" method="post" action="/web/ideas/thought">{hidden("csrf", csrf)}{hidden("id", str(t["id"]))}'
+            f'{hidden("act", "stage")}{hidden("back", back)}'
+            + "".join(f'<button class="ghost sm" type="submit" name="stage" value="{k}" aria-label="{lbl}: {esc(t["summary"])}">{lbl}</button>'
+                      for k, lbl in names) + "</form>")
 
 
 # ---- Todoist ---------------------------------------------------------------------------------------
@@ -184,7 +194,8 @@ def _task_row(csrf: str, t: dict, names: dict, today: date, ours: bool, edit: st
     base = hidden("csrf", csrf) + hidden("task", t["id"]) + hidden("back", back)
     where = names.get(place_of(t), "Lists")
     tick = (f'<form method="post" action="/web/ideas/task">{base}{hidden("act", "close")}'
-            f'<button class="tick" type="submit" aria-label="Tick off {esc(todos._en(t["content"]))}" title="Tick off"></button></form>')
+            f'<button class="gtick" type="submit" aria-label="Tick off {esc(todos._en(t["content"]))}" title="Tick off">'
+            f'<span class="box">{icon("check")}</span></button></form>')
     extra = ""
     if edit == t["id"]:
         opts = "".join(f'<option value="{esc(k)}"{" selected" if k == place_of(t) else ""}>{esc(n)}</option>' for k, n in names.items())
@@ -211,11 +222,21 @@ def render_todoist(csrf: str, q) -> str:
     sort = "due" if q.get("sort") == "due" else ""
     edit = str(q.get("edit", ""))[:40]
     back = url("/web/ideas/todoist", sort=sort)
+    stale = ""
     try:
-        tasks = open_tasks()
-        names = dict(places())
+        with todoist.quick():  # the page waits 5 s at most (04.11.2026)
+            tasks = open_tasks()
+            names = dict(places())
     except TodoistError as e:
-        return _tabs("todoist") + f'<div class="card"><p class="err">Todoist did not answer ({esc(e)}). Your thoughts still work; try again in a moment.</p></div>'
+        old = todos.last_good(("open", todos.LISTS), ("open", todos.INBOX), ("sections", todos.LISTS))
+        if not old:
+            return _tabs("todoist") + f'<div class="card"><p class="err">Todoist did not answer ({esc(e)}). Your thoughts still work; try again in a moment.</p></div>'
+        at, (lists, inbox, secs) = old  # the last list read, to look at while Todoist is away
+        tasks = lists + inbox
+        names = dict([(f"s:{sid}", f"Lists › {n}") for sid, n in sorted(secs.items(), key=lambda x: x[1].lower())]
+                     + [(f"p:{todos.LISTS}", "Lists"), (f"p:{todos.INBOX}", "Inbox")])
+        stale = (f'<p class="notice">Todoist did not answer. This is the list as of {at:%H:%M}; ticking off or changing a task waits '
+                 'until Todoist is back.</p>')
     with connect() as conn, conn.cursor() as cur:
         cur.execute("SELECT log_day(now()) AS d")
         today = cur.fetchone()["d"]
@@ -239,12 +260,12 @@ def render_todoist(csrf: str, q) -> str:
                 body += f'<div class="sect"><h3>{esc(name)} <span class="small">· {len(ts)}</span></h3>' + "".join(
                     _task_row(csrf, t, names, today, t["id"] in ours, edit, back, False) for t in ts) + "</div>"
     done = "".join(f'<div class="task closed"><form method="post" action="/web/ideas/task">{hidden("csrf", csrf)}{hidden("task", r["task_id"])}'
-                   f'{hidden("back", back)}{hidden("act", "reopen")}<button class="tick on" type="submit" title="Put it back on the list" '
-                   f'aria-label="Put {esc(todos._en(r["content"] or ""))} back on the list"></button></form>'
+                   f'{hidden("back", back)}{hidden("act", "reopen")}<button class="gtick done" type="submit" title="Put it back on the list" '
+                   f'aria-label="Put {esc(todos._en(r["content"] or ""))} back on the list"><span class="box">{icon("check")}</span></button></form>'
                    f'<div class="txt">{esc(todos._en(r["content"] or ""))} <span class="small">· ticked off today</span></div></div>' for r in closed)
     seg = (f'<nav class="seg" aria-label="Sort"><a href="/web/ideas/todoist"{' aria-current="page"' if not sort else ""}>By section</a>'
            f'<a href="/web/ideas/todoist?sort=due"{' aria-current="page"' if sort else ""}>By due date</a></nav>')
-    return (_tabs("todoist") + f'<div class="card"><div class="head sub"><h2>Open tasks <span class="small">· {len(tasks)} · Lists and Inbox</span></h2>{seg}</div>'
+    return (_tabs("todoist") + f'<div class="card">{stale}<div class="head sub"><h2>Open tasks <span class="small">· {len(tasks)} · Lists and Inbox</span></h2>{seg}</div>'
             f'{body or "<p class=empty>No open tasks.</p>"}'
             + (f'<div class="sect"><h3>Ticked off today</h3>{done}</div>' if done else "")
             + '<p class="small hint">Tick off works straight away; a task ticked off here stays below until tomorrow, so one click puts it back. '

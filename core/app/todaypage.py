@@ -2,14 +2,60 @@
 habit toggles, the Health card (edited in place) and items to review. web.py wraps it in the page and the sign-in."""
 import math
 from datetime import date, datetime, timedelta
+from typing import Optional
 
-from . import body, bodypage, coachpage, gympage, healthpage, homepage, rules, uiprefs
+from . import body, bodypage, coachpage, gympage, habitaim, healthpage, homepage, rules, uiprefs
 from .db import connect
 from .webentry import esc, hidden, icon, key
 
 REVIEW_LIMIT = 20
 AGAIN = 12  # Again chips: the latest different foods (02.11.2026: 12 on the PC; phones show the first AGAIN_PHONE)
 AGAIN_PHONE = 8
+AGAIN_DAYS, AGAIN_WINDOW_H, AGAIN_RECENT_H = 21, 2.0, 2.0
+
+
+def again_foods(cur, today: date, wake_at=None, now: Optional[datetime] = None) -> list:
+    """The Again chips (04.11.2026): first the foods eaten most often at this point of the day over the last 3 weeks (on how many
+    days, within 2 hours either side), counted from each day's wake-up where it was logged (the wake-up time moves) and from
+    the clock otherwise, leaving out foods logged in the last 2 hours; then the latest different foods fill up. Each comes
+    with the amount used last. Until 04.11.2026 the chips were only the latest foods: the next morning, last night's snacks."""
+    now = now or datetime.now(rules.BERLIN)
+    cur.execute("""SELECT e.day, min(e.event_at) AS at FROM events e JOIN log_types t ON t.id = e.type_id
+                   WHERE t.name = 'wake' AND e.day >= %s GROUP BY e.day""", (today - timedelta(days=AGAIN_DAYS),))
+    wakes = {r["day"]: r["at"] for r in cur.fetchall()}
+
+    def point(at, d, wake) -> float:  # hours since the day's wake-up, or the clock hour (+24 after midnight of a logging day)
+        if wake is not None:
+            return (at - wake).total_seconds() / 3600
+        local = at.astimezone(rules.BERLIN)
+        return local.hour + local.minute / 60 + (24 if local.date() > d else 0)
+
+    here = point(now, today, wake_at)
+    use_wake = wake_at is not None
+    cur.execute("""SELECT e.food_id, e.day, e.eaten_at, e.amount, e.id, f.name, f.basis FROM food_entries e JOIN foods f ON f.id = e.food_id
+                   WHERE f.active AND e.time_known AND e.day >= %s ORDER BY e.eaten_at, e.id""", (today - timedelta(days=AGAIN_DAYS),))
+    days: dict = {}
+    last: dict = {}
+    for r in cur.fetchall():
+        last[r["food_id"]] = r  # the latest entry of each food (rows come oldest first)
+        if r["day"] >= today:
+            continue
+        wake = wakes.get(r["day"]) if use_wake else None
+        if use_wake and wake is None:
+            continue  # a day without a wake-up cannot be compared with a wake-up-based "now"
+        if abs(point(r["eaten_at"], r["day"], wake) - here) <= AGAIN_WINDOW_H:
+            days.setdefault(r["food_id"], set()).add(r["day"])
+    recent = {fid for fid, r in last.items() if (now - r["eaten_at"]).total_seconds() < AGAIN_RECENT_H * 3600}
+    order = sorted((fid for fid in days if fid not in recent), key=lambda fid: (-len(days[fid]), -last[fid]["eaten_at"].timestamp()))
+    out = [{"id": fid, "name": last[fid]["name"], "basis": last[fid]["basis"], "amount": last[fid]["amount"]} for fid in order[:AGAIN]]
+    if len(out) < AGAIN:
+        have = {a["id"] for a in out}
+        cur.execute("""SELECT f.id, f.name, f.basis, x.amount FROM (
+                         SELECT DISTINCT ON (e.food_id) e.food_id, e.amount, e.eaten_at, e.id FROM food_entries e
+                         ORDER BY e.food_id, e.eaten_at DESC, e.id DESC) x
+                       JOIN foods f ON f.id = x.food_id WHERE f.active ORDER BY x.eaten_at DESC, x.id DESC LIMIT %s""", (AGAIN * 3,))
+        out += [dict(r) for r in cur.fetchall() if r["id"] not in have][:AGAIN - len(out)]
+    return out
 MACROS = (("kcal", "Calories", "kcal"), ("protein", "Protein", "g"), ("fat", "Fat", "g"), ("carbs", "Carbs", "g"))
 THOUGHT_TYPES = ("idea", "question", "task", "project", "note", "journal", "reading", "progress")
 AREAS = ("health", "projects", "finance", "immigration", "learning", "personal")
@@ -22,6 +68,7 @@ HEALTH_ROWS = (("bed", "Bed", "night before", "bed", None, ""), ("wake", "Woke u
 CHECKIN = (("mood", "Mood", ("very low", "low", "okay", "good", "great")),
            ("energy", "Energy", ("drained", "tired", "okay", "good", "full of energy")))
 CHECKIN_FROM = 17
+CHECKIN_AFTER_WAKE_H = 10  # since 04.11.2026: with a wake-up logged, the card comes 10 hours after it (it came right after waking)
 
 
 def clock() -> datetime:
@@ -98,15 +145,17 @@ def load(asked: date | None = None) -> dict:
         w = cur.fetchone()
         if w:
             health["wake"] = {"id": f"e{w['id']}", "v": [_hm(w["event_at"])], "at": ""}
-        lo, hi = healthpage.bed_window(day)  # the bed time of the night before (noon of the day before to noon of today)
-        cur.execute("""SELECT e.id, e.event_at FROM events e JOIN log_types t ON t.id = e.type_id
-                       WHERE t.name = 'bed' AND e.event_at >= %s AND e.event_at < %s ORDER BY e.event_at DESC, e.id DESC LIMIT 1""", (lo, hi))
-        b = cur.fetchone()
+        # the bed time of the sleep that ends with today's wake-up (healthpage.bed_anchor, 04.11.2026)
+        cur.execute("SELECT log_day(now()) AS d")
+        logday = cur.fetchone()["d"]
+        beds, wakes = healthpage.beds_near(cur, day, day)
+        b = healthpage.pick_bed(beds, wakes, healthpage.bed_anchor(day, logday, w["event_at"] if w else None))
         if b:
-            health["bed"] = {"id": f"e{b['id']}", "v": [_hm(b["event_at"])], "at": ""}
+            health["bed"] = {"id": f"e{b[0]}", "v": [_hm(b[1])], "at": ""}
         cur.execute("""SELECT DISTINCT ON (t.name) t.name, m.value1 FROM measurements m JOIN log_types t ON t.id = m.type_id
                        WHERE m.day = %s AND t.name IN ('mood','energy') ORDER BY t.name, m.event_at DESC, m.id DESC""", (day,))
         checkin = {r["name"]: round(float(r["value1"])) for r in cur.fetchall()}  # the latest of the day wins
+        ci_day, ci_got = _checkin_day(cur, day, today, w, checkin)
         if w:  # hours slept, shown with Woke up (02.11.2026): the Health page's pairing (v_sleep: the last bed in the 24 h before)
             cur.execute("SELECT bed_at FROM v_sleep WHERE wake_at = %s", (w["event_at"],))
             s = cur.fetchone()
@@ -124,17 +173,37 @@ def load(asked: date | None = None) -> dict:
                            FROM events e JOIN log_types lt ON lt.id = e.type_id WHERE e.needs_review
                        ) x ORDER BY at DESC LIMIT %s""", (REVIEW_LIMIT,))
         review = cur.fetchall()
-        again = []
-        if day == today:  # the Again chips: the latest different foods, each with the amount used last
-            cur.execute("""SELECT f.id, f.name, f.basis, x.amount FROM (
-                             SELECT DISTINCT ON (e.food_id) e.food_id, e.amount, e.eaten_at, e.id FROM food_entries e
-                             ORDER BY e.food_id, e.eaten_at DESC, e.id DESC) x
-                           JOIN foods f ON f.id = x.food_id WHERE f.active ORDER BY x.eaten_at DESC, x.id DESC LIMIT %s""", (AGAIN,))
-            again = cur.fetchall()
+        again = again_foods(cur, today, w["event_at"] if w else None) if day == today else []
         prefs = uiprefs.load(cur)
+        avoid = habitaim.avoid(cur)
         due = body.due(cur, today, bool(w)) if day == today else None  # body measurements every 4 weeks, after the wake-up
     return {"day": day, "food": food, "foods": foods, "usual": usual, "habits": habits, "last_tick": last_tick, "health": health,
-            "review": review, "prefs": prefs, "today": today, "past": day < today, "again": again, "checkin": checkin, "body_due": due}
+            "review": review, "prefs": prefs, "today": today, "past": day < today, "again": again, "checkin": checkin, "body_due": due,
+            "ci_day": ci_day, "ci_got": ci_got, "avoid": avoid}
+
+
+def _checkin_day(cur, day: date, today: date, w, got: dict):
+    """Which day the check-in card asks about, and what it has (04.11.2026): today from 10 hours after the wake-up (without
+    one: from 17:00 to 05:00); before today's wake-up, from 05:00, the day that just ended while it is not answered yet (a
+    day with a wake-up or food). Once one of the two is in, the card stays until both are."""
+    if day != today:
+        return None, {}
+    now = clock()
+    if got:
+        return today, got
+    if w:
+        return (today, got) if now >= w["event_at"] + timedelta(hours=CHECKIN_AFTER_WAKE_H) else (None, {})
+    if now.hour >= CHECKIN_FROM or now.hour < 5:
+        return today, got
+    y = today - timedelta(days=1)
+    cur.execute("""SELECT DISTINCT ON (t.name) t.name, m.value1 FROM measurements m JOIN log_types t ON t.id = m.type_id
+                   WHERE m.day = %s AND t.name IN ('mood','energy') ORDER BY t.name, m.event_at DESC, m.id DESC""", (y,))
+    yg = {r["name"]: round(float(r["value1"])) for r in cur.fetchall()}
+    if len(yg) == len(CHECKIN):
+        return None, {}
+    cur.execute("""SELECT EXISTS (SELECT 1 FROM events e JOIN log_types t ON t.id = e.type_id WHERE t.name = 'wake' AND e.day = %s)
+                          OR EXISTS (SELECT 1 FROM food_entries WHERE day = %s) AS lived""", (y, y))
+    return (y, yg) if cur.fetchone()["lived"] else (None, {})
 
 
 # ---- food -----------------------------------------------------------------------------------------
@@ -209,7 +278,7 @@ def _scanner(csrf: str) -> str:
     num = lambda k, label, req=False: (f'<label>{label}<input type="number" name="{k}" id="lbl-{k}" min="0" max="5000" step="any" '  # noqa: E731
                                        f'inputmode="decimal"{" required" if req else ""}></label>')
     label_form = (f'<form class="fbox fields label-form" method="post" action="/web/food/labeladd" data-label-form hidden>{hidden("csrf", csrf)}'
-                  f'{hidden("key", key())}<input type="hidden" name="barcode" value="">'
+                  f'{hidden("key", key())}<input type="hidden" name="barcode" value=""><input type="hidden" name="from" value="">'
                   '<label class="wide">Name<input name="name" id="lbl-name" maxlength="120" required></label>'
                   '<label>Per 100<select name="basis" id="lbl-basis"><option value="g">g</option><option value="ml">ml (a drink)</option></select></label>'
                   + num("kcal", "Calories (kcal)", True) + num("protein", "Protein g", True) + num("fat", "Fat g", True)
@@ -217,7 +286,7 @@ def _scanner(csrf: str) -> str:
                   + num("fibre", "Fibre g") + num("salt_g", "Salt g")
                   + '<p class="small wide" data-label-note></p>'
                   '<label>Log now (optional)<input type="number" name="amount" id="lbl-amount" min="0" max="5000" step="any" inputmode="decimal" placeholder="amount"></label>'
-                  f'<label>Time<input type="time" name="time" id="lbl-time" value="{now}"></label>'
+                  f'<label>Time<input type="time" name="time" id="lbl-time" value="{now}" data-nowtime></label>'
                   '<p class="wide row"><button class="primary" type="submit">Add to my foods</button></p></form>')
     return (f'<dialog class="scan" id="scan-dlg" aria-labelledby="scan-title" data-lib="/web/static/zxing.min.js" data-csrf="{esc(csrf)}">'
             f'<div class="scan-head"><b id="scan-title">Scan a barcode</b><button class="iconbtn" type="button" data-scan-close aria-label="Close">{icon("close")}</button></div>'
@@ -228,7 +297,7 @@ def _scanner(csrf: str) -> str:
             f'<form class="again-form" method="post" action="/web/food/again" data-scan-found hidden>{hidden("csrf", csrf)}{hidden("key", key())}'
             '<input type="hidden" name="food" value=""><b data-scan-name></b>'
             '<label>Amount <input type="number" name="amount" id="scan-amount" min="0" max="5000" step="any" inputmode="decimal"> <span data-scan-unit></span></label>'
-            f'<label>Time <input type="time" name="time" id="scan-time" value="{now}"></label><button class="primary sm" type="submit">Log</button></form>'
+            f'<label>Time <input type="time" name="time" id="scan-time" value="{now}" data-nowtime></label><button class="primary sm" type="submit">Log</button></form>'
             f'<form class="row" method="post" action="/web/food/lookup" data-scan-lookup hidden>{hidden("csrf", csrf)}<input type="hidden" name="name" value="">'
             '<span class="small">Not in your catalogue yet.</span><button class="primary sm" type="submit">Look it up on Open Food Facts</button></form>'
             f'<p class="row"><label class="ghost sm photo-btn" data-label-pick>{icon("camera")}Photo of the label'
@@ -265,7 +334,7 @@ def _again_section(d: dict, csrf: str) -> str:
         f'<form class="again-form" method="post" action="/web/food/again">{hidden("csrf", csrf)}{hidden("key", key())}{hidden("food", str(a["id"]))}'
         f'<label>Amount <input type="number" name="amount" id="ag-a-{a["id"]}" min="0" max="5000" step="any" inputmode="decimal" '
         f'value="{_plain(a["amount"])}"> {a["basis"]}</label>'
-        f'<label>Time <input type="time" name="time" id="ag-t-{a["id"]}" value="{now}"></label>'
+        f'<label>Time <input type="time" name="time" id="ag-t-{a["id"]}" value="{now}" data-nowtime></label>'
         '<button class="primary sm" type="submit">Log</button></form></details>'
         for i, a in enumerate(d["again"]))
     return f'<div class="usual-row again-row"><span class="small">Again:</span>{chips}</div>'
@@ -297,7 +366,7 @@ def _usual_section(d: dict, csrf: str) -> str:
             f'<form class="usual-edit" method="post" action="/web/usual">{hidden("csrf", csrf)}{hidden("key", key())}{hidden("meal", str(mid))}'
             f'<div class="tablewrap"><table class="ft">{_head()}<tbody>{rows}'
             f'<tr class="sum"><td>This meal</td>{"".join(f"<td class=m>{_n(v)}</td>" for v in tot)}</tr></tbody></table></div>'
-            f'<div class="foot"><label>Time <input type="time" name="time" id="u{mid}-time" value="{now}"></label>'
+            f'<div class="foot"><label>Time <input type="time" name="time" id="u{mid}-time" value="{now}" data-nowtime></label>'
             '<button class="primary" type="submit">Log meal</button></div></form></div></details>')
     return f'<div class="usual-row"><span class="small">Repeat:</span>{"".join(out)}</div>'
 
@@ -311,30 +380,36 @@ def _habit_section(d: dict, csrf: str) -> str:
     if not habits:
         return ""
     btns = []
+    avoid = d.get("avoid") or set()
     for h in habits:
         done = h["complete"]
+        av = h["type_name"] in avoid  # a habit to avoid: ticked when it happened, amber, not counted as done (04.11.2026)
+        cls = (" done" if done else "") + (" avoid" if av else "")
         count = f' <span class="cnt">{h["done"]}/{h["target"]}</span>' if h["target"] > 1 else ""
+        tag = '<span class="cnt">avoid</span>' if av else ""
         if d["past"]:
-            btns.append(f'<span class="habit static{" done" if done else ""}"><span class="box">{icon("check")}</span>{esc(h["label"])}{count}</span>')
+            btns.append(f'<span class="habit static{cls}"><span class="box">{icon("check")}</span>{esc(h["label"])}{count}{tag}</span>')
             continue
         act = hidden("action", "untick") + hidden("eid", str(d["last_tick"].get(h["type_name"], ""))) if done else \
             hidden("action", "tick") + hidden("key", key())
         btns.append(f'<form method="post" action="/web/habit">{hidden("csrf", csrf)}{hidden("name", h["type_name"])}{act}'
-                    f'<button class="habit{" done" if done else ""}" type="submit" aria-pressed="{str(done).lower()}">'
-                    f'<span class="box">{icon("check")}</span>{esc(h["label"])}{count}</button></form>')
-    n_done = sum(1 for h in habits if h["complete"])
-    hint = "" if d["past"] else '<p class="small hint">Click to tick, click again to untick.</p>'
-    return (f'<div class="card"><h2><span>Habits · {n_done} of {len(habits)} done</span><a href="/web/habits">All habits</a></h2>'
+                    f'<button class="habit{cls}" type="submit" aria-pressed="{str(done).lower()}">'
+                    f'<span class="box">{icon("check")}</span>{esc(h["label"])}{count}{tag}</button></form>')
+    todo = [h for h in habits if h["type_name"] not in avoid]
+    n_done = sum(1 for h in todo if h["complete"])
+    hint = "" if d["past"] else '<p class="small hint">Tap to tick, tap again to untick. A habit to avoid is ticked when it happened.</p>'
+    return (f'<div class="card"><h2><span>Habits · {n_done} of {len(todo)} done</span><a href="/web/habits">All habits</a></h2>'
             f'<div class="habits">{"".join(btns)}</div>'
             f'{hint}</div>')
 
 
 def _checkin_section(d: dict, csrf: str) -> str:
-    """How was today? Mood and energy, one tap each (1 to 5). Shown in the evening (or once one of the two is in) until both are."""
-    got = d["checkin"]
-    hour = clock().hour
-    if d["past"] or len(got) == len(CHECKIN) or not (got or hour >= CHECKIN_FROM or hour < 5):
+    """How was today (or yesterday)? Mood and energy, one tap each (1 to 5); the day from _checkin_day."""
+    ci_day, got = d.get("ci_day"), d.get("ci_got") or {}
+    if not ci_day or len(got) == len(CHECKIN):
         return ""
+    other = ci_day != d["today"]
+    extra = hidden("day", ci_day.isoformat()) if other else ""
     rows = []
     for t, label, words in CHECKIN:
         if t in got:
@@ -343,9 +418,10 @@ def _checkin_section(d: dict, csrf: str) -> str:
             continue
         btns = "".join(f'<button type="submit" name="value" value="{n}" aria-label="{label} {n}, {w}"><b>{n}</b><span>{esc(w)}</span></button>'
                        for n, w in enumerate(words, 1))
-        rows.append(f'<form class="ci" method="post" action="/web/checkin">{hidden("csrf", csrf)}{hidden("key", key())}{hidden("type", t)}'
+        rows.append(f'<form class="ci" method="post" action="/web/checkin">{hidden("csrf", csrf)}{hidden("key", key())}{hidden("type", t)}{extra}'
                     f'<span class="ci-l">{label}</span><div class="ci-b">{btns}</div></form>')
-    return (f'<div class="card checkin"><h2>How was today?</h2>{"".join(rows)}'
+    title = f"How was yesterday, {ci_day:%a %d.%m.}?" if other else "How was today?"
+    return (f'<div class="card checkin"><h2>{title}</h2>{"".join(rows)}'
             '<p class="small hint">One tap saves it; Undo is on the reply. Typing "mood 4, energy 3" works too.</p></div>')
 
 

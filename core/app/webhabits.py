@@ -4,7 +4,7 @@ is the owner's yes here; every change leaves an audit row with what kind of chan
 times, not habits (category sleep): these forms refuse them."""
 import re
 
-from . import logbook
+from . import habitaim, logbook
 from .db import connect
 from .habitspage import GROUPS
 from .websettings import _int, _rejected
@@ -13,7 +13,7 @@ CATEGORIES = {k for k, _v in GROUPS}
 
 
 def _habit(cur, name: str):
-    cur.execute("SELECT name, label, category, on_checklist, active FROM log_types WHERE name = %s AND kind = 'event' AND category <> 'sleep'",
+    cur.execute("SELECT name, label, category, on_checklist, active, sort_order FROM log_types WHERE name = %s AND kind = 'event' AND category <> 'sleep'",
                 (str(name)[:64],))
     return cur.fetchone()
 
@@ -72,7 +72,11 @@ def edit(form, key, session) -> dict:
         cur.execute("SELECT 1 FROM log_types WHERE lower(label) = lower(%s) AND name <> %s", (label, t["name"]))
         if cur.fetchone():
             return _rejected(f"There is already a log type called {label}.")
-        cur.execute("UPDATE log_types SET label = %s, daily_target = %s WHERE name = %s", (label, _int(form.get("daily_target"), 1, 10, 1), t["name"]))
+        order = _int(form.get("sort_order"), 0, 999, t["sort_order"]) if str(form.get("sort_order", "")).strip() else t["sort_order"]
+        cur.execute("UPDATE log_types SET label = %s, daily_target = %s, sort_order = %s WHERE name = %s",
+                    (label, _int(form.get("daily_target"), 1, 10, 1), order, t["name"]))
+        if form.get("aim") in ("do", "avoid"):
+            habitaim.set_aim(cur, t["name"], form.get("aim") == "avoid")
         logbook._audit(cur, "web_change", "changed", {"what": "habit settings"}, logbook.WEB)
     return {"outcome": "changed", "head": f"Saved the habit {label}."}
 

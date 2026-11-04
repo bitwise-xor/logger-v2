@@ -95,8 +95,16 @@ def test_retire_and_bring_back(web):
     act(web, "/web/gym/active", exercise=str(bench), on="0")
     assert "Bench press" not in web[0].get("/web/gym").text.split("Today’s workout")[1].split("Add exercise")[0]
     page = act(web, "/web/gym/new", name="BENCH PRESS", kind="weights")
-    assert "Bench press is back in your list." in page.text
+    assert "Bench press is back in your list (weights)." in page.text
     assert owner_sql("SELECT active FROM exercises")[0]["active"] is True
+
+
+def test_bringing_back_an_unused_exercise_takes_the_kind_picked_now(web):
+    plank = ex("Plank")
+    act(web, "/web/gym/active", exercise=str(plank), on="0")
+    page = act(web, "/web/gym/new", name="plank", kind="bodyweight")
+    assert "Plank is back in your list (bodyweight)." in page.text
+    assert owner_sql("SELECT kind FROM exercises WHERE id = %s", plank)[0]["kind"] == "bodyweight"
 
 
 def test_rename_keeps_the_history_and_the_old_name(web):

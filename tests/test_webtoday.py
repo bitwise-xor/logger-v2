@@ -128,3 +128,24 @@ def test_page_needs_a_session(web):
     from test_web import client
     r = client().get("/web/")
     assert r.status_code == 302 and "Test oats" not in r.text
+
+
+def test_again_chips_put_foods_of_this_time_of_day_first():
+    """The foods eaten most often around now on earlier days come first; one logged in the last 2 hours only fills up (04.11.2026)."""
+    from app import todaypage
+    from app.db import connect
+
+    def at(fid, sql_at):
+        owner_sql(f"""INSERT INTO food_entries (raw_id, food_id, amount, eaten_at, time_known, day, day_rule, extractor_version,
+                      kcal, protein, fat, carbs, source) VALUES (%s, %s, 50, {sql_at}, true, log_day({sql_at}), 'wake', 'test', 100, 1, 1, 1, 'label')""",
+                  raw(), fid)
+    muesli, chips, tea = food("Test muesli", 400, 10), food("Test chips", 500, 5), food("Test tea", 1, 0)
+    for k in (1, 2, 3):
+        at(muesli, f"now() - interval '{k} days'")
+    at(chips, "now() - interval '1 day' - interval '8 hours'")  # yesterday, but at another time of day
+    at(chips, "now() - interval '3 hours'")  # the latest food, not at this time of day
+    at(tea, "now() - interval '1 day'")
+    at(tea, "now() - interval '30 minutes'")  # just logged: not first, though eaten at this time yesterday
+    with connect() as c, c.cursor() as cur:
+        names = [a["name"] for a in todaypage.again_foods(cur, day())]
+    assert names[:3] == ["Test muesli", "Test tea", "Test chips"]  # then the latest foods: tea (just logged), chips

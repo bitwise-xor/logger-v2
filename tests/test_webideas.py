@@ -64,7 +64,8 @@ def test_open_thoughts_newest_first_with_filters(web):
     assert "Book the blood test" not in c.get("/web/ideas?tag=logger").text
     assert "1 thought" in c.get("/web/ideas?q=blood").text
     opened = c.get(f"/web/ideas?open={b}").text
-    assert "your words" in opened and 'action="/web/ideas/thought"' in opened and f'value="{a}"' not in opened
+    assert "your words" in opened and 'action="/web/ideas/thought"' in opened
+    assert f'name="id" value="{a}"' in opened.split('class="row thq"')[1][:300]  # the other one: only its sort buttons (04.11.2026)
 
 
 def test_save_is_the_yes_for_the_own_fields(web):
@@ -158,3 +159,30 @@ def test_shopping_and_unknown_tasks_are_refused(web, todo):
     todos.forget()
     assert "Todoist did not answer" in text(act(web, "/web/ideas/task", task="k1", act="close"))
     assert not todo.tasks["k4"]["checked"] and not todo.tasks["k1"]["checked"]
+
+
+def test_an_inbox_thought_is_sorted_from_the_list(web):
+    """04.11.2026: Active, Someday, Done and Drop on each inbox row, without opening it first; Undo on the reply."""
+    t1, t2 = thought("Test inbox idea"), thought("Test active idea", stage="active")
+    page = web[0].get("/web/ideas").text
+    assert page.count('class="row thq"') == 1 and f'name="id" value="{t1}"' in page.split('class="row thq"')[1][:400]
+    done = act(web, "/web/ideas/thought", id=str(t1), act="stage", stage="done", back="/web/ideas").text
+    assert row(t1)["stage"] == "done" and ">Undo</button>" in done and row(t2)["stage"] == "active"
+
+
+def test_when_todoist_does_not_answer_the_page_shows_the_last_list(web, todo):
+    """04.11.2026: the page waits 5 s at most, then shows the last list read (with its time) instead of nothing."""
+    c, _ = web
+    assert "Renew the passport" in c.get("/web/ideas/todoist").text
+    todos.forget()  # as after a change: the cache is empty, the last good list stays
+    todo.down = True
+    page = c.get("/web/ideas/todoist").text
+    assert "Todoist did not answer. This is the list as of" in page and "Renew the passport" in page and "Descale the kettle" in page
+
+
+def test_the_page_read_waits_five_seconds_once():
+    from app import todoist
+    assert todoist.QUICK_TIMEOUT == 5
+    with todoist.quick():
+        assert todoist._quick.on is True
+    assert getattr(todoist._quick, "on", False) is False

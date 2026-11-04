@@ -5,6 +5,7 @@ import re
 
 import pytest
 
+from app import habitspage
 from conftest import owner_sql
 from test_log import fake  # noqa: F401 - fixture reused
 from test_web import act, client, n, web  # noqa: F401
@@ -84,7 +85,7 @@ def test_a_new_habit_is_tracked_when_asked(web, fake):
     assert "Added the habit Stretching. It is tracked" in done.text
     assert flags("stretching") == {"on_checklist": True, "active": True, "label": "Stretching", "daily_target": 1, "category": "practice", "aliases": ["stretching"]}
     assert "Stretching" in web[0].get("/web/").text and "hab-stretching" in web[0].get("/web/habits").text
-    assert "Stretching" in web[0].get("/web/settings?tab=habits").text and "Stretching" in web[0].get("/web/settings?tab=today").text
+    assert "Stretching" in web[0].get("/web/settings?tab=today").text
     last = owner_sql("SELECT name FROM log_types WHERE on_checklist ORDER BY sort_order DESC, name LIMIT 1")[0]["name"]
     assert last == "stretching"  # last on Today
 
@@ -159,3 +160,14 @@ def test_the_forms_need_a_session_and_unknown_habits_are_refused(web, fake):
     assert flags("meds")["on_checklist"] is True
     for action in ("track", "retire", "restore", "edit", "delete"):
         assert "Unknown habit." in act(web, f"/web/habits/{action}", name="nope", on="1", label="x", confirmed="1").text
+
+
+def test_behaviour_habits_are_to_avoid_until_set_and_count_days_without(web):
+    """04.11.2026: a habit to avoid is not "done" when ticked; the calendar counts the days without it."""
+    from app import habitaim
+    from app.db import connect
+    with connect() as c, c.cursor() as cur:
+        assert "fanta_m" in habitaim.avoid(cur)  # the group "behaviour" until the owner sets it
+    owner_sql("UPDATE log_types SET on_checklist = true, active = true WHERE name = 'fanta_m'")
+    page = web[0].get("/web/habits").text
+    assert f"{habitspage.DAYS}/{habitspage.DAYS} without" in page and '<span class="pill warn">avoid</span>' in page

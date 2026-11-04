@@ -4,7 +4,7 @@ Food against the targets, how far from the targets, weight, blood pressure, fast
 count most, and the daily charts of calories, protein and fat."""
 from datetime import date, timedelta
 
-from . import coachpage, trendspage
+from . import coachpage, habitaim, trendspage
 from .body import LABEL as BODY_LABEL, sessions as body_sessions, signed
 from .db import connect
 from .foodpage import _pct_class
@@ -35,7 +35,7 @@ def _avg(xs) -> float | None:
 
 def _bars(totals: dict) -> str:
     rows = []
-    days = sorted(totals)
+    days = sorted(trendspage.full_days(totals))
     for key, label, unit in MACROS:
         target = next((float(totals[d]["target_" + key]) for d in reversed(days) if totals[d]["target_" + key]), None)
         mean = _avg(totals[d][key] for d in days)
@@ -54,7 +54,7 @@ def _bars(totals: dict) -> str:
 
 
 def _cards(totals: dict) -> str:
-    days = sorted(totals)
+    days = sorted(trendspage.full_days(totals))  # partly logged days left out (04.11.2026)
     out = []
     for key, label, unit in MACROS:
         mean = _avg(totals[d][key] for d in days)
@@ -79,9 +79,12 @@ def _health(cur, start: date, end: date, ndays: int) -> str:
     cur.execute("""SELECT t.name, t.daily_target, e.day, count(*)::int AS n FROM events e JOIN log_types t ON t.id = e.type_id
                    WHERE t.on_checklist AND t.active AND t.name <> 'wake' AND e.day BETWEEN %s AND %s GROUP BY 1, 2, 3""", (start, end))
     done = cur.fetchall()
-    cur.execute("SELECT count(*) AS n FROM log_types WHERE on_checklist AND active AND kind = 'event' AND name <> 'wake'")
-    habits = cur.fetchone()["n"]
-    full = sum(1 for r in done if r["n"] >= (r["daily_target"] or 1))
+    avoid = habitaim.avoid(cur)  # habits to avoid count their days without, not towards "done" (04.11.2026)
+    cur.execute("SELECT name, label FROM log_types WHERE on_checklist AND active AND kind = 'event' AND name <> 'wake' ORDER BY sort_order, name")
+    tracked = cur.fetchall()
+    habits = sum(1 for t in tracked if t["name"] not in avoid)
+    full = sum(1 for r in done if r["n"] >= (r["daily_target"] or 1) and r["name"] not in avoid)
+    without = [(t["label"], ndays - len({r["day"] for r in done if r["name"] == t["name"]})) for t in tracked if t["name"] in avoid]
     items = []
     if weights:
         ds = sorted(weights)
@@ -115,6 +118,8 @@ def _health(cur, start: date, end: date, ndays: int) -> str:
             items.append(("Body measurements", f'Measured {s["day"]:%d.%m.}: {said} <span class="small">({n} value{"" if n == 1 else "s"})</span>'))
     if habits and ndays:
         items.append(("Habits", f'{full / (habits * ndays) * 100:.0f}% <span class="small">of habit-days done ({full} of {habits * ndays})</span>'))
+    for label, free in without if ndays else []:
+        items.append((label, f'{free} of {ndays} days without <span class="small">(a habit to avoid)</span>'))
     # gym days (02.11.2026, Gym step c; the owner's answer: on the Week page only, not in the Sheet), once there is a gym list
     cur.execute("""SELECT w.day, d.name FROM workouts w LEFT JOIN workout_days d ON d.id = w.split_day_id
                    WHERE w.day BETWEEN %s AND %s ORDER BY w.day, w.id""", (start, end))
@@ -163,7 +168,7 @@ def render(csrf: str, q) -> str:
         totals = trendspage.day_totals(cur, start, end) if ndays else {}
         seg = "".join(f'<a href="/web/week?p={k}"{" aria-current=\"page\"" if k == p else ""}>{lbl}</a>' for k, lbl in PERIODS)
         head = (f'<div class="head"><h1>Week</h1><nav class="seg" aria-label="Period">{seg}</nav></div>'
-                f'<p class="small">{start:%a %d.%m.} to {end:%a %d.%m.%Y} · {len(totals)} of {ndays} days with food · today is left out, it is not over yet</p>' if ndays else
+                f'<p class="small">{start:%a %d.%m.} to {end:%a %d.%m.%Y} · {len(totals)} of {ndays} days with food{trendspage.left_out(totals)} · today is left out, it is not over yet</p>' if ndays else
                 f'<div class="head"><h1>Week</h1><nav class="seg" aria-label="Period">{seg}</nav></div>'
                 '<div class="card"><p class="empty">No complete day in this period yet (this week so far starts after Monday).</p></div>')
         if not ndays:

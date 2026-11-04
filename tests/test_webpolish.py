@@ -85,14 +85,15 @@ def test_undo_wants_a_number_and_a_session(web, fake):
     c, csrf = web
     unknown = act(web, "/web/undo", raw_id="x", back="/web/").text
     assert "Nothing undone." in unknown and "Unknown message." in unknown
-    assert c.post("/web/undo", data={"raw_id": "1"}, headers=ORIGIN).status_code == 403
+    assert c.post("/web/undo", data={"raw_id": "1"}, headers=ORIGIN).status_code == 303  # no token: back, nothing undone
     assert client().post("/web/undo", data={"raw_id": "1", "csrf": csrf}, headers=ORIGIN).status_code == 303
 
 
 def test_a_repeated_form_shows_no_undo(web, fake, skyr):
     act(web, "/web/log", text="150 g skyr, weight 82.4", key="u4", back="/web/")
     again = act(web, "/web/log", text="150 g skyr, weight 82.4", key="u4", back="/web/")
-    assert "Already saved earlier" in again.text and "/web/undo" not in again.text
+    # the repeat adds no Undo of its own; the first save's Undo stays (a double tap wiped it until 04.11.2026)
+    assert "Already saved earlier" in again.text and again.text.count('action="/web/undo"') == 1
 
 
 # ---- pages -----------------------------------------------------------------------------------------
@@ -172,3 +173,12 @@ def test_the_script_and_style_carry_the_new_behaviour(web):
     css = web[0].get("/web/static/app.css").text
     for want in (".skip", ".chart .ref", ".chart .tip", "pointer:coarse"):
         assert want in css
+
+
+def test_a_double_tap_keeps_the_undo_bar_and_it_goes_after_15_minutes(web, fake):
+    page = act(web, "/web/habit", name="meds", action="tick", key="dt1").text
+    assert 'class="undobar"' in page
+    again = act(web, "/web/habit", name="meds", action="tick", key="dt1").text  # the same form sent twice
+    assert 'class="undobar"' in again and n("SELECT count(*) AS n FROM events") == 1
+    owner_sql("UPDATE web_sessions SET undo = jsonb_set(undo, '{at}', to_jsonb(extract(epoch FROM now()) - 901))")
+    assert 'class="undobar"' not in web[0].get("/web/").text

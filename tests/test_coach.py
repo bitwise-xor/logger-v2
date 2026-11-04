@@ -149,16 +149,18 @@ def test_the_status_address_needs_a_session(web, ai):
 
 def test_the_week_page_has_a_review_card_that_reads_the_week_and_its_day_coachings(web, ai):
     eat("Test oats", 400, 20, 10, 60)
-    page = web[0].get("/web/week?p=7").text
-    assert "Week review" in page and ">Review this week<" in page
+    rolling = web[0].get("/web/week?p=7").text  # a rolling 7 days links to the Monday-to-Sunday weeks (04.11.2026)
+    assert "The review looks at one week from Monday to Sunday." in rolling and 'name="kind" value="week"' not in rolling
+    page = web[0].get("/web/week?p=last").text
+    assert "Week review" in page and ">Review last week<" in page
     a = re.search(r'name="kind" value="week"><input type="hidden" name="start" value="([\d-]+)"><input type="hidden" name="end" value="([\d-]+)"', page)
     start, end = a[1], a[2]
     owner_sql("INSERT INTO coachings (kind, start_day, end_day, status, body) VALUES ('day', %s, %s, 'done', %s::jsonb)", end, end, json.dumps(DAY_BODY))
-    act(web, "/web/coach/start", kind="week", start=start, end=end, back="/web/week?p=7")
+    act(web, "/web/coach/start", kind="week", start=start, end=end, back="/web/week?p=last")
     data = sent(ai)
     assert data["kind"] == "week" and len(data["week"]["days"]) == 7 and data["day_coachings_this_week"][0]["improve"] == DAY_BODY["improve"]
     assert "properties" in ai.calls[-1]["schema"] and "focus" in ai.calls[-1]["schema"]["properties"]
-    page = web[0].get("/web/week?p=7").text
+    page = web[0].get("/web/week?p=last").text
     assert "Against your targets" in page and "Best and hardest day" in page and "Focus for next week" in page and ">Review again<" in page
 
 
@@ -236,3 +238,11 @@ def test_every_part_off_is_refused_and_a_goals_only_form_keeps_the_rest(web, ai)
     act(web, "/web/settings/coach_goals", goals="Lose 6 kg", back="/web/settings?tab=coach")  # an old page's form: goals only
     v = owner_sql("SELECT value FROM ui_settings WHERE key = 'coach'")[0]["value"]
     assert v == {"goals": "Lose 6 kg", "style": "Short, please.", "hidden": ["day:gaps"]}
+
+
+def test_a_cut_off_coaching_reports_failed_so_the_card_stops_waiting():
+    from app import coach as coachmod
+    fresh = owner_sql("INSERT INTO coachings (kind, start_day, end_day) VALUES ('day', %s, %s) RETURNING id", day(), day())[0]["id"]
+    old = owner_sql("""INSERT INTO coachings (kind, start_day, end_day, created_at) VALUES ('day', %s, %s, now() - interval '11 minutes')
+                       RETURNING id""", day(), day())[0]["id"]
+    assert (coachmod.status(fresh), coachmod.status(old), coachmod.status(999999)) == ("working", "failed", "gone")

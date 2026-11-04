@@ -125,17 +125,21 @@ def test_bad_targets_change_nothing(web):
 
 # ---- Settings: habits ------------------------------------------------------------------------------
 
-def test_a_habit_can_be_renamed_reordered_and_retired(web):
-    page = web[0].get("/web/settings?tab=habits").text
-    assert 'value="Medication"' in page and "Add a habit" in page
-    saved = act(web, "/web/settings/habit", name="meds", label=" Meds  and vitamins ", daily_target="2", sort_order="5", active="1")
+def test_a_habit_can_be_renamed_reordered_and_set_to_avoid_on_the_habits_page(web):
+    """04.11.2026: one habit manager, the Habits page; Settings > Habits only points there."""
+    assert "Open the Habits page" in web[0].get("/web/settings?tab=habits").text
+    assert 'href="/web/settings?tab=habits"' not in web[0].get("/web/settings").text
+    page = web[0].get("/web/habits").text
+    assert 'name="sort_order"' in page and 'name="aim"' in page
+    saved = act(web, "/web/habits/edit", name="meds", label=" Meds  and vitamins ", daily_target="2", sort_order="5", aim="do")
     assert "Saved the habit Meds and vitamins." in saved.text
     assert owner_sql("SELECT label, daily_target, sort_order FROM log_types WHERE name = 'meds'")[0] == {"label": "Meds and vitamins", "daily_target": 2, "sort_order": 5}
-    retired = act(web, "/web/settings/habit", name="meds", label="Meds and vitamins", daily_target="2", sort_order="5")  # Active unticked
-    assert "It is retired" in retired.text
-    assert "Meds and vitamins" not in web[0].get("/web/").text and "Meds and vitamins" not in web[0].get("/web/habits").text
-    assert "Unknown habit." in act(web, "/web/settings/habit", name="weight", label="x", daily_target="1", sort_order="1", active="1").text
-    assert "needs a name" in act(web, "/web/settings/habit", name="meds", label=" ", daily_target="1", sort_order="1", active="1").text
+    act(web, "/web/habits/edit", name="meds", label="Meds and vitamins", daily_target="2", sort_order="5", aim="avoid")
+    assert "meds" in owner_sql("SELECT value FROM ui_settings WHERE key = 'habit_aim'")[0]["value"]["avoid"]
+    today = web[0].get("/web/").text
+    assert "Habits · 0 of" in today and 'class="habit avoid"' in today
+    act(web, "/web/habits/edit", name="meds", label="Meds and vitamins", daily_target="2", sort_order="5", aim="do")
+    assert "meds" not in owner_sql("SELECT value FROM ui_settings WHERE key = 'habit_aim'")[0]["value"]["avoid"]
 
 
 def test_a_new_habit_is_added_and_shows_everywhere(web):
@@ -188,7 +192,7 @@ def test_hidden_parts_and_their_order_apply_on_today(web):
     assert "Shoonya" in page and "Weight" in page
     assert "1 item to review is hidden here" in page and "Looks right" not in page  # a one-line notice, not the box
     assert "Medication" in web[0].get("/web/habits").text  # only the Today page is changed
-    assert "Medication" in web[0].get("/web/settings?tab=habits").text
+    assert "Medication" in web[0].get("/web/settings?tab=today").text
 
 
 def test_hiding_everything_and_the_reset(web):
@@ -205,3 +209,21 @@ def test_the_order_helper_keeps_unknown_items_last_and_in_their_own_order():
     assert uiprefs.ordered(items, lambda x: x, ["c", "a"]) == ["c", "a", "b", "d"]
     assert uiprefs.ordered(items, lambda x: x, []) == items
     assert uiprefs.shown("habit", "x", {"hidden": {"habit:y"}}) and not uiprefs.shown("habit", "y", {"hidden": {"habit:y"}})
+
+
+def test_each_tab_saves_back_to_itself(web):
+    """Habits, Today page and Devices had no back field, so Save landed on Food targets (bug until 04.11.2026)."""
+    for tab in ("today", "body"):  # Devices: only with another device signed in
+        page = web[0].get(f"/web/settings?tab={tab}").text
+        assert f'name="back" value="/web/settings?tab={tab}"' in page
+
+
+def test_notifications_say_when_this_device_is_on(web):
+    sid = owner_sql("SELECT sid FROM web_sessions")[0]["sid"]
+    owner_sql("""INSERT INTO push_subscriptions (endpoint, p256dh, auth, user_agent, session_sid)
+                 VALUES ('https://web.push.apple.com/test-this-device', 'k', 'a', 'iPhone', %s)""", sid)
+    try:
+        page = web[0].get("/web/settings?tab=notify").text
+    finally:  # push_subscriptions is not emptied between tests
+        owner_sql("DELETE FROM push_subscriptions WHERE endpoint = 'https://web.push.apple.com/test-this-device'")
+    assert "<b>iPhone</b> <span class=\"pill ok\">this device</span>" in page  # (the On box needs the server key, absent in tests)

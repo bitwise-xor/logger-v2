@@ -67,3 +67,31 @@ def test_health_page_week_page_and_the_row_edit(web, fake):
     act(web, "/web/healthday", day=yesterday, r="30", key="c10", mo="3", en="4")
     week = web[0].get("/web/week").text
     assert "<td>Mood · energy</td><td>mood 3.0 · energy 4.0" in week and "average of 1 evening, 1 to 5" in week
+
+
+def test_with_a_wake_up_the_card_comes_ten_hours_after_it(web, monkeypatch):
+    """04.11.2026: the card came right after waking for someone up in the afternoon; now 10 hours after the wake-up."""
+    from test_webhealth import event
+    from test_webtoday import day
+    d = day()
+    event("wake", d, "12:00")
+    up = datetime.combine(d, datetime.min.time(), rules.BERLIN).replace(hour=12)
+    monkeypatch.setattr(todaypage, "clock", lambda: up + timedelta(hours=9))
+    assert "How was today?" not in web[0].get("/web/").text
+    monkeypatch.setattr(todaypage, "clock", lambda: up + timedelta(hours=10, minutes=5))
+    assert "How was today?" in web[0].get("/web/").text
+
+
+def test_before_waking_the_card_asks_about_yesterday_and_saves_it_there(web, fake, monkeypatch):
+    from test_webtoday import day
+    y = day() - timedelta(days=1)
+    owner_sql("INSERT INTO raw_inbox (channel, content) VALUES ('test', 'x')")
+    owner_sql("""INSERT INTO food_entries (raw_id, food_id, amount, eaten_at, time_known, day, day_rule, extractor_version, kcal, protein, fat, carbs, source)
+                 SELECT (SELECT max(id) FROM raw_inbox), %s, 50, now() - interval '1 day', true, %s, 'wake', 'test', 100, 1, 1, 1, 'label'""",
+              owner_sql("INSERT INTO foods (name, basis, kcal, protein, fat, carbs, source) VALUES ('Test y', 'g', 1, 1, 1, 1, 'label') RETURNING id")[0]["id"], y)
+    monkeypatch.setattr(todaypage, "clock", lambda: datetime.now(rules.BERLIN).replace(hour=8))
+    page = web[0].get("/web/").text
+    assert f"How was yesterday, {y:%a %d.%m.}?" in page and f'name="day" value="{y.isoformat()}"' in page
+    act(web, "/web/checkin", type="mood", value="4", day=y.isoformat(), key="cy1")
+    assert owner_sql("SELECT m.day FROM measurements m JOIN log_types t ON t.id = m.type_id WHERE t.name = 'mood'")[0]["day"] == y
+    assert "Only today or yesterday" in act(web, "/web/checkin", type="mood", value="4", day=(y - timedelta(days=3)).isoformat(), key="cy2").text

@@ -65,6 +65,7 @@ def current_session(request: Request):
         row = c.execute("SELECT * FROM web_sessions WHERE token_hash=%s AND expires_at > now()", (_h(token),)).fetchone()
         if row:
             c.execute("UPDATE web_sessions SET last_seen=now() WHERE token_hash=%s", (row["token_hash"],))
+            row = {**row, "token": token}  # for _renew; never shown or stored
     return row
 
 
@@ -133,31 +134,45 @@ def shell(session, body: str, status: int = 200, active: str = "") -> HTMLRespon
                                    + (badge if k == "today" and open_q else "") + icon(k) + "</a>")
     by_key = {k: (href, label) for k, href, label in links}
 
+    csrf = session["csrf"]
+    signout = (f'<form class="signout" method="post" action="/web/logout"><input type="hidden" name="csrf" value="{html.escape(csrf)}">'
+               '<button class="ghost dim" type="submit">Sign out</button></form>')
+
     def menu(shown, short=False):
-        """The given links, then a More menu with all the others."""
+        """The given links, then a More menu with all the others (on phones with Sign out at its end)."""
         rest = [k for k, _h, _l in links if k not in shown]
         return ("".join(link(k, by_key[k][0], "Ideas" if short and k == "ideas" else by_key[k][1]) for k in shown)
                 + f'<details class="more"><summary{current if active in rest else ""}>More{icon("more")}</summary>'
-                + f'<div class="panel">{"".join(link(k, *by_key[k]) for k in rest)}</div></details>')
+                + f'<div class="panel">{"".join(link(k, *by_key[k]) for k in rest)}{signout if short else ""}</div></details>')
 
     # Wide screens: the main links in the top bar, the rest under More. Phones: Today, Food, Health, Ideas, Gym, Home and More in a bar at
-    # the bottom (Gym since 02.11.2026: between Habits and Ideas on wide screens; Home right after Gym since 04.11.2026).
-    items = menu(("today", "food", "health", "habits", "gym", "home", "ideas", "week", "search"))
+    # the bottom. The first six are in the same order on both since 04.11.2026 (Gym since 02.11.2026, Home right after Gym since 04.11.2026).
+    items = menu(("today", "food", "health", "ideas", "gym", "home", "habits", "week", "search"))
     tabs = menu(("today", "food", "health", "ideas", "gym", "home"), short=True)
-    csrf = session["csrf"]
     bar = (f'<header><div class="bar"><a class="brand" href="/web/">{icon("logo")}Logger</a><nav class="top" aria-label="Main">{items}</nav>'
            f'<button class="iconbtn themebtn" type="button" data-theme-toggle aria-label="Switch between light and dark">'
-           f'{icon("moon", "moon")}{icon("sun", "sun")}</button>'
-           f'<form method="post" action="/web/logout"><input type="hidden" name="csrf" value="{html.escape(csrf)}">'
-           '<button class="ghost dim" type="submit">Sign out</button></form></div></header>')
+           f'{icon("moon", "moon")}{icon("sun", "sun")}</button>{signout}</div></header>')
     flash = _pop_flash(session)
     reply = webentry.reply_html(flash, csrf) if flash else ""
     undo = webentry.undo_bar(session.get("undo"), csrf)
     title = next((label for k, _href, label in links if k == active), "")
-    return page(f"{title} · Logger" if title else "Logger",
+    resp = page(f"{title} · Logger" if title else "Logger",
                 f'<a class="skip" href="#main">Skip to content</a>{bar}<main id="main">'
                 f'{webentry.entry_form(csrf, (flash or {}).get("retry_text", ""))}{reply}{undo}{body}</main>'
                 f'<nav class="tabs" aria-label="Main menu">{tabs}</nav>', status)
+    _renew(session, resp)
+    return resp
+
+
+def _renew(session, resp) -> None:
+    """A device in use stays signed in: once a day a page view moves the end to SESSION_DAYS from now, cookie included (until
+    04.11.2026 a session ended 30 days after signing in, however often it was used)."""
+    token, ends = session.get("token"), session.get("expires_at")
+    if not token or not ends or ends > datetime.now(timezone.utc) + timedelta(days=SESSION_DAYS - 1):
+        return
+    with connect() as c:
+        c.execute("UPDATE web_sessions SET expires_at = now() + make_interval(days => %s) WHERE token_hash = %s", (SESSION_DAYS, session["token_hash"]))
+    resp.set_cookie(COOKIE, token, max_age=SESSION_DAYS * 86400, path="/", secure=True, httponly=True, samesite="strict")
 
 
 def home(session, asked=None) -> HTMLResponse:
@@ -395,14 +410,23 @@ def add_routes(mcp) -> None:
         if not session:
             return RedirectResponse("/web/login", status_code=303, headers={"Cache-Control": "no-store"}), None
         form = await request.form()
-        if not _origin_ok(request) or not csrf_ok(session, form):
+        if not _origin_ok(request):
             return Response("Forbidden", status_code=403), None
+        if not csrf_ok(session, form):  # a page from before signing in again: say so, and give typed words back (04.11.2026)
+            _set_flash(session, {"outcome": "rejected", "head": "Nothing saved.",
+                                 "reason": "That page was out of date. It is fresh now: please do it again.",
+                                 **({"retry_text": str(form.get("text"))[:webentry.MAX_TEXT]} if form.get("text") else {})})
+            return RedirectResponse(back_any(form), status_code=303, headers={"Cache-Control": "no-store"}), None
         return session, form
 
     def done(session, resp: dict, back: str = "/web/") -> Response:
         rows = resp.pop("undo_rows", None)  # the rows before a change: kept for Undo, not shown
         _set_flash(session, resp)
-        _set_undo(session, webundo.record(resp, rows))  # every action replaces the last one's Undo (or clears it)
+        new = webundo.record(resp, rows)
+        # every action replaces the last one's Undo (or clears it), except a double tap's repeat or a refusal: they changed
+        # nothing, and wiping the Undo of the change just made lost it (until 04.11.2026)
+        if new is not None or not (resp.get("replayed") or resp.get("outcome") == "rejected"):
+            _set_undo(session, new)
         return RedirectResponse(back, status_code=303, headers={"Cache-Control": "no-store"})
 
     def form_key(form):
@@ -442,7 +466,7 @@ def add_routes(mcp) -> None:
         if form is None:
             return session
         rec = session.get("undo") or {}
-        if not rec or not hmac.compare_digest(str(form.get("token", "")), str(rec.get("token", ""))):
+        if not webundo.fresh(rec) or not hmac.compare_digest(str(form.get("token", "")), str(rec.get("token", ""))):
             return done(session, {"outcome": "rejected", "head": "Nothing undone.", "reason": "There is nothing to undo any more."}, back_any(form))
         return done(session, await _run(lambda: webundo.apply(rec)), back_any(form))
 
@@ -576,6 +600,16 @@ def add_routes(mcp) -> None:
             if r:
                 food = {"id": r["id"], "name": r["name"], "basis": r["basis"], "amount": float(r["amount"]) if r["amount"] is not None else 100.0}
         return JSONResponse({"code": code, "food": food}, headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"})
+
+    @mcp.custom_route("/web/foods/off.json", methods=["GET"])
+    async def food_off(request: Request) -> Response:
+        """The scanner's "Look it up": Open Food Facts' values for a barcode, to check in the dialog (nothing saved, 04.11.2026)."""
+        if (r := hidden(request)) is not None:
+            return r
+        if not current_session(request):
+            return Response("Not found", status_code=404)
+        out = await _run(lambda: webfood.off_values(request.query_params.get("code", "")))
+        return JSONResponse(out, headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"})
 
     @mcp.custom_route("/web/food/label", methods=["POST"])
     async def label_photo(request: Request) -> Response:
@@ -719,7 +753,8 @@ def add_routes(mcp) -> None:
         r = str(form.get("r", ""))
         r = r if r in {str(x) for x in healthpage.RANGES} else str(healthpage.DEFAULT_RANGE)
         day = str(form.get("day", ""))[:10]
-        return done(session, await _run(lambda: webactions.health_day(day, r, form, form_key(form))), f"/web/health?r={r}")
+        back = f"/web/health?r={r}" + ("&all=1" if form.get("all") == "1" else "")  # an older row stays shown (04.11.2026)
+        return done(session, await _run(lambda: webactions.health_day(day, r, form, form_key(form))), back)
 
     @mcp.custom_route("/web/body", methods=["POST"])
     async def body_form(request: Request) -> Response:
@@ -827,7 +862,13 @@ def add_routes(mcp) -> None:
             return r
         session = current_session(request)
         form = await request.form()
-        if not _origin_ok(request) or not csrf_ok(session, form):
+        if not _origin_ok(request):
+            return Response("Forbidden", status_code=403)
+        if not session:  # already signed out (e.g. "Sign out all other devices" elsewhere): it showed "Forbidden" until 04.11.2026
+            resp = RedirectResponse("/web/login", status_code=303, headers={"Cache-Control": "no-store"})
+            resp.delete_cookie(COOKIE, path="/", secure=True, httponly=True, samesite="strict")
+            return resp
+        if not csrf_ok(session, form):
             return Response("Forbidden", status_code=403)
         with connect() as c:
             c.execute("DELETE FROM web_sessions WHERE token_hash=%s", (session["token_hash"],))

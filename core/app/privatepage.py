@@ -12,7 +12,7 @@ from .webentry import esc, hidden, key
 
 KINDS = ("private", "gratitude")
 LIST_LIMIT = 300
-BACK = re.compile(r"/web/private(\?[A-Za-z0-9=&._%-]*)?")
+BACK = re.compile(r"/web/private(\?[A-Za-z0-9=&._%+-]*)?")  # "+": a space in a search (urlencode)
 LABEL = re.compile(r"^\s*(private|gratitude)\s*:\s*", re.I)
 
 
@@ -123,15 +123,17 @@ def _gratitude(cur, csrf: str, q) -> str:
         first = _monday(d)
         last = first + timedelta(days=6)
         step, title = 7, f"Week {first.isocalendar()[1]} · {first:%d.%m.} to {last:%d.%m.%Y}"
-    lo = datetime.combine(first, datetime.min.time(), rules.BERLIN)
-    hi = datetime.combine(last + timedelta(days=1), datetime.min.time(), rules.BERLIN)
+    # logging days, 05:00 to 05:00 like log_day(): an entry written at 01:30 belongs to the evening before (was midnight to
+    # midnight until 04.11.2026, which hid it until the next day)
+    lo = datetime.combine(first, datetime.min.time(), rules.BERLIN).replace(hour=5)
+    hi = datetime.combine(last + timedelta(days=1), datetime.min.time(), rules.BERLIN).replace(hour=5)
     cur.execute("""SELECT id, received_at, event_at, content FROM private.entries WHERE label = 'gratitude'
                    AND coalesce(event_at, received_at) >= %s AND coalesce(event_at, received_at) < %s
                    ORDER BY coalesce(event_at, received_at), id""", (lo, hi))
     rows = cur.fetchall()
     by: dict = {}
     for e in rows:
-        by.setdefault(_when(e).date(), []).append(e)
+        by.setdefault((_when(e).replace(tzinfo=None) - timedelta(hours=5)).date(), []).append(e)
     def li(e, with_time: bool) -> str:
         return f'<li>{esc(words(e["content"]))}' + (f' <span class="small">{_when(e):%H:%M}</span>' if with_time else "") + "</li>"
 

@@ -54,12 +54,25 @@ def _hm(t: str) -> str:
 
 # ---- the food log ----------------------------------------------------------------------------------
 
+def new_when(old: datetime, known: bool, day, hm: str) -> str:
+    """A changed time of a food entry as "dd.mm.yyyy hh:mm" (fixed 04.11.2026; it took the old calendar date, so 23:30 changed
+    to 00:30 moved the entry a day back). A known time: the new hh:mm nearest the old moment (across midnight either way).
+    No known time: on the entry's logging day, which runs to 05:00 of the next morning."""
+    h, m = int(hm[:2]), int(hm[3:5])
+    if not known:
+        on = day + timedelta(days=1) if h < 5 else day
+        return f"{on:%d.%m.%Y} {hm}"
+    base = old.replace(hour=h, minute=m, second=0, microsecond=0)
+    best = min((base + timedelta(days=k) for k in (-1, 0, 1)), key=lambda x: abs((x - old).total_seconds()))
+    return f"{best:%d.%m.%Y} {hm}"
+
+
 def entry(form, key: Optional[str]) -> dict:
     ref = str(form.get("id", ""))
     if not re.fullmatch(r"f\d{1,9}", ref):
         return _rejected("Unknown entry.")
     with connect() as c:
-        e = c.execute("""SELECT e.food_id, e.amount, e.eaten_at, e.time_known, f.basis, f.name FROM food_entries e
+        e = c.execute("""SELECT e.food_id, e.amount, e.eaten_at, e.time_known, e.day, f.basis, f.name FROM food_entries e
                          JOIN foods f ON f.id = e.food_id WHERE e.id = %s""", (int(ref[1:]),)).fetchone()
     if not e:
         return _rejected("That entry is not there any more.")
@@ -67,13 +80,31 @@ def entry(form, key: Optional[str]) -> dict:
         return _now_or_ask([{"action": "change", "args": {"id": ref, "delete": True}}], "food delete", f"Deleted {e['name']}.",
                            form, "/web/food/entry", "Yes, delete")
     fields: dict = {}
-    food = str(form.get("food", ""))
-    if food.isdigit() and int(food) != e["food_id"]:
-        fields["food"] = f"N{int(food)}"
+    food, fid = str(form.get("food", "")), e["food_id"]
+    typed = " ".join(str(form.get("food_name", "")).split())
+    if typed and typed.lower() != e["name"].lower():  # the food typed by name (04.11.2026); the list narrows while typing
+        with connect() as c:
+            hit = c.execute("SELECT id FROM foods WHERE active AND lower(name) = lower(%s) ORDER BY id LIMIT 1", (typed,)).fetchone()
+        if not hit:
+            return _rejected(f'No food called "{typed}" in your catalogue: type part of its name and pick it from the list.')
+        fid = hit["id"]
+    elif not typed and food.isdigit():  # an older page: the food's id from the list
+        fid = int(food)
+    if fid != e["food_id"]:
+        fields["food"] = f"N{fid}"
+    unit = str(form.get("unit", "") or e["basis"]).strip()
+    if unit != e["basis"]:
+        with connect() as c:
+            ok = c.execute("SELECT 1 FROM food_units WHERE food_id = %s AND unit = %s", (fid, unit)).fetchone()
+        if not ok:
+            return _rejected(f'"{unit}" is not a unit of that food: give the amount in {e["basis"]}.')
     a = _num(form.get("amount", ""))
-    if a is None or not 0 < a <= 5000:
-        return _rejected(f"Give the amount as a number above 0 and at most 5000 {e['basis']}.")
-    if abs(a - float(e["amount"])) > 1e-9:
+    top = 5000 if unit == e["basis"] else 100
+    if a is None or not 0 < a <= top:
+        return _rejected(f"Give the amount as a number above 0 and at most {top} {unit}.")
+    if unit != e["basis"]:
+        fields.update(amount=a, unit=unit)  # "2 slice": the change function turns it into grams
+    elif abs(a - float(e["amount"])) > 1e-9:
         fields.update(amount=a, unit=e["basis"])
     t = str(form.get("time", "")).strip()
     if t:
@@ -81,7 +112,7 @@ def entry(form, key: Optional[str]) -> dict:
             return _rejected("Give the time as hh:mm.")
         old = e["eaten_at"].astimezone(BERLIN)
         if not e["time_known"] or old.strftime("%H:%M") != _hm(t):
-            fields["when"] = f"{old:%d.%m.%Y} {_hm(t)}"
+            fields["when"] = new_when(old, e["time_known"], e["day"], _hm(t))
     if not fields:
         return {"outcome": "unchanged", "reason": "Nothing changed."}
     return _now_or_ask([{"action": "change", "args": {"id": ref, "fields": fields}}], "food entry", f"Changed {e['name']}.",
@@ -169,7 +200,7 @@ def usual_new(form, key: Optional[str]) -> dict:
             return _rejected(msg)
         logbook._audit(cur, "web_change", "changed", {"what": "usual new"}, logbook.WEB)
     n = len(prep["recipes"][0]["items"]) if prep["recipes"] else 0
-    return {"outcome": "changed", "head": f'Saved "{name}" as a usual meal ({n} items). It shows on Today and in the Catalogue.'}
+    return {"outcome": "changed", "head": f'Saved "{name}" as a usual meal ({n} items). It shows on Today and under Food › Usual meals.'}
 
 
 def food_id(cur, text: str) -> Optional[int]:
@@ -283,6 +314,48 @@ def barcode(form, key: Optional[str]) -> dict:
     return _change([{"action": "change", "args": {"id": ref, "fields": {"barcode": b}}}], "food barcode", f"Barcode {b} saved for {ref} {f['name']}.")
 
 
+def basics(form, key: Optional[str]) -> dict:
+    """The Catalogue's "Name and use" (04.11.2026): rename, a drink or not, hidden from the lists or not; saved at once."""
+    ref = str(form.get("id", ""))
+    f = _food(ref)
+    if not f:
+        return _rejected("Unknown food.")
+    name = " ".join(str(form.get("name", "")).split())[:120]
+    if len(name) < 2:
+        return _rejected("Give the food a name.")
+    fields: dict = {}
+    if name != f["name"]:
+        fields["name"] = name
+    drink, hide = form.get("drink") == "1", form.get("hide") == "1"
+    if drink != bool(f["is_drink"]):
+        fields["drink"] = drink
+    if hide == bool(f["active"]):
+        fields["active"] = not hide
+    if not fields:
+        return {"outcome": "unchanged", "reason": "Nothing changed."}
+    said = [f'name "{name}"' if "name" in fields else "", ("a drink" if drink else "not a drink") if "drink" in fields else "",
+            ("hidden from the lists" if hide else "back in the lists") if "active" in fields else ""]
+    return _change([{"action": "change", "args": {"id": ref, "fields": fields}}], "food basics",
+                   f"{ref} {name}: " + ", ".join(x for x in said if x) + ".")
+
+
+def unit_add(form, key: Optional[str]) -> dict:
+    """The Catalogue's "Add a unit" (04.11.2026): 1 slice = 35 g, so "2 slices" can be typed or picked; the same name again
+    changes its grams."""
+    ref = str(form.get("id", ""))
+    f = _food(ref)
+    if not f:
+        return _rejected("Unknown food.")
+    unit = " ".join(str(form.get("unit", "")).split()).lower()[:30]
+    g = _num(form.get("grams", ""))
+    if not unit or not any(ch.isalpha() for ch in unit) or unit in ("g", "ml", "kg", "l"):
+        return _rejected("Name the unit, e.g. slice, piece, scoop or cup.")
+    if g is None or not 0 < g <= 2000:
+        return _rejected(f"Give its weight as a number above 0 and at most 2000 {f['basis']}.")
+    return _change([{"action": "change", "args": {"id": ref, "fields": {"units": [{"unit": unit, "grams": g}]}}}], "food unit",
+                   f"1 {unit} of {f['name']} = {format(g, 'g')} {f['basis']}.")
+
+
 def reviewed(form, key: Optional[str]) -> dict:
     ref = str(form.get("id", ""))
     f = _food(ref)
@@ -320,8 +393,17 @@ def usual_meal(form, key: Optional[str]) -> dict:
     for k in range(int(rows)):
         if form.get(f"rm_{k}"):
             continue
-        fid, g = str(form.get(f"food_{k}", "")), _num(form.get(f"g_{k}", ""))
-        if not fid.isdigit() or g is None or not 0 < g <= 5000:
+        fid, g = " ".join(str(form.get(f"food_{k}", "")).split()), _num(form.get(f"g_{k}", ""))
+        if not fid.isdigit():  # typed by name since 04.11.2026; unchanged keeps its food (also a retired one)
+            if fid == str(form.get(f"was_{k}", "")).strip() and str(form.get(f"fid_{k}", "")).isdigit():
+                fid = str(form.get(f"fid_{k}"))
+            else:
+                with connect() as c, c.cursor() as cur:
+                    picked = food_id(cur, fid) if fid else None
+                if picked is None:
+                    return _rejected(f"Pick each food from the list ({fid or 'an empty row'} is not exactly one food of the catalogue).")
+                fid = str(picked)
+        if g is None or not 0 < g <= 5000:
             return _rejected("Give every food an amount above 0 and at most 5000.")
         items.append((int(fid), g))
     # Foods added: the numbered rows of the editor (add_name_k + add_g_k, 30.10.2026) and the older single row (add_name / add_food + add_g)
@@ -377,6 +459,31 @@ LABEL_FIELDS = (("kcal", "Calories"), ("protein", "Protein"), ("fat", "Fat"), ("
 LABEL_OPTIONAL = ("sat_fat", "sugar_total", "fibre")
 
 
+def off_values(code: str) -> dict:
+    """The scanner's "Look it up" (04.11.2026): Open Food Facts' values for a barcode, in the label photo's shape, to check and
+    add in the same form (nothing is saved here). {"ok": False, "reason"} when it has nothing usable."""
+    from . import foodfacts, lookup  # here: lookup imports the AI provider
+    code = re.sub(r"\D", "", code or "")[:14]
+    if not BARCODE.fullmatch(code):
+        return {"ok": False, "reason": "A barcode is 8 to 14 digits."}
+    try:
+        prod = foodfacts.product(code)
+    except foodfacts.FoodFactsError as e:
+        return {"ok": False, "reason": f"{e}. Try again, or take a photo of the label."}
+    if not prod or not (prod.get("product_name") or prod.get("product_name_en") or prod.get("nutriments")):
+        return {"ok": False, "reason": f"Barcode {code} is not in Open Food Facts. Take a photo of the label instead."}
+    v = foodfacts.values(prod.get("nutriments") or {})
+    name = prod.get("product_name") or prod.get("product_name_en") or ""
+    if not v:
+        return {"ok": False, "reason": f"Open Food Facts knows {name or 'it'} but not all its values. Take a photo of the label instead."}
+    out = {k: v.get(k) for k in ("kcal", "protein", "fat", "carbs", "sat_fat", "sugar_total", "fibre")}
+    out["salt_g"] = round(v["sodium_mg"] / 400, 2) if v.get("sodium_mg") is not None else None
+    qty = str(prod.get("quantity") or "").lower().replace(" ", "")
+    basis = "ml" if re.search(r"\d(ml|cl|l)$", qty) else "g"
+    return {"ok": True, "values": out, "name": name or None, "brand": lookup._brands(prod.get("brands")) or None, "basis": basis,
+            "note": "From Open Food Facts (other people's entries)."}
+
+
 def label_add(form, key: Optional[str]) -> dict:
     """The values Claude read from a label photo, as the owner checked and corrected them: the food goes into the catalogue
     through the logger's own new-food checks (impossible values are refused), with its barcode when it was scanned first;
@@ -406,8 +513,10 @@ def label_add(form, key: Optional[str]) -> dict:
     code = re.sub(r"\D", "", str(form.get("barcode", "")))
     code = code if BARCODE.fullmatch(code) else None
     now = datetime.now(BERLIN)
-    values.update(basis=basis, source="label", drink=basis == "ml",
-                  source_note=f"label photo read by Claude, checked by the owner on {now:%d.%m.%Y}" + (f"; barcode {code}" if code else ""))
+    off = form.get("from") == "off"  # the scanner's Open Food Facts look-up fills the same form (04.11.2026)
+    values.update(basis=basis, source="database" if off else "label", drink=basis == "ml",
+                  source_note=(f"Open Food Facts, checked by the owner on {now:%d.%m.%Y}" if off else
+                               f"label photo read by Claude, checked by the owner on {now:%d.%m.%Y}") + (f"; barcode {code}" if code else ""))
     with connect() as conn, conn.cursor() as cur:
         out = record.add_food(cur, name, values, "catalogue", now, None, confirmed=True)
         if out["outcome"] == "needs_confirmation" and out.get("code"):
@@ -430,4 +539,5 @@ def label_add(form, key: Optional[str]) -> dict:
 # (None = the page the form came from).
 ACTIONS = {"entry": (entry, None), "note": (note, None), "copy": (copy, "/web/food"), "usualnew": (usual_new, None), "usualcreate": (usual_create, None),
            "values": (values, None), "words": (words, None), "barcode": (barcode, None), "reviewed": (reviewed, None),
+           "basics": (basics, None), "unit": (unit_add, None),
            "lookup": (lookup, "/web/"), "usualmeal": (usual_meal, None), "again": (again, "/web/"), "labeladd": (label_add, "/web/")}

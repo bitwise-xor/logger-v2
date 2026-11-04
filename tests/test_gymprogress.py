@@ -22,7 +22,11 @@ def session(days_ago, rows, split=None):
 
 def test_the_tabs_and_the_empty_pages(web):
     page = web[0].get("/web/gym/progress").text
-    assert re.findall(r'<nav class="seg" aria-label="Gym">(.*?)</nav>', page)[0].count("<a ") == 6  # Activity came with step (d)
+    # Activity shows once watch data has come (04.11.2026); its own page still opens and keeps its tab
+    nav = re.findall(r'<nav class="seg" aria-label="Gym">(.*?)</nav>', page)[0]
+    assert nav.count("<a ") == 5 and "/web/gym/activity" not in nav
+    act_page = web[0].get("/web/gym/activity").text
+    assert re.findall(r'<nav class="seg" aria-label="Gym">(.*?)</nav>', act_page)[0].count("<a ") == 6
     assert 'href="/web/gym/progress" aria-current="page"' in page and "Nothing to show yet" in page and "Workouts per week" in page
     assert "No workouts yet." in web[0].get("/web/gym/history").text
 
@@ -54,7 +58,7 @@ def test_history_by_date_with_the_day_of_the_split(web):
     session(1, [(chest, 3, 10, 42.5, None)])
     page = web[0].get("/web/gym/history").text
     cards = re.findall(r'<div class="card"><h2><span>(.*?)</span><span class="small">(.*?)</span></h2>(.*?)</div>', page, re.S)
-    assert len(cards) == 2 and "Free workout" in cards[0][1] and "Day 1 · Push" in cards[1][1]
+    assert len(cards) == 2 and "Free workout" in cards[0][1] and "Push" in cards[1][1] and "Day 1" not in cards[1][1]
     assert re.search(r"\d\d:\d\d–\d\d:\d\d", cards[1][1])  # from the first tick to the last
     assert "Chest press" in cards[1][2] and "3 × 10 at 40 kg" in cards[1][2] and "15 min" in cards[1][2]
 
@@ -71,3 +75,23 @@ def test_gym_days_on_the_week_page(web):
     week = web[0].get("/web/week").text
     row = re.search(r"<td>Gym</td><td>(.*?)</td>", week)[1]
     assert row.startswith("2 workouts") and "(Push)" in row and n("SELECT count(*) AS n FROM workouts") == 2
+
+
+def test_the_circle_repeats_the_heaviest_row_and_is_ready_for_a_first_cardio(web):
+    """04.11.2026: the circle took the last session's first row (the lightest of a pyramid) and was greyed out the first time
+    even when the numbers were complete (cardio's 20 minutes)."""
+    bench, bike = ex("Test bench"), ex("Test bike", "cardio")
+    session(2, [(bench, 3, 10, 40, None), (bench, 3, 8, 50, None), (bench, 2, 6, 55, None)])
+    page = web[0].get("/web/gym").text
+    assert 'aria-label="Log Test bench: 2 × 6 at 55 kg"' in page
+    assert 'aria-label="Log Test bike: 20 min"' in page
+
+
+def test_an_exercise_added_on_the_workout_tab_goes_on_todays_day(web):
+    from test_web import act
+    gym.seed()
+    page = act(web, "/web/gym/new", name="Test face pull", kind="weights", today="1").text
+    assert "It is on today’s" in page
+    xid = owner_sql("SELECT id FROM exercises WHERE name = 'Test face pull'")[0]["id"]
+    assert n("SELECT count(*) AS n FROM workout_day_items WHERE exercise_id = %s", xid) == 1
+    assert 'id="x%d"' % xid in web[0].get("/web/gym").text.split("Other exercises")[0]

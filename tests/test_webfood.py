@@ -229,3 +229,62 @@ def test_bad_input_changes_nothing(web, fake):
                     headers={"Origin": "https://app.example.test"})
     assert r.headers["location"] == "/web/food"  # back only to the Food pages
     assert float(entry(eid)["amount"]) == 60 and n("SELECT count(*) AS n FROM usual_meals") == 0
+
+
+def test_a_time_changed_across_midnight_stays_on_its_day(web, fake):
+    """23:30 changed to 00:30 is half past midnight after it, not 23 hours before (bug until 04.11.2026), and back again."""
+    d = day() - timedelta(days=2)
+    eid = eat_on(d, "23:30", oats(), 60)
+    act(web, "/web/food/entry", id=f"f{eid}", amount="60", time="00:30", act="save")
+    at = owner_sql("SELECT to_char(eaten_at AT TIME ZONE 'Europe/Berlin', 'YYYY-MM-DD HH24:MI') AS t, day FROM food_entries WHERE id = %s", eid)[0]
+    assert (at["t"], at["day"]) == (f"{d + timedelta(days=1)} 00:30", d)
+    act(web, "/web/food/entry", id=f"f{eid}", amount="60", time="23:45", act="save")
+    assert entry(eid)["t"] == "23:45" and entry(eid)["day"] == d
+
+
+def test_saving_an_entry_of_a_retired_food_keeps_its_food(web, fake):
+    d = day()
+    fid = food("Test old bread", 250, 8, 2, 48)
+    eid = eat_on(d, "08:10", fid, 60)
+    owner_sql("UPDATE foods SET active = false WHERE id = %s", fid)
+    page = web[0].get(f"/web/food?day={d}&edit=f{eid}").text
+    assert 'name="food_name" list="foods-dl" autocomplete="off" value="Test old bread"' in page
+    page = act(web, "/web/food/entry", id=f"f{eid}", food=str(fid), food_name="Test old bread", amount="60", unit="g", time="08:10",
+               act="save").text
+    assert "Nothing changed." in page and entry(eid)["name"] == "Test old bread"
+
+
+
+def test_the_editor_takes_a_typed_food_and_a_unit(web, fake):
+    """04.11.2026: the food is typed (not picked from a list of every food) and the amount can be in one of its units."""
+    d = day()
+    eid = eat_on(d, "08:10", oats(), 60)
+    bread = food("Test rye bread", 220, 7, 1.5, 40)
+    owner_sql("INSERT INTO food_units (food_id, unit, grams) VALUES (%s, 'slice', 35)", bread)
+    page = web[0].get(f"/web/food?day={d}&edit=f{eid}").text
+    assert '<option value="Test rye bread">' in page and 'name="unit"' in page
+    act(web, "/web/food/entry", id=f"f{eid}", food_name="test rye bread", amount="60", unit="g", time="08:10", act="save")
+    assert entry(eid)["name"] == "Test rye bread"
+    page = web[0].get(f"/web/food?day={d}&edit=f{eid}").text
+    assert '<option value="slice">slice (35 g)</option>' in page
+    act(web, "/web/food/entry", id=f"f{eid}", food_name="Test rye bread", amount="2", unit="slice", time="08:10", act="save")
+    assert float(entry(eid)["amount"]) == 70
+    bad = act(web, "/web/food/entry", id=f"f{eid}", food_name="No such food", amount="2", unit="g", time="08:10", act="save").text
+    assert "No food called" in bad and entry(eid)["name"] == "Test rye bread"
+
+
+def test_the_catalogue_renames_marks_a_drink_hides_and_adds_a_unit(web, fake):
+    """04.11.2026: the open food's box changes its basics at once, without the chat."""
+    fid = food("Test brot", 220, 7, 1.5, 40)
+    page = web[0].get(f"/web/food/catalogue?food=N{fid}").text
+    assert 'action="/web/food/basics"' in page and 'action="/web/food/unit"' in page
+    act(web, "/web/food/basics", id=f"N{fid}", name="Test rye bread", drink="", hide="")
+    f = owner_sql("SELECT name, is_drink, active FROM foods WHERE id = %s", fid)[0]
+    assert (f["name"], f["is_drink"], f["active"]) == ("Test rye bread", False, True)
+    page = act(web, "/web/food/unit", id=f"N{fid}", unit="Slice", grams="35").text
+    assert "1 slice of Test rye bread = 35 g." in page
+    assert owner_sql("SELECT unit, grams FROM food_units WHERE food_id = %s", fid) == [{"unit": "slice", "grams": 35}]
+    assert "Name the unit" in act(web, "/web/food/unit", id=f"N{fid}", unit="g", grams="35").text
+    act(web, "/web/food/basics", id=f"N{fid}", name="Test rye bread", drink="1", hide="1")
+    f = owner_sql("SELECT is_drink, active FROM foods WHERE id = %s", fid)[0]
+    assert (f["is_drink"], f["active"]) == (True, False)

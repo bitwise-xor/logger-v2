@@ -1,6 +1,7 @@
 """The web app's Recent page (31.10.2026): the last messages sent to the logger from the web app and from Claude, newest
 first, each with what it saved (foods, values, ticks, thoughts), so the last meal or tick can be checked at a glance.
 Private entries are listed with their words (decided by the user). Imports (sheets, exports) are left out."""
+import re
 from datetime import date, timedelta
 
 from . import gym, rules
@@ -11,6 +12,15 @@ from .webentry import esc
 
 LIMIT = 50
 CHANNELS = {"web": "Web app", "claude-chat": "Claude", "mcp": "Claude"}
+
+
+def again_text(text: str) -> str:
+    """A message to send again, without the time and day the app's buttons wrote into it ("again at 13:05", "on 01.11.2026",
+    "(clicked …)"): sent again it is for now (04.11.2026; it logged at the old time or day)."""
+    t = re.sub(r"\s*\(clicked [^)]*\)", "", text)
+    t = re.sub(r"\s+on \d{1,2}\.\d{1,2}\.\d{4}\b", "", t)
+    t = re.sub(r"\s+at \d{1,2}:\d{2}\b", "", t)
+    return t.strip()
 
 
 def load() -> dict:
@@ -90,8 +100,9 @@ def render(csrf: str, waiting: str = "") -> str:
     out, last = [], None
     for m in d["msgs"]:
         at = m["received_at"].astimezone(rules.BERLIN)
-        if at.date() != last:
-            last = at.date()
+        logday = (at.replace(tzinfo=None) - timedelta(hours=5)).date()  # like log_day(): to 05:00 it is still the day before
+        if logday != last:
+            last = logday
             out.append(f'<h3 class="rc-day">{_day_head(last, d["today"])}</h3>')
         if m["kind"] == "private":
             chan, items = "Private", [("Private", m.get("label") or "private entry")]
@@ -100,7 +111,7 @@ def render(csrf: str, waiting: str = "") -> str:
         lines = ("<ul class=\"rc-saved\">" + "".join(f'<li><span class="pill">{esc(k)}</span> {esc(v)}</li>' for k, v in items) + "</ul>"
                  if items else '<p class="small rc-none">Nothing saved from this message.</p>')
         day = d["day_of"].get(m["id"]) if m["kind"] == "raw" else None
-        acts = (f'<button class="ghost sm" type="button" data-fill="{esc(m["content"])}">Use again</button>'
+        acts = (f'<button class="ghost sm" type="button" data-fill="{esc(again_text(m["content"]))}">Use again</button>'
                 + (f'<a class="ghost sm" href="/web/?day={day.isoformat()}">Open day</a>' if day else ""))
         out.append(f'<article class="rc"><div class="rc-top"><span class="num">{at:%H:%M}</span><span class="pill">{chan}</span></div>'
                    f'<p class="rc-text">{esc(m["content"])}</p>{lines}<div class="row">{acts}</div></article>')
