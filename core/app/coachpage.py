@@ -20,9 +20,11 @@ def _section(title: str, xs, cls: str = "") -> str:
     return f'<div class="cosec"><h3{attr}>{esc(title)}</h3><ul>{li}</ul></div>' if li else ""
 
 
-def body_html(row: dict) -> str:
-    """A finished coaching's sections."""
-    b = row["body"] or {}
+def body_html(row: dict, hidden: frozenset = frozenset()) -> str:
+    """A finished coaching's sections, without the parts switched off in Settings > Coach (also in older coachings)."""
+    off = {k for k, _ in coach.PARTS[row["kind"]] if f'{row["kind"]}:{k}' in hidden}
+    fields = {f for k in off for f in coach.FIELDS.get(k, (k,))}
+    b = {k: v for k, v in (row["body"] or {}).items() if k not in fields}
     if row["kind"] == "day":
         meal = b.get("next_meal")
         meal_html = ""
@@ -59,6 +61,7 @@ def card(kind: str, a, b, csrf: str, back: str) -> str:
     """The Coach card (day) or the Week review card (week) for one period."""
     with connect() as conn, conn.cursor() as cur:
         row = coach.latest(cur, kind, a, b)
+        hidden = frozenset(coach.prefs(cur)["hidden"])
     title = "Coach" if kind == "day" else "Week review"
     again = "Coach me again" if kind == "day" else "Review again"
     first = "Coach me" if kind == "day" else "Review this week"
@@ -67,7 +70,7 @@ def card(kind: str, a, b, csrf: str, back: str) -> str:
         inner = (f'<div class="cowait" data-coach-wait="{row["id"]}" role="status"><b>{WAIT[kind]}</b>'
                  '<span class="small">You can leave this page: the coaching is kept and shows here when it is ready.</span></div>')
     elif row and row["status"] == "done":
-        inner = (body_html(row) + f'<div class="cofoot"><span class="small">{esc(_meta(row))}</span>'
+        inner = (body_html(row, hidden) + f'<div class="cofoot"><span class="small">{esc(_meta(row))}</span>'
                  f'{_button(kind, a, b, csrf, back, again, False)}</div>')
     else:
         failed = (f'<p class="notice">That did not work ({esc("cut off" if row["stale"] else row["error"] or "an error")}); nothing was charged '
@@ -108,12 +111,13 @@ def render(csrf: str, q=None) -> str:
         cur.execute("""SELECT count(*) AS n, coalesce(sum(usd), 0) AS usd FROM coachings
                        WHERE status = 'done' AND date_trunc('month', created_at AT TIME ZONE 'Europe/Berlin') = date_trunc('month', now() AT TIME ZONE 'Europe/Berlin')""")
         month = cur.fetchone()
+        hidden = frozenset(coach.prefs(cur)["hidden"])
     chips = "".join(f'<a href="/web/coach?f={k}"' + (' aria-current="page"' if k == f else "") + f">{lbl}</a>" for k, lbl in FILTERS)
     items = []
     for r in rows:
         when = f'{r["start_day"]:%a %d.%m.}' if r["kind"] == "day" else f'Week {r["start_day"]:%d.%m.} to {r["end_day"]:%d.%m.}'
         items.append(f'<details class="coitem"><summary><span class="row"><b>{esc(when)}</b><span class="pill ok">{r["kind"]}</span></span>'
-                     f'<span>{esc(_first(r))}</span><span class="small">{esc(_meta(r))}</span></summary>{body_html(r)}</details>')
+                     f'<span>{esc(_first(r))}</span><span class="small">{esc(_meta(r))}</span></summary>{body_html(r, hidden)}</details>')
     body = "".join(items) or '<p class="empty">No coachings yet. Press "Coach me" on Today or "Review this week" on the Week page.</p>'
     return (f'<div class="head"><h1>Coach</h1><nav class="seg" aria-label="Coachings">{chips}</nav></div>'
             f'<div class="card">{body}</div>'
@@ -122,15 +126,27 @@ def render(csrf: str, q=None) -> str:
 
 
 def settings_tab(session, csrf: str) -> str:
-    """Settings > Coach: the owner's goals, read by the coach every time."""
+    """Settings > Coach: the owner's goals, how to coach and which parts each coaching shows; the coach reads them every time."""
     with connect() as conn, conn.cursor() as cur:
-        text = coach.goals(cur)
-    return (f'<div class="card"><h2>My goals</h2><p class="small">The coach reads this every time. Empty: it coaches against your food targets only.</p>'
-            f'<form method="post" action="/web/settings/coach_goals">{hidden("csrf", csrf)}{hidden("back", "/web/settings?tab=coach")}'
+        p = coach.prefs(cur)
+    boxes = "".join(
+        f'<fieldset class="coparts"><legend>{"Day coaching (Today)" if kind == "day" else "Week review (Week page)"}</legend>'
+        + "".join(f'<label class="row"><input type="checkbox" name="show_{kind}_{k}" value="1"{"" if f"{kind}:{k}" in p["hidden"] else " checked"}> {esc(lbl)}</label>'
+                  for k, lbl in parts) + "</fieldset>" for kind, parts in coach.PARTS.items())
+    return (f'<form method="post" action="/web/settings/coach_goals">{hidden("csrf", csrf)}{hidden("back", "/web/settings?tab=coach")}{hidden("parts", "1")}'
+            '<div class="card"><h2>My goals</h2><p class="small">The coach reads this every time. Empty: it coaches against your food targets only.</p>'
             f'<label for="coach-goals">Your goals, in your own words</label>'
-            f'<textarea id="coach-goals" class="wide" name="goals" rows="6" maxlength="{coach.GOALS_MAX}" '
-            f'placeholder="For example: lose 5 kg by March; fasting sugar under 100; three gym sessions a week; dinner before 21:00.">{esc(text)}</textarea>'
-            '<p class="row"><button class="primary" type="submit">Save</button></p></form></div>'
+            f'<textarea id="coach-goals" class="wide" name="goals" rows="5" maxlength="{coach.GOALS_MAX}" '
+            f'placeholder="For example: lose 5 kg by March; fasting sugar under 100; three gym sessions a week.">{esc(p["goals"])}</textarea></div>'
+            '<div class="card"><h2>How to coach me</h2><p class="small">Tone, length, focus, what to leave out: the coach follows this over its own defaults '
+            '(it still uses only what you logged and never gives medical advice).</p>'
+            '<label for="coach-style">How you want to be coached</label>'
+            f'<textarea id="coach-style" class="wide" name="style" rows="5" maxlength="{coach.GOALS_MAX}" '
+            'placeholder="For example: keep it short, two points at most; I eat late on purpose, do not suggest eating earlier; focus on fasting sugar and fat; '
+            f'suggest meals only from foods I already eat.">{esc(p["style"])}</textarea></div>'
+            '<div class="card"><h2>What each coaching shows</h2><p class="small">A part switched off is not asked for (a little cheaper) and not shown.</p>'
+            f'<div class="coparts-wrap">{boxes}</div></div>'
+            '<p class="row"><button class="primary" type="submit">Save</button></p></form>'
             '<div class="card"><h2>How the coach works</h2><ul class="small">'
             '<li>Only when you press Coach me (Today) or Review this week (Week page).</li>'
             '<li>Reads food, health values, sleep, habits, gym and home; never thoughts, private or gratitude entries.</li>'

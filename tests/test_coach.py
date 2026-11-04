@@ -168,10 +168,12 @@ def test_goals_are_set_in_settings_and_read_every_time(web, ai):
     page = web[0].get("/web/settings?tab=coach").text
     assert "My goals" in page and 'name="goals"' in page and "never thoughts, private or gratitude entries" in page
     out = act(web, "/web/settings/coach_goals", goals="Lose 5 kg by March;\nfasting sugar under 100", back="/web/settings?tab=coach")
-    assert "the coach reads your goals" in out.text and "Lose 5 kg by March;\nfasting sugar under 100</textarea>" in html.unescape(out.text)
+    assert "the coach reads your settings" in out.text and "Lose 5 kg by March;\nfasting sugar under 100</textarea>" in html.unescape(out.text)
     coach_me(web)
-    assert sent(ai)["goals"] == "Lose 5 kg by March;\nfasting sugar under 100"
-    assert "no goals" in act(web, "/web/settings/coach_goals", goals="  ", back="/web/settings?tab=coach").text
+    assert sent(ai)["goals"] == "Lose 5 kg by March;\nfasting sugar under 100" and sent(ai)["how_to_coach"] == "(none written)"
+    act(web, "/web/settings/coach_goals", goals="  ", back="/web/settings?tab=coach")
+    coach_me(web)
+    assert sent(ai)["goals"] == "(none written)"
 
 
 def test_the_coach_page_filters_and_is_in_the_more_menu(web, ai):
@@ -197,3 +199,40 @@ def test_the_coach_card_can_be_hidden_on_today(web, ai):
     uiprefs.save(["card:coach"], {})
     assert ">Coach me<" not in web[0].get("/web/").text
     assert 'name="show_card_coach"' in web[0].get("/web/settings?tab=today").text
+
+
+# ---- how to coach and which parts (04.11.2026) -------------------------------------------------------------
+
+def save_settings(web, goals="", style="", off=()):
+    form = {"goals": goals, "style": style, "parts": "1", "back": "/web/settings?tab=coach"}
+    form.update({f"show_{kind}_{k}": "1" for kind, parts in coach.PARTS.items() for k, _ in parts if f"{kind}:{k}" not in off})
+    return act(web, "/web/settings/coach_goals", **form)
+
+
+def test_how_to_coach_is_followed_and_switched_off_parts_are_not_asked_for(web, ai):
+    page = web[0].get("/web/settings?tab=coach").text
+    assert "How to coach me" in page and 'name="style"' in page and "What each coaching shows" in page
+    assert page.count('type="checkbox" name="show_day_') == 5 and page.count('type="checkbox" name="show_week_') == 6
+    out = save_settings(web, "Lose 5 kg", "Keep it short. I eat late on purpose.", off=("day:next_meal", "day:doctor", "week:days"))
+    assert "Saved" in out.text and 'name="show_day_next_meal" value="1">' in out.text and 'name="show_day_improve" value="1" checked>' in out.text
+    coach_me(web)
+    data, form = sent(ai), ai.calls[-1]["schema"]
+    assert data["how_to_coach"] == "Keep it short. I eat late on purpose." and data["goals"] == "Lose 5 kg"
+    assert data["parts_wanted"] == ["What went well", "To improve", "Missing in the log"]
+    assert set(form["properties"]) == {"went_well", "improve", "gaps"} and form["required"] == ["went_well", "improve", "gaps"]
+    assert "follow it for tone, length, focus" in ai.calls[-1]["system"]
+    page = web[0].get("/web/").text  # the fake answers every part; the switched-off ones are not shown
+    assert "What went well" in page and "Next meal" not in page and "Salmon 150 g" not in page
+    end = day() - timedelta(days=1)
+    act(web, "/web/coach/start", kind="week", start=(end - timedelta(days=6)).isoformat(), end=end.isoformat(), back="/web/week?p=7")
+    assert "best_day" not in ai.calls[-1]["schema"]["properties"] and "hardest_day" not in ai.calls[-1]["schema"]["properties"]
+    assert "focus" in ai.calls[-1]["schema"]["properties"]
+
+
+def test_every_part_off_is_refused_and_a_goals_only_form_keeps_the_rest(web, ai):
+    out = save_settings(web, off=tuple(f"day:{k}" for k, _ in coach.PARTS["day"]))
+    assert "Keep at least one part of the day coaching" in out.text
+    save_settings(web, "Lose 5 kg", "Short, please.", off=("day:gaps",))
+    act(web, "/web/settings/coach_goals", goals="Lose 6 kg", back="/web/settings?tab=coach")  # an old page's form: goals only
+    v = owner_sql("SELECT value FROM ui_settings WHERE key = 'coach'")[0]["value"]
+    assert v == {"goals": "Lose 6 kg", "style": "Short, please.", "hidden": ["day:gaps"]}

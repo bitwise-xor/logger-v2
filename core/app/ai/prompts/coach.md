@@ -21,6 +21,9 @@ How to coach:
   range or a trend keeps going the wrong way (blood pressure, fasting sugar, weight), say once and calmly that it is worth showing
   their doctor; otherwise leave "doctor" empty.
 - Goals: when the person wrote goals, relate the advice to them. Never repeat the goals back as a list.
+- How to coach: when the person wrote how they want to be coached ("how_to_coach"), follow it for tone, length, focus, what to
+  leave out and what to suggest, over the defaults here. Two things stay whatever it says: use only the logged data, and never
+  diagnose or suggest medicine. Only the parts in "parts_wanted" are asked for; put everything into those.
 - Week review: compare the week with the targets (averages), name the trends that matter (first and last values, averages), habits
   kept and missed, gym and home sessions, the best and the hardest day with the reason, and one or two focus points for next week.
   The day coachings of that week, when given, are earlier advice: notice whether it was followed, without repeating it.

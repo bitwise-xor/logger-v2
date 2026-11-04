@@ -834,3 +834,7 @@ ol.steps{padding-left:1.2rem;display:grid;gap:.35rem}
 .coitem>summary::-webkit-details-marker{display:none}
 .coitem[open]>summary{margin-bottom:.6rem}
 .key.sq.c{background:var(--dim)}
+.coparts-wrap{display:grid;grid-template-columns:repeat(auto-fit,minmax(15rem,1fr));gap:.8rem}
+.coparts{border:1px solid var(--line);border-radius:12px;padding:.6rem .9rem .8rem;margin:0;display:flex;flex-direction:column;gap:.35rem}
+.coparts legend{font-weight:600;padding:0 .3rem}
+.coparts label.row{min-height:2.2rem;align-items:center}

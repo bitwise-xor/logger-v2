@@ -27,7 +27,7 @@ DAILY_LIMIT = 10  # coachings per logging day: a stuck button cannot run up cost
 STALE_MINUTES = 10  # a "working" row older than this was cut off (a restart): it is marked failed
 CONTEXT_DAYS = 7  # the days before, for context
 TOP_FOODS = 40
-GOALS_KEY = "coach"  # ui_settings: {"goals": "..."}
+GOALS_KEY = "coach"  # ui_settings: {"goals": "...", "style": "...", "hidden": ["day:next_meal", ...]}
 GOALS_MAX = 2000
 SYSTEM = (Path(__file__).parent / "ai" / "prompts" / "coach.md").read_text(encoding="utf-8")
 PROVIDER: Optional[Provider] = None  # created on first use; tests put a fake here
@@ -59,21 +59,60 @@ SCHEMA = {
 }
 
 
-# ---- the owner's goals (Settings > Coach) ---------------------------------------------------------------
+# ---- the owner's settings (Settings > Coach): goals, how to coach, which parts ---------------------------------
 
-def goals(cur) -> str:
+# The parts of each kind of coaching, in the order shown; a part switched off is neither asked for nor shown (04.11.2026)
+PARTS = {"day": (("went_well", "What went well"), ("improve", "To improve"), ("next_meal", "Next meal"), ("gaps", "Missing in the log"),
+                 ("doctor", "Doctor note")),
+         "week": (("targets", "Against your targets"), ("trends", "Trends"), ("habits", "Habits, gym and home"),
+                  ("days", "Best and hardest day"), ("focus", "Focus for next week"), ("doctor", "Doctor note"))}
+FIELDS = {"days": ("best_day", "hardest_day")}  # a part that is more than one field of the answer
+
+
+def prefs(cur) -> dict:
+    """{"goals": text, "style": text, "hidden": {"day:next_meal", ...}} (ui_settings key "coach")."""
     cur.execute("SELECT value FROM ui_settings WHERE key = %s", (GOALS_KEY,))
     r = cur.fetchone()
-    return str((r["value"] if r else {}).get("goals") or "")
+    v = r["value"] if r else {}
+    return {"goals": str(v.get("goals") or ""), "style": str(v.get("style") or ""), "hidden": {str(x) for x in v.get("hidden") or []}}
+
+
+def goals(cur) -> str:
+    return prefs(cur)["goals"]
+
+
+def _clean(v) -> str:
+    return "\n".join(" ".join(line.split()) for line in str(v or "").splitlines()).strip()[:GOALS_MAX]
 
 
 def goals_set(form, key=None, session=None) -> dict:
-    text = "\n".join(" ".join(line.split()) for line in str(form.get("goals") or "").splitlines()).strip()[:GOALS_MAX]
+    """Settings > Coach: goals, how to coach and the parts shown. A form without the parts' switches (parts=1 missing) keeps them."""
+    new = {"goals": _clean(form.get("goals"))}
+    if "style" in form:
+        new["style"] = _clean(form.get("style"))
+    if form.get("parts") == "1":
+        hidden = [f"{kind}:{k}" for kind, parts in PARTS.items() for k, _ in parts if form.get(f"show_{kind}_{k}") != "1"]
+        for kind, parts in PARTS.items():
+            if all(f"{kind}:{k}" in hidden for k, _ in parts):
+                return {"outcome": "rejected", "reason": f"Keep at least one part of the {'day coaching' if kind == 'day' else 'week review'}."}
+        new["hidden"] = hidden
     with connect() as conn, conn.cursor() as cur:
         cur.execute("""INSERT INTO ui_settings (key, value) VALUES (%s, %s)
-                       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()""", (GOALS_KEY, Jsonb({"goals": text})))
-        logbook._audit(cur, "web_change", "changed", {"what": "coach goals"}, logbook.WEB)
-    return {"outcome": "changed", "head": "Saved: the coach reads your goals every time." if text else "Saved: no goals, the coach uses your targets."}
+                       ON CONFLICT (key) DO UPDATE SET value = ui_settings.value || EXCLUDED.value, updated_at = now()""", (GOALS_KEY, Jsonb(new)))
+        logbook._audit(cur, "web_change", "changed", {"what": "coach settings"}, logbook.WEB)
+    return {"outcome": "changed", "head": "Saved: the coach reads your settings every time."}
+
+
+def shown(kind: str, hidden: set) -> list:
+    """The parts of this kind that are switched on, in order: [(key, label)]."""
+    return [(k, lbl) for k, lbl in PARTS[kind] if f"{kind}:{k}" not in hidden]
+
+
+def schema(kind: str, hidden: set) -> dict:
+    """The answer's form with only the parts switched on."""
+    keep = {f for k, _ in shown(kind, hidden) for f in FIELDS.get(k, (k,))}
+    props = {k: v for k, v in SCHEMA[kind]["properties"].items() if k in keep}
+    return _obj(props)
 
 
 # ---- what the coach reads ---------------------------------------------------------------------------------
@@ -168,7 +207,9 @@ def context(cur, kind: str, start: date, end: date) -> dict:
     gymd, homed = _gym(cur, before, end), _home(cur, before, end)
     days_before = [_short_day(before + timedelta(days=i), tot.get(before + timedelta(days=i)), vit, sleep, gymd, homed)
                    for i in range(CONTEXT_DAYS)]
-    out = {"kind": kind, "goals": goals(cur) or "(none written)", "targets": _targets(cur, end), "days_before": days_before}
+    p = prefs(cur)
+    out = {"kind": kind, "goals": p["goals"] or "(none written)", "how_to_coach": p["style"] or "(none written)",
+           "parts_wanted": [lbl for _, lbl in shown(kind, p["hidden"])], "targets": _targets(cur, end), "days_before": days_before}
     if kind == "day":
         cur.execute("""SELECT f.time, f.meal, f.food, f.amount, f.unit, f.portion_text, f.kcal, f.protein, f.fat, f.carbs, f.is_drink, d.meal_label
                        FROM v_food_log f LEFT JOIN v_food_day d ON d.day = f.day AND d.meal = f.meal
@@ -247,8 +288,9 @@ def run(cid: int) -> None:
             cur.execute("SELECT * FROM coachings WHERE id = %s", (cid,))
             row = cur.fetchone()
             ctx = context(cur, row["kind"], row["start_day"], row["end_day"])
+            form = schema(row["kind"], prefs(cur)["hidden"])
         user = ("Coach this day." if row["kind"] == "day" else "Review this week.") + " The data:\n" + json.dumps(ctx, ensure_ascii=False, default=str)
-        body, usage = provider().json(SYSTEM, user, SCHEMA[row["kind"]], MODEL, MAX_TOKENS)
+        body, usage = provider().json(SYSTEM, user, form, MODEL, MAX_TOKENS)
         with connect() as conn, conn.cursor() as cur:
             cur.execute("""UPDATE coachings SET status = 'done', body = %s, model = %s, usd = %s, finished_at = now() WHERE id = %s""",
                         (Jsonb(body), usage.model, round(usage.usd, 5), cid))
