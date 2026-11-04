@@ -4,7 +4,7 @@ Food against the targets, how far from the targets, weight, blood pressure, fast
 count most, and the daily charts of calories, protein and fat."""
 from datetime import date, timedelta
 
-from . import trendspage
+from . import coachpage, trendspage
 from .body import LABEL as BODY_LABEL, sessions as body_sessions, signed
 from .db import connect
 from .foodpage import _pct_class
@@ -168,7 +168,7 @@ def render(csrf: str, q) -> str:
                 '<div class="card"><p class="empty">No complete day in this period yet (this week so far starts after Monday).</p></div>')
         if not ndays:
             return head
-        body = (f'<div class="card"><h2>Food</h2>{_cards(totals)}{_bars(totals)}</div>'
+        body = (coachpage.week_card(start, end, p, csrf) + f'<div class="card"><h2>Food</h2>{_cards(totals)}{_bars(totals)}</div>'
                 f'<div class="grid2"><div class="card"><h2>Health and habits</h2>{_health(cur, start, end, ndays)}</div>'
                 f'<div class="card"><h2>Foods that count most</h2>{_foods(cur, start, end)}</div></div>'
                 f'<div class="grid2">{trendspage.cards(totals, start, end)}</div>'

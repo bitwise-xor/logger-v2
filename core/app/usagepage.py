@@ -12,13 +12,13 @@ from .webentry import esc
 
 RANGES = (("7", "7 days"), ("30", "30 days"), ("all", "Everything"))
 TOP = 10
-KINDS = {"log": "message", "food_lookup": "food look-up", "lab_report": "lab report", "label_photo": "label photo", "answer": "answer to a question"}
+KINDS = {"log": "message", "food_lookup": "food look-up", "lab_report": "lab report", "label_photo": "label photo", "answer": "answer to a question", "coaching": "coaching"}
 FIRST_WORDS = 60
 
 
 def _family(model: str) -> str:
     m = (model or "").lower()
-    return "Haiku" if "haiku" in m else "Sonnet" if "sonnet" in m else "Other"
+    return "Haiku" if "haiku" in m else "Sonnet" if "sonnet" in m else "Opus" if "opus" in m else "Other"
 
 
 def _usd(v: float) -> str:
@@ -99,13 +99,13 @@ def render(r: str) -> str:
              + ('' if tok_known else ' <span class="of">some older calls have none</span>') + '</div></div>')
     # cost per day, Haiku at the bottom, Sonnet on top
     series = []
-    for fam, cls in (("Haiku", "a"), ("Sonnet", "b"), ("Other", "c")):
+    for fam, cls in (("Haiku", "a"), ("Sonnet", "b"), ("Opus", "c"), ("Other", "c")):
         pts = []
         for i in range(days):
             day = d["start"] + timedelta(days=i)
             v = per_day.get(day, {}).get(fam, 0.0)
             if v:
-                below = sum(per_day[day].get(f, 0.0) for f in ("Haiku", "Sonnet", "Other")[:("Haiku", "Sonnet", "Other").index(fam)])
+                below = sum(per_day[day].get(f, 0.0) for f in ("Haiku", "Sonnet", "Opus", "Other")[:("Haiku", "Sonnet", "Opus", "Other").index(fam)])
                 pts.append([i, round(v, 5), f"{day:%a %d.%m.}: {fam} {_usd(v)}", round(below, 5)])
         if pts:
             series.append({"mark": "bar", "cls": cls, "pts": pts})
@@ -130,7 +130,7 @@ def render(r: str) -> str:
             f'<div class="card">{tiles}<p class="small hint">{since}</p></div>'
             '<div class="grid2 gap"><div class="card"><h2>Cost per day <span class="small">dollars</span></h2>'
             f'{chart if series else empty}<p class="legend"><i class="key sq a"></i>Haiku (every message) '
-            '<i class="key sq b"></i>Sonnet (second reads, lab reports, label photos)</p></div>'
+            '<i class="key sq b"></i>Sonnet (second reads, lab reports, label photos) <i class="key sq c"></i>Opus (coaching)</p></div>'
             f'<div class="card"><h2>By kind</h2><div class="tablewrap"><table class="ft"><thead><tr><th>Kind</th><th>Calls</th><th>Tokens in</th>'
             f'<th>Tokens out</th><th>Cost</th></tr></thead><tbody>{by_kind}<tr class="sum"><td>All</td><td>{calls:,}</td><td>{tok(tin, tok_known)}</td>'
             f'<td>{tok(tout, tok_known)}</td><td>{_usd(cost)}</td></tr></tbody></table></div>{old_note}{pushes}</div></div>'

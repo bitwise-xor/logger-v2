@@ -3,7 +3,7 @@ habit toggles, the Health card (edited in place) and items to review. web.py wra
 import math
 from datetime import date, datetime, timedelta
 
-from . import body, bodypage, gympage, healthpage, homepage, rules, uiprefs
+from . import body, bodypage, coachpage, gympage, healthpage, homepage, rules, uiprefs
 from .db import connect
 from .webentry import esc, hidden, icon, key
 
@@ -499,13 +499,18 @@ def _home_card(d: dict) -> str:
     return "" if d["past"] or not uiprefs.shown("card", "home", d["prefs"]) else homepage.today_card()
 
 
+def _coach_card(d: dict, csrf: str) -> str:
+    """The Coach card (web item 52, 04.11.2026) for the day shown, earlier days too; hidden in Settings > Today page ("card:coach")."""
+    return coachpage.today_card(d["day"], csrf) if uiprefs.shown("card", "coach", d["prefs"]) else ""
+
+
 def render(csrf: str, asked: date | None = None) -> str:
     d = load(asked)
     note = (f'<p class="notice earlier">{icon("clock")}An earlier day: habits and health values are only shown here. '
             'Click a food to change it on the Food page.</p>' if d["past"] else "")
     review = "" if d["past"] else _review_section(d, csrf)
     return (f'{_daybar(d["day"], d["today"])}{note}<div class="grid"><section>{_food_section(d, csrf)}</section>'
-            f'<aside>{_checkin_section(d, csrf)}{_habit_section(d, csrf)}{_home_card(d)}{"" if d["past"] else gympage.today_card()}{_health_section(d, csrf)}{review}'
+            f'<aside>{_checkin_section(d, csrf)}{_habit_section(d, csrf)}{_home_card(d)}{"" if d["past"] else gympage.today_card()}{_health_section(d, csrf)}{_coach_card(d, csrf)}{review}'
             '<p class="small"><a href="/web/settings?tab=today">Customize this page</a></p></aside></div>')
 
 

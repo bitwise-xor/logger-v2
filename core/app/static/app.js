@@ -153,6 +153,20 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Home page, pick screen: the countdown of a running timer. The server keeps the end time; this only draws the seconds left.
   document.querySelectorAll(".hoclock[data-left]").forEach(setupClock);
+
+  // Coaching: while a card says "Coaching…", ask every 5 s whether it is ready, then show the page again (not while words are being typed)
+  const wait = document.querySelector("[data-coach-wait]");
+  if (wait) {
+    let tries = 0;
+    const poll = setInterval(async () => {
+      if (++tries > 60) { clearInterval(poll); return; }
+      try {
+        const r = await fetch(`/web/coach/status?id=${encodeURIComponent(wait.dataset.coachWait)}`, { credentials: "same-origin", cache: "no-store" });
+        const s = (await r.json()).status;
+        if (s !== "working" && !(box && box.value.trim())) { clearInterval(poll); location.reload(); }
+      } catch (e) { /* offline for a moment: the next try asks again */ }
+    }, 5000);
+  }
 });
 
 function setupClock(el) {

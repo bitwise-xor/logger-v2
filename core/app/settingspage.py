@@ -6,12 +6,12 @@ The forms post to websettings.py; this module only reads."""
 import re
 from urllib.parse import urlencode
 
-from . import body, nudges, rules, uiprefs, webpush
+from . import body, coachpage, nudges, rules, uiprefs, webpush
 from .db import connect
 from .todaypage import HEALTH_ROWS, _plain
 from .webentry import esc, hidden
 
-TABS = (("targets", "Food targets"), ("habits", "Habits"), ("today", "Today page"), ("body", "Body"), ("devices", "Devices"),
+TABS = (("targets", "Food targets"), ("habits", "Habits"), ("today", "Today page"), ("body", "Body"), ("coach", "Coach"), ("devices", "Devices"),
         ("notify", "Notifications"))
 BACK = re.compile(r"/web/settings(\?[A-Za-z0-9=&._%+-]*)?")
 TARGET_FIELDS = (("kcal", "Calories", "kcal"), ("protein", "Protein", "g"), ("fat", "Fat", "g"), ("sat_fat", "Saturated fat", "g"),
@@ -129,7 +129,7 @@ def today_items(cur) -> list[tuple[str, str, list[tuple[str, str]]]]:
     cur.execute("SELECT id, name FROM usual_meals ORDER BY lower(name)")
     usual = [(str(r["id"]), r["name"]) for r in cur.fetchall()]
     return [("habit", "Habits", habits), ("health", "Health card rows", health), ("usual", "Usual meal buttons", usual),
-            ("review", "Box", [("box", "To review")]), ("card", "Cards", [("home", "Home")])]
+            ("review", "Box", [("box", "To review")]), ("card", "Cards", [("home", "Home"), ("coach", "Coach")])]
 
 
 def _today_tab(session, csrf: str) -> str:
@@ -218,5 +218,5 @@ def _notify(session, csrf: str) -> str:
 def render(session, q) -> str:
     tab = q.get("tab") if q.get("tab") in dict(TABS) else TABS[0][0]
     csrf = session["csrf"]
-    return _tabs(tab) + {"targets": _targets, "habits": _habits, "today": _today_tab, "body": _body, "devices": _devices,
+    return _tabs(tab) + {"targets": _targets, "habits": _habits, "today": _today_tab, "body": _body, "coach": coachpage.settings_tab, "devices": _devices,
                          "notify": _notify}[tab](session, csrf)

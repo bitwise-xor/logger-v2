@@ -6,7 +6,7 @@ from typing import Optional
 
 from psycopg.types.json import Jsonb
 
-from . import body, logbook, nudges, settingspage, uiprefs
+from . import body, coach, logbook, nudges, settingspage, uiprefs
 from .db import connect
 
 SID = re.compile(r"[0-9a-f-]{36}")
@@ -224,4 +224,4 @@ def push_off(form, key: Optional[str], session) -> dict:
 
 
 ACTIONS = {"device": device, "others": others, "targets": targets, "habit": habit, "habit_new": habit_new, "today": today, "today_reset": today_reset,
-           "nudges": nudge_settings, "nudge_test": nudge_test, "push_off": push_off, "height": height, "body": body_settings}
+           "nudges": nudge_settings, "nudge_test": nudge_test, "push_off": push_off, "height": height, "body": body_settings, "coach_goals": coach.goals_set}

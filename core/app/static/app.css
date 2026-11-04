@@ -811,3 +811,26 @@ ol.steps{padding-left:1.2rem;display:grid;gap:.35rem}
 .hobtns>form button,.hobtns>a{width:100%;display:flex;justify-content:center;align-items:center;min-height:2.9rem;box-sizing:border-box;text-decoration:none}
 .hobtns>a{flex:1 1 0}
 .homecard .hobtns{margin:.7rem 0 0}
+
+/* Coaching (04.11.2026): the Coach card on Today, the Week review card, the Coach page */
+.coachcard h2 svg.ic{color:var(--accent);margin-right:.35rem}
+.coachcard p{margin:.2rem 0 .6rem}
+.coachcard form button,.coachcard form{width:100%}
+.coachcard .cofoot form,.coachcard .cofoot button{width:auto}
+.coc{text-align:center}
+.cosec{margin:.2rem 0 .8rem}
+.cosec h3{margin:0 0 .3rem;font-size:.95rem}
+.cosec h3.ok{color:var(--accent)}
+.cosec h3.warn{color:var(--warn)}
+.cosec ul,.comeal ol{margin:0;padding-left:1.15rem;display:flex;flex-direction:column;gap:.25rem;line-height:1.45}
+.comeal{background:var(--accent-soft);border-radius:12px;padding:.8rem .9rem;margin:.2rem 0 .8rem;display:flex;flex-direction:column;gap:.2rem}
+.comeal b{font-size:1.02rem}
+.cowait{display:flex;flex-direction:column;align-items:center;gap:.35rem;padding:1rem 0;text-align:center}
+.cofoot{display:flex;flex-wrap:wrap;gap:.6rem;align-items:center;justify-content:space-between;border-top:1px solid var(--line);padding-top:.7rem;margin-top:.4rem}
+.coachcard p.row{gap:1rem;margin:.7rem 0 0}
+.coitem{border-top:1px solid var(--line);padding:.7rem 0}
+.coitem:first-child{border-top:0}
+.coitem>summary{list-style:none;cursor:pointer;display:flex;flex-direction:column;gap:.2rem}
+.coitem>summary::-webkit-details-marker{display:none}
+.coitem[open]>summary{margin-bottom:.6rem}
+.key.sq.c{background:var(--dim)}
