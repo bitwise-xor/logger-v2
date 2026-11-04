@@ -11,7 +11,8 @@ sheets_reader (via `docker exec` into the database container) and rewrites these
   Habits         every calendar day of the last 90 days: a tick per habit done, counts for the last 7 and 30 days
   Stats          hidden; a few numbers computed here (streaks, data checks)
 Layout, formulas, colours and charts live in the sheet (built by sheets_layout.py) and are never touched.
-Every run also writes the time into the "Updated" cell of Daily summary and Weekly summary (STAMP).
+A run that writes data also writes the time into the "Updated" cell of Daily summary and Weekly summary (STAMP); a run
+with nothing changed sends nothing to Google (since 04.11.2026), so "Updated" is the time the data last changed.
 
 Environment (sheets/sync.env, mode 600): SHEET_ID, SA_KEY, SYNC_STATE, DB_CONTAINER, DB_USER, DB_NAME,
 SHEETS_READER_PASSWORD. Usage: sheets_sync.py [--force] [--dry-run] [--check]
@@ -417,6 +418,13 @@ def main(argv=None):
         if a.dry_run:
             print("rows:", sizes, "hash", digest[:12])
             return 0
+        hf = os.path.join(state, "last_hash.txt")
+        last = open(hf).read().strip() if os.path.exists(hf) else ""
+        if digest == last and not a.force and not a.check:
+            # 04.11.2026 (owner): nothing changed, so nothing is sent to Google, not even the "Updated" time; it shows
+            # when the data last changed. status.txt is still written, so the Kuma check sees the run.
+            status("OK", "no change; nothing written")
+            return 0
         sid, key = os.environ.get("SHEET_ID"), os.environ.get("SA_KEY")
         if not sid or not key:
             sys.exit("SHEET_ID and SA_KEY must be set")
@@ -428,13 +436,7 @@ def main(argv=None):
             print("sheet tabs:", ", ".join(info))
             print("ALL GOOD" if not miss else "MISSING TABS: " + ", ".join(miss))
             return 1 if miss else 0
-        hf = os.path.join(state, "last_hash.txt")
-        last = open(hf).read().strip() if os.path.exists(hf) else ""
         stamp = "Updated " + now.strftime("%d.%m.%Y %H:%M")
-        if digest == last and not a.force:
-            push_stamp(sess, sid, stamp, info)
-            status("OK", "no change; stamp written")
-            return 0
         push(sess, sid, tabs, info)
         push_stamp(sess, sid, stamp, info)
         open(hf, "w").write(digest)

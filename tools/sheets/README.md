@@ -4,7 +4,7 @@ Feeds the Google Sheet "Food Log (view)" from v2 every 2 minutes. Values only; t
 
 | File | What it does |
 |---|---|
-| `sheets_sync.py` | Reads the views `v_food_log`, `v_food_day`, `v_measurements`, `v_sleep`, `v_events` as the read-only role `sheets_reader` (through `docker exec` into the database container) and rewrites the data tabs Log (90 days), Daily totals, Day rows, Health, Habits, Stats, plus the "Updated" time on the two summary tabs. Skips the big write when nothing changed. Options: `--check`, `--dry-run`, `--force`. |
+| `sheets_sync.py` | Reads the views `v_food_log`, `v_food_day`, `v_measurements`, `v_sleep`, `v_events` as the read-only role `sheets_reader` (through `docker exec` into the database container) and rewrites the data tabs Log (90 days), Daily totals, Day rows, Health, Habits, Stats, plus the "Updated" time on the two summary tabs. When nothing changed it sends nothing to Google, not even the "Updated" time, which therefore shows when the data last changed (04.11.2026). Options: `--check`, `--dry-run`, `--force`. |
 | `sheets_layout.py` | Builds the layout: Daily summary, Weekly summary, Health, Habits, Daily totals (visible); Day rows, Chart data, Stats (hidden). Deletes and recreates those tabs, fills the data once and then adds the charts. |
 | `run-sync.sh` | One sync run with the settings from `sheets/sync.env`. Cron runs it every 2 minutes: `*/2 * * * * /opt/stacks/logger-v2/tools/sheets/run-sync.sh`. |
 | `run-layout.sh` | Rebuilds the layout while holding the sync's lock file, so the cron run cannot interfere. |
