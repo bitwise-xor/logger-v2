@@ -96,5 +96,5 @@ def render(csrf: str, q) -> str:
         start = end - timedelta(days=days - 1)
         body = cards(day_totals(cur, start, end), start, end)
     seg = "".join(f'<a href="/web/food/trends?r={x}"{" aria-current=\"page\"" if x == days else ""}>{x} days</a>' for x in RANGES)
-    return (f'<div class="head sub"><h2>Last {days} complete days <span class="small">· {start:%d.%m.} to {end:%d.%m.}, today not counted</span></h2>'
+    return (f'<div class="head sub"><h2>Last {days} complete days <span class="small">{start:%d.%m.} to {end:%d.%m.}, today not counted</span></h2>'
             f'<nav class="seg" aria-label="Range">{seg}</nav></div><div class="grid2">{body}</div>')

@@ -69,7 +69,7 @@ def _entry(csrf: str, e: dict, edit: str, here: dict) -> str:
                  f'<label>Date<input type="date" name="day" value="{w:%Y-%m-%d}"></label>'
                  f'<label>Time<input type="time" name="time" value="{w:%H:%M}"></label></div>'
                  f'<div class="fields wide"><label>Summary<input name="summary" value="{esc(e["summary"] or "")}" maxlength="300" required></label>'
-                 f'<label>Tags <span class="small">(comma between them)</span><input name="tags" value="{esc(", ".join(e["tags"] or []))}" maxlength="200"></label></div>'
+                 f'<label><span>Tags <span class="small">(comma between them)</span></span><input name="tags" value="{esc(", ".join(e["tags"] or []))}" maxlength="200"></label></div>'
                  f'<p class="row"><button class="primary sm" type="submit">Save</button><a class="ghost sm dim" href="{esc(back)}">Cancel</a>'
                  '<span class="small">Save is your yes. Your words stay as you wrote them.</span></p></form>'
                  f'<form class="row" method="post" action="/web/private/entry">{base}{hidden("act", "delete")}'

@@ -345,8 +345,9 @@ p.row{margin:.5rem 0 0}
 .fbox.stack{display:grid;gap:.8rem}
 .fbox p{margin:0}
 .fields{display:grid;grid-template-columns:repeat(auto-fill,minmax(8.5rem,1fr));gap:.6rem .8rem}
-.fields label{display:flex;flex-direction:column;font-size:.8rem;font-weight:500;color:var(--dim);gap:.2rem}
+.fields label{display:flex;flex-direction:column;justify-content:flex-end;font-size:.8rem;font-weight:500;color:var(--dim);gap:.2rem}
 .fields input,.fields select{width:100%}
+.fields+.fields{margin-top:.6rem}
 .chips{display:flex;flex-wrap:wrap;gap:.4rem;margin:0 0 1rem}
 .chip{display:inline-flex;align-items:center;border:1px solid var(--line2);background:var(--card);color:var(--dim);border-radius:2rem;padding:.3rem .85rem;font-size:.88rem;font-weight:500;text-decoration:none}
 .chip:hover{color:var(--ink)}
@@ -365,6 +366,13 @@ p.row{margin:.5rem 0 0}
 .ft td.met{color:var(--accent)}
 .ft.plain td{text-align:left;padding-left:0;padding-right:.6rem;border-top:1px solid var(--line)}
 .ft.plain tr:first-child td{border-top:0}
+/* 04.11.2026: Settings alignment. History tables: numbers right under right-aligned headers, the note left. The Today tab's
+   tables: the order box in one column at the right in every group, each row centred. */
+.ft.hist td{border-top:1px solid var(--line)}
+.ft.hist tbody tr:first-child td{border-top:0}
+.ft.hist .l{text-align:left;padding-left:1.2rem}
+.ft.tset td{vertical-align:middle}
+.ft.tset td:last-child{text-align:right;width:5.5rem;padding-right:0}
 details>summary.ghost{display:inline-block;list-style:none;cursor:pointer}
 details>summary.ghost::-webkit-details-marker{display:none}
 details[open]>summary.ghost{border-color:var(--ink)}

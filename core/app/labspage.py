@@ -121,7 +121,7 @@ def render_reports(csrf: str, q) -> str:
                 rows.append(_report_panel(cur, csrf, p, edit, q.get("report") == "1", back))
     chips = "".join(f'<a class="fl" href="{esc(url("/web/labs/tests", t=str(r["test_id"])))}">{_flag(r["flag"])} {esc(r["test"])} '
                     f'<b>{esc(_val_text(r))}</b> <span class="small">range {esc(_ref_text(r["ref_low"], r["ref_high"]))}</span></a>' for r in flagged)
-    top = (f'<div class="card"><h2>Flagged in your newest report <span class="small">· {newest["collected_date"]:%d.%m.%Y}</span></h2>'
+    top = (f'<div class="card"><h2>Flagged in your newest report <span class="small">{newest["collected_date"]:%d.%m.%Y}</span></h2>'
            f'<div class="flagged">{chips or "<span class=empty>Nothing flagged.</span>"}</div>'
            '<p class="small hint">Click one to see it over time. H high and L low in amber, A abnormal in red.</p></div>') if newest else ""
     table = ('<div class="card"><div class="tablewrap"><table class="ft"><thead><tr><th>Date</th><th class="l">Report</th><th class="l">Kind</th>'
@@ -200,7 +200,7 @@ def render_tests(csrf: str, q) -> str:
                         f'<td>{esc(_ref_text(r["ref_low"], r["ref_high"]))}</td><td>{_flag(r["flag"])}</td>'
                         f'<td class="l"><a href="{esc(url("/web/labs", open=f"R{r["report_id"]}"))}#R{r["report_id"]}">R{r["report_id"]}</a></td></tr>'
                         for r in reversed(rows))
-        body = (f'<div class="card"><h2>{esc(test["name"])} <span class="small">· {len(rows)} values</span></h2>{chart}</div>'
+        body = (f'<div class="card"><h2>{esc(test["name"])} <span class="small">{len(rows)} values</span></h2>{chart}</div>'
                 '<div class="card"><div class="tablewrap"><table class="ft"><thead><tr><th>Date</th><th>Value</th><th>Range</th><th>Flag</th>'
                 f'<th class="l">Report</th></tr></thead><tbody>{table}</tbody></table></div></div>')
     return _tabs("tests") + f'<div class="card">{search}{pick}</div>' + body
@@ -235,11 +235,11 @@ def render_meds(csrf: str, q) -> str:
                         f'<label>How often<input name="frequency" value="{esc(m["frequency"] or "")}" maxlength="60"></label>'
                         f'<label>Why<input name="indication" value="{esc(m["indication"] or "")}" maxlength="120"></label>'
                         f'<label>Start<input type="date" name="start" value="{m["start_date"].isoformat() if m["start_date"] else ""}"></label>'
-                        f'<label>Stop <span class="small">(empty = running)</span><input type="date" name="stop" value="{m["stop_date"].isoformat() if m["stop_date"] else ""}"></label></div>'
+                        f'<label><span>Stop <span class="small">(empty = running)</span></span><input type="date" name="stop" value="{m["stop_date"].isoformat() if m["stop_date"] else ""}"></label></div>'
                         '<p class="row"><button class="primary sm" type="submit">Save</button><a class="ghost sm dim" href="/web/labs/meds">Cancel</a>'
                         '<span class="small">You see the change first, then Yes.</span></p></form></td></tr>')
     n_run = sum(1 for m in meds if m["stop_date"] is None or m["stop_date"] >= today)
-    return (_tabs("meds") + f'<div class="card"><h2>Medication <span class="small">· {n_run} running</span></h2>'
+    return (_tabs("meds") + f'<div class="card"><h2>Medication <span class="small">{n_run} running</span></h2>'
             '<div class="tablewrap"><table class="ft"><thead><tr><th class="l">Name</th><th class="l">Dose</th><th class="l">How often</th>'
             '<th class="l hide-sm">Why</th><th>Start</th><th>Stop</th><th></th></tr></thead>'
             f'<tbody>{"".join(rows) or "<tr><td colspan=7 class=empty>No medication recorded.</td></tr>"}</tbody></table></div>'

@@ -50,19 +50,19 @@ def _targets(session, csrf: str) -> str:
         today = c.execute("SELECT log_day(now()) AS d").fetchone()["d"]
         rows = c.execute("SELECT * FROM food_targets ORDER BY valid_from DESC").fetchall()
     cur = next((r for r in rows if r["valid_from"] <= today), rows[0] if rows else None)
-    fields = "".join(f'<label>{lbl} <span class="small">{unit}</span><input type="number" name="{k}" min="0" step="any" inputmode="decimal" '
+    fields = "".join(f'<label><span>{lbl} <span class="small">{unit}</span></span><input type="number" name="{k}" min="0" step="any" inputmode="decimal" '
                      f'value="{_plain(cur[k]) if cur else ""}" placeholder="none"></label>' for k, lbl, unit in TARGET_FIELDS)
     hist = "".join(f'<tr><td>{r["valid_from"]:%d.%m.%Y}</td>' + "".join(f'<td>{_plain(r[k]) or "–"}</td>' for k, _l, _u in TARGET_FIELDS[:5])
                    + f'<td class="l">{esc(r["note"] or "")}</td></tr>' for r in rows)
     since = f"valid from {cur['valid_from']:%d.%m.%Y}" if cur else "none set yet"
-    return (f'<div class="card"><h2>Daily food targets <span class="small">· now {since}</span></h2>'
+    return (f'<div class="card"><h2>Daily food targets <span class="small">now {since}</span></h2>'
             f'<form method="post" action="/web/settings/targets">{hidden("csrf", csrf)}<div class="fields">'
             f'<label>Valid from<input type="date" name="valid_from" value="{today.isoformat()}" required></label>{fields}</div>'
             '<div class="fields wide"><label>Note (optional)<input name="note" maxlength="200" placeholder="why it changed"></label></div>'
             '<p class="row"><button class="primary" type="submit">Save targets</button>'
             '<span class="small">New targets count from the date; earlier days keep the targets they had. An empty field means no target for it.</span></p></form></div>'
-            f'<div class="card"><h2>History</h2><div class="tablewrap"><table class="ft plain"><thead><tr><th>From</th><th>kcal</th><th>Protein</th><th>Fat</th><th>Sat fat</th>'
-            f'<th>Carbs</th><th>Note</th></tr></thead><tbody>{hist or "<tr><td colspan=7 class=empty>No targets yet.</td></tr>"}</tbody></table></div></div>')
+            f'<div class="card"><h2>History</h2><div class="tablewrap"><table class="ft hist"><thead><tr><th>From</th><th>kcal</th><th>Protein</th><th>Fat</th><th>Sat fat</th>'
+            f'<th>Carbs</th><th class="l">Note</th></tr></thead><tbody>{hist or "<tr><td colspan=7 class=empty>No targets yet.</td></tr>"}</tbody></table></div></div>')
 
 
 # ---- body measurements (03.11.2026) ------------------------------------------------------------------
@@ -79,16 +79,16 @@ def _body(session, csrf: str) -> str:
     boxes = "".join(f'<label class="row"><input type="checkbox" name="show" value="{k}"{"" if k in prefs["hidden"] else " checked"}> {lbl}</label>'
                     for k, lbl, _h in body.TAPE)
     ilo, ihi = body.INTERVAL_RANGE
-    return (f'<div class="card"><h2>Height <span class="small">· {f"{_plain(now["height_cm"])} cm" if now else "not set yet"}</span></h2>'
+    return (f'<div class="card"><h2>Height <span class="small">{f"{_plain(now["height_cm"])} cm" if now else "not set yet"}</span></h2>'
             f'<form method="post" action="/web/settings/height">{hidden("csrf", csrf)}{hidden("back", url(tab="body"))}<div class="fields">'
             f'<label>Valid from<input type="date" name="valid_from" value="{today.isoformat()}" required></label>'
-            f'<label>Height <span class="small">cm</span><input type="number" name="height" min="{lo}" max="{hi}" step="any" inputmode="decimal" required></label></div>'
+            f'<label><span>Height <span class="small">cm</span></span><input type="number" name="height" min="{lo}" max="{hi}" step="any" inputmode="decimal" required></label></div>'
             '<p class="row"><button class="primary" type="submit">Save height</button>'
             '<span class="small">For waist ÷ height on the Health page. A new height counts from its date; earlier measurements keep the height they had.</span></p></form>'
-            + (f'<div class="tablewrap"><table class="ft plain"><thead><tr><th>From</th><th>Height</th></tr></thead><tbody>{hist}</tbody></table></div>' if rows else "")
+            + (f'<div class="tablewrap"><table class="ft hist"><thead><tr><th>From</th><th>Height</th></tr></thead><tbody>{hist}</tbody></table></div>' if rows else "")
             + '</div>'
             f'<div class="card"><h2>Body measurements</h2><form method="post" action="/web/settings/body">{hidden("csrf", csrf)}{hidden("back", url(tab="body"))}'
-            f'<div class="fields"><label>Due every <span class="small">days, {ilo} to {ihi}</span>'
+            f'<div class="fields"><label><span>Due every <span class="small">days, {ilo} to {ihi}</span></span>'
             f'<input type="number" name="interval" min="{ilo}" max="{ihi}" step="1" inputmode="numeric" value="{prefs["interval"]}" required></label></div>'
             f'<p class="small">Measures in the form and on the Health page:</p><div class="row bchecks">{boxes}</div>'
             '<p class="row"><button class="primary" type="submit">Save</button>'
@@ -109,7 +109,7 @@ def _habits(session, csrf: str) -> str:
                    f'<label>Order<input type="number" name="sort_order" min="0" max="999" value="{r["sort_order"]}"></label>'
                    f'<label class="row small"><input type="checkbox" name="active" value="1"{" checked" if r["active"] else ""}> Active</label>'
                    f'<button class="primary sm" type="submit">Save</button><span class="small">{esc(r["name"])}</span></form>')
-    return (f'<div class="card"><h2>Habits <span class="small">· {sum(1 for r in rows if r["active"])} active</span></h2>{"".join(out)}'
+    return (f'<div class="card"><h2>Habits <span class="small">{sum(1 for r in rows if r["active"])} active</span></h2>{"".join(out)}'
             '<p class="small hint">Order: the smaller number comes first. Taking Active off retires a habit (its history stays; it leaves Today, '
             'the Habits page and the Sheet). Which habits show on the Today page is set under Today page.</p></div>'
             f'<div class="card"><h2>Add a habit</h2><form class="row" method="post" action="/web/settings/habit_new">{hidden("csrf", csrf)}{hidden("back", url(tab="habits"))}'
@@ -142,7 +142,7 @@ def _today_tab(session, csrf: str) -> str:
                        f'{"" if f"{kind}:{i}" in prefs["hidden"] else " checked"}> {esc(lbl)}</label></td>'
                        + (f'<td><input type="number" name="pos_{kind}_{i}" min="1" max="99" value="{n}" aria-label="Order of {esc(lbl)}"></td>' if len(items) > 1 else "<td></td>")
                        + "</tr>" for n, (i, lbl) in enumerate(items, 1))
-        out.append(f'<h3>{heading}</h3><div class="tablewrap"><table class="ft plain"><tbody>{rows or "<tr><td class=empty>None yet.</td></tr>"}</tbody></table></div>')
+        out.append(f'<h3>{heading}</h3><div class="tablewrap"><table class="ft plain tset"><tbody>{rows or "<tr><td class=empty>None yet.</td></tr>"}</tbody></table></div>')
     return (f'<div class="card"><h2>What shows on the Today page</h2><form method="post" action="/web/settings/today">{hidden("csrf", csrf)}{hidden("back", url(tab="today"))}'
             f'{"".join(out)}<p class="row"><button class="primary" type="submit">Save</button></p></form>'
             f'<form class="row" method="post" action="/web/settings/today_reset">{hidden("csrf", csrf)}{hidden("back", url(tab="today"))}'
@@ -172,7 +172,7 @@ def _devices(session, csrf: str) -> str:
     allout = (f'<form class="row" method="post" action="/web/settings/others">{hidden("csrf", csrf)}{hidden("back", url(tab="devices"))}'
               f'<button class="ghost bad" type="submit">Sign out all {others} other device{"" if others == 1 else "s"}</button></form>'
               if others else "")
-    return (f'<div class="card"><h2>Signed-in devices <span class="small">· {len(rows)}</span></h2>{"".join(out)}{allout}'
+    return (f'<div class="card"><h2>Signed-in devices <span class="small">{len(rows)}</span></h2>{"".join(out)}{allout}'
             '<p class="small hint">A device in use stays signed in (30 days from its last use). If a phone is lost, sign it out here. '
             'Sign out in the menu ends this device only.</p></div>'
             '<div class="card"><h2>Watch</h2><p class="small">Steps, heart rate, sleep and workouts from the watch show under Gym › Activity '

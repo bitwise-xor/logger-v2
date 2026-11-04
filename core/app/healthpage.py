@@ -232,7 +232,7 @@ def _entries(d: dict, csrf: str, show_all: bool) -> str:
     if len(days) > SHOWN_DAYS:
         more = (f'<p><a class="ghost sm" href="/web/health?r={d["days"]}">Show the last {SHOWN_DAYS} days</a></p>' if show_all
                 else f'<p><a class="ghost sm" href="/web/health?r={d["days"]}&amp;all=1">Show all {len(days)} days</a></p>')
-    return (f'<div class="card"><h2>Entries <span class="small">· one row per day, newest first</span></h2>'
+    return (f'<div class="card"><h2>Entries <span class="small">one row per day, newest first</span></h2>'
             f'<div class="tablewrap"><table class="ft ht"><thead><tr><th class="stick">Day</th>{heads}<th>Sleep</th><th></th></tr></thead>'
             f'<tbody>{"".join(rows)}</tbody></table></div>{more}'
             '<p class="small hint">Change a value and press Save or Enter; Save is your yes. An empty cell adds a value for that day; '

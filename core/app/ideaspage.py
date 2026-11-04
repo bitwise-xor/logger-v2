@@ -66,7 +66,7 @@ def _thought_detail(cur, csrf: str, t: dict, back: str) -> str:
             f'<label>Stage<select name="stage">{_opts(STAGES, t["stage"])}</select></label>'
             f'<label>Next step<select name="next_step">{_opts(NEXT_STEPS, t["next_step"], "none")}</select></label></div>'
             f'<div class="fields wide"><label>Summary<input name="summary" value="{esc(t["summary"])}" maxlength="300" required></label>'
-            f'<label>Tags <span class="small">(comma between them)</span><input name="tags" value="{esc(", ".join(t["tags"] or []))}" maxlength="200"></label></div>'
+            f'<label><span>Tags <span class="small">(comma between them)</span></span><input name="tags" value="{esc(", ".join(t["tags"] or []))}" maxlength="200"></label></div>'
             '<p class="row"><button class="primary sm" type="submit">Save</button><span class="small">Save is your yes.</span></p></form>'
             f'<form class="row" method="post" action="/web/ideas/thought">{base}{hidden("act", "delete")}'
             '<button class="ghost sm bad" type="submit">Delete</button><span class="small">asks once</span></form></div>')
@@ -265,7 +265,7 @@ def render_todoist(csrf: str, q) -> str:
                    f'<div class="txt">{esc(todos._en(r["content"] or ""))} <span class="small">· ticked off today</span></div></div>' for r in closed)
     seg = (f'<nav class="seg" aria-label="Sort"><a href="/web/ideas/todoist"{' aria-current="page"' if not sort else ""}>By section</a>'
            f'<a href="/web/ideas/todoist?sort=due"{' aria-current="page"' if sort else ""}>By due date</a></nav>')
-    return (_tabs("todoist") + f'<div class="card">{stale}<div class="head sub"><h2>Open tasks <span class="small">· {len(tasks)} · Lists and Inbox</span></h2>{seg}</div>'
+    return (_tabs("todoist") + f'<div class="card">{stale}<div class="head sub"><h2>Open tasks <span class="small">{len(tasks)} · Lists and Inbox</span></h2>{seg}</div>'
             f'{body or "<p class=empty>No open tasks.</p>"}'
             + (f'<div class="sect"><h3>Ticked off today</h3>{done}</div>' if done else "")
             + '<p class="small hint">Tick off works straight away; a task ticked off here stays below until tomorrow, so one click puts it back. '

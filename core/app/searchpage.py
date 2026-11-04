@@ -25,7 +25,7 @@ def _like(term: str) -> str:
 
 def _section(title: str, rows: list[str], more: str = "") -> str:
     body = "".join(rows) or '<p class="empty">Nothing found.</p>'
-    return f'<div class="card"><h2>{title} <span class="small">· {len(rows)}{"+" if len(rows) == LIMIT else ""}</span></h2>{body}{more}</div>'
+    return f'<div class="card"><h2>{title} <span class="small">{len(rows)}{"+" if len(rows) == LIMIT else ""}</span></h2>{body}{more}</div>'
 
 
 def render(csrf: str, q) -> str:
