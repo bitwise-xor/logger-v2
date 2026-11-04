@@ -35,11 +35,11 @@ def start_timer(web, job, minutes=15):
 
 def test_the_jobs_that_fit_come_one_per_chore_in_the_order_of_the_list(starter):
     got = jobs(15)
-    assert got[0]["title"] == "Vacuum the bathroom area" and got[0]["zone"] == "Bathroom" and got[0]["age"] is None and not got[0]["over"]
-    assert [j["title"] for j in got].count("Vacuum the bathroom area") == 1 and len({tuple(j["pairs"]) for j in got}) == len(got)
+    assert got[0]["title"] == "Vacuum the bathroom" and got[0]["zone"] == "Bathroom" and got[0]["age"] is None and not got[0]["over"]
+    assert [j["title"] for j in got].count("Vacuum the bathroom") == 1 and len({tuple(j["pairs"]) for j in got}) == len(got)
     assert all(j["minutes"] <= 15 for j in got) and len(got) == n("SELECT count(*) AS n FROM home_chores WHERE minutes <= 15")
     assert len(jobs(30)) == 20 and len(jobs(10)) < len(got)
-    assert got[0]["steps"][:2] == ["Sink", "Bathtub"]  # a whole-flat chore shows the zone's spots; a zone chore its own steps
+    assert got[0]["steps"][:2] == ["Sink", "Bathtub"]  # a whole-flat chore without steps shows the zone's spots; a zone chore its own steps
     sink = next(j for j in got if j["title"] == "Sink and toilet")
     assert sink["steps"] == ["Sink and tap", "Toilet seat and bowl", "Floor around the toilet"] and sink["howto"] is None
     assert next(j for j in jobs(30) if j["title"] == "Do laundry")["howto"] == "Wash, dry, put away."
@@ -47,19 +47,19 @@ def test_the_jobs_that_fit_come_one_per_chore_in_the_order_of_the_list(starter):
 
 def test_nothing_fits_five_minutes_so_the_shortest_job_is_offered_with_a_note(starter, web):
     got = jobs(5)
-    assert len(got) == 1 and got[0]["over"] and got[0]["minutes"] == 10 and got[0]["title"] == "Vacuum the bathroom area"
+    assert len(got) == 1 and got[0]["over"] and got[0]["minutes"] == 10 and got[0]["title"] == "Vacuum the bathroom"
     page = web[0].get("/web/home/pick?min=5").text
     assert "Your 5 minutes" in page and "This job takes about 10 minutes: do what fits, stopping counts." in page
 
 
 def test_what_was_done_today_and_what_is_hidden_today_are_left_out(starter, web):
     act(web, "/web/home/tick", chore=str(cid("Vacuum")), zone=str(zid("Bathroom")), key="t1")
-    assert jobs(15)[0]["title"] == "Vacuum the entrance area"  # the next zone of the same chore
+    assert jobs(15)[0]["title"] == "Vacuum the entrance"  # the next zone of the same chore
     first = jobs(15)[0]
     out = act(web, "/web/home/skip", pairs=pairs_of(first))
     assert "Not today: Vacuum · Entrance" in out.text and jobs(15)[0]["title"] == "Vacuum the dressing area"
     act(web, "/web/undo/last", token=token(out.text))
-    assert jobs(15)[0]["title"] == "Vacuum the entrance area" and n("SELECT count(*) AS n FROM home_skips") == 0
+    assert jobs(15)[0]["title"] == "Vacuum the entrance" and n("SELECT count(*) AS n FROM home_skips") == 0
     # hidden for one logging day only
     owner_sql("INSERT INTO home_skips (chore_id, zone_id, day) VALUES (%s, %s, log_day(now()) - 1)", cid("Vacuum"), zid("Entrance"))
     with connect() as conn, conn.cursor() as cur:
@@ -70,7 +70,7 @@ def test_what_was_done_today_and_what_is_hidden_today_are_left_out(starter, web)
 def test_one_hour_offers_a_zone_session_and_done_ticks_all_of_it(starter, web):
     got = jobs(60)
     assert got[0]["session"] and got[0]["title"] == "Bathroom: 4 jobs" and got[0]["minutes"] == 55 and got[0]["zone"] == "Bathroom"
-    assert got[0]["steps"][0] == "Vacuum (10 min)" and not got[1]["session"] and got[1]["title"] == "Vacuum the bathroom area"
+    assert got[0]["steps"] == ["Dust (15 min)", "Sink and toilet (15 min)", "Vacuum (10 min)", "Mop (15 min)"] and not got[1]["session"] and got[1]["title"] == "Vacuum the bathroom"
     page = web[0].get("/web/home/pick?min=60").text
     assert "Your hour" in page and "Bathroom: 4 jobs" in page
     out = act(web, "/web/home/pickdone", pairs=pairs_of(got[0]), key="d1")
@@ -84,13 +84,16 @@ def test_one_hour_offers_a_zone_session_and_done_ticks_all_of_it(starter, web):
 def test_the_pick_page_shows_the_job_its_steps_and_the_next_ones(starter, web):
     c = web[0]
     page = c.get("/web/home/pick?min=15").text
-    assert "Your 15 minutes" in page and "Vacuum the bathroom area" in page and "<li>Sink</li>" in page and "not logged yet" in page
+    assert "Your 15 minutes" in page and "Vacuum the bathroom" in page and "<li>Sink</li>" in page and "not logged yet" in page
     assert "Start timer" in page and "15:00" in page and ">Done<" in page and "Another job" in page and "Not today" in page
+    main = page[page.index("‹ Home"):]  # the page's own part, without the frame's Log button
+    assert main.count('class="primary"') == 1 and '<button class="ghost" type="submit">Done</button>' in main  # Start timer is the one main button
+    assert f"Job 1 of {len(jobs(15))}" in page
     assert "Also fits in 15 minutes" in page and 'href="/web/home/pick?min=15&n=1"' in page
     second = c.get("/web/home/pick?min=15&n=1").text
-    assert jobs(15)[1]["title"] in second and "Vacuum the bathroom area</h2>" not in second
+    assert jobs(15)[1]["title"] in second and "Vacuum the bathroom</h2>" not in second and f"Job 2 of {len(jobs(15))}" in second
     wrap = c.get(f"/web/home/pick?min=15&n={len(jobs(15))}").text  # past the end: back to the first
-    assert "Vacuum the bathroom area</h2>" in wrap
+    assert "Vacuum the bathroom</h2>" in wrap
     assert "Your 15 minutes" in c.get("/web/home/pick?min=99&n=x").text  # junk falls back to the default
 
 
@@ -115,7 +118,7 @@ def test_the_timer_is_kept_on_the_server_and_can_be_paused_resumed_and_stopped(s
     assert t["minutes"] == 15 and t["pairs"] == [list(job["pairs"][0])] and not t["paused"]
     page = web[0].get("/web/home/pick?min=30").text  # the running timer wins over the chosen time
     assert re.search(r'class="hoclock" data-left="(89\d|900)"', page) and "Pause" in page and "Start timer" not in page and "Another job" not in page
-    assert "Vacuum the bathroom area" in page and "Stop timer" in page and ">Done<" in page
+    assert "Vacuum the bathroom" in page and "Stop timer" in page and ">Done<" in page
     act(web, "/web/home/pause", timer=str(t["id"]))
     t = timer_row()
     assert t["paused"] and 880 <= t["left_s"] <= 900

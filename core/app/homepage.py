@@ -70,8 +70,10 @@ def _week_card(w: dict) -> str:
 
 
 def _timer_banner(t: dict, job: dict) -> str:
+    """The Timer card on Now; a running timer counts down there too (app.js, data-countdown)."""
     left = "time is up" if t["state"] == "over" else f'{t["left"] // 60}:{t["left"] % 60:02d} left' + (" (paused)" if t["state"] == "paused" else "")
-    return (f'<div class="card"><h2><span>Timer</span><span class="small">{esc(left)}</span></h2><p><b>{esc(job["title"])}</b></p>'
+    tick = f' data-countdown="{t["left"]}"' if t["state"] == "running" else ""
+    return (f'<div class="card"><h2><span>Timer</span><span class="small"{tick}>{esc(left)}</span></h2><p><b>{esc(job["title"])}</b></p>'
             '<a class="primary gopen" href="/web/home/pick">Open the timer</a></div>')
 
 
@@ -82,24 +84,32 @@ def render_now(csrf: str, q=None) -> str:
         done = home.recent(cur, RECENT)
         w = home.week(cur)
         t = home.timer_open(cur)
+        skips = home.skipped(cur, d["today"])
     if not d["chores"]:
         return (_tabs("now") + '<div class="card"><h2>Home</h2><p class="empty">No zones or chores yet.</p>'
                 '<p class="small">Add them on <a href="/web/home/edit">Edit zones</a>.</p></div>')
     job = home.job_of(d, [tuple(x) for x in t["pairs"]]) if t else None
-    rows = home.worst(d["pairs"])
+    shown = home.visible(d["pairs"], skips)
+    rows = home.worst(shown)
     top = "".join(_row(p, csrf, "/web/home") for p in rows[:SHOWN])
-    more = f'<p class="row"><a href="/web/home/zones">Show all {len(rows)} chores</a></p>' if len(rows) > SHOWN else ""
+    more = f'<p class="row"><a href="/web/home/zones">Show all {len(rows)} chores</a></p>' + _hidden_line(d, shown) if len(rows) > SHOWN else _hidden_line(d, shown)
     lately = "".join(f'<li><span>{esc(e["label"])}</span><span class="small">{_when(e["at"])}</span></li>' for e in done)
     return (_tabs("now") + (_timer_banner(t, job) if t and job else "") + _time_card(minutes) + _week_card(w)
             + f'<div class="card"><h2><span>Longest since last done</span><span class="small">{_n(len(rows), "chore")}</span></h2>{top}{more}</div>'
             + ('<div class="card"><h2>Recently done</h2><ul class="horecent">' + lately + "</ul></div>" if lately else ""))
 
 
+def _hidden_line(d: dict, shown: list) -> str:
+    """"1 hidden for today": the jobs marked "Not today" (they come back on the next logging day)."""
+    n = len(d["pairs"]) - len(shown)
+    return f'<p class="small">{n} hidden for today</p>' if n else ""
+
+
 # ---- Pick a job ---------------------------------------------------------------------------------------
 
-def _post(action: str, back: str, csrf: str, fields: dict, label: str, cls: str = "ghost", key_: bool = False) -> str:
+def _post(action: str, back: str, csrf: str, fields: dict, label: str, cls: str = "ghost", key_: bool = False, attrs: str = "") -> str:
     inner = "".join(hidden(k, v) for k, v in fields.items())
-    return (f'<form method="post" action="/web/home/{action}">{hidden("csrf", csrf)}{inner}{hidden("back", back)}{hidden("key", key()) if key_ else ""}'
+    return (f'<form method="post" action="/web/home/{action}"{attrs}>{hidden("csrf", csrf)}{inner}{hidden("back", back)}{hidden("key", key()) if key_ else ""}'
             f'<button class="{cls}" type="submit">{label}</button></form>')
 
 
@@ -141,24 +151,27 @@ def render_pick(csrf: str, q=None) -> str:
         job = jobs[n]
     back = f"/web/home/pick?min={minutes}" + (f"&n={n}" if jobs else "")
     pairs = home.pairs_value(job["pairs"])
-    chips = f'<span class="pill ok">{esc(job["zone"])}</span><span class="pill">{esc(home.age_text(job["age"]))}</span>'
+    chips = (f'<span class="pill ok">{esc(job["zone"])}</span><span class="pill">{esc(home.age_text(job["age"]))}</span>'
+             + (f'<span class="small">Job {n + 1} of {len(jobs)}</span>' if len(jobs) > 1 else ""))
     steps = ('<ol class="steps">' + "".join(f"<li>{esc(x)}</li>" for x in job["steps"]) + "</ol>") if job["steps"] else ""
     note = (f'<p class="small">This job takes about {job["minutes"]} minutes: do what fits, stopping counts.</p>' if job["over"] else "")
     howto = f'<p class="small">{esc(job["howto"])}</p>' if job["howto"] else ""
     card = f'<div class="card hojob"><p class="row">{chips}</p><h2>{esc(job["title"])}</h2>{steps}{howto}{note}</div>'
     if t:
+        # at zero (on the server, or in app.js while the page is open) Pause goes and "Stop timer" becomes "Finished"
         tid = {"timer": str(t["id"]), "pairs": pairs}
-        ctl = (_post("pause", back, csrf, tid, "Pause", "primary") if t["state"] == "running" else
+        ctl = (_post("pause", back, csrf, tid, "Pause", "primary", attrs=" data-gone-at-zero") if t["state"] == "running" else
                _post("resume", back, csrf, tid, "Resume", "primary") if t["state"] == "paused" else "")
         timer = f'<div class="card hotimer">{_clock(t, minutes)}<div class="row">{ctl}</div></div>'
         buttons = (_post("pickdone", "/web/home", csrf, {"pairs": pairs, "timer": str(t["id"])}, "Done", "primary", True)
-                   + _post("stop", back, csrf, {"timer": str(t["id"])}, "Stop timer"))
+                   + _post("stop", back, csrf, {"timer": str(t["id"])}, "Finished" if t["state"] == "over" else "Stop timer",
+                           attrs=' data-finish-at-zero' if t["state"] == "running" else ""))
         also = ""
     else:
         timer = (f'<div class="card hotimer">{_clock(None, minutes)}'
                  + _post("start", back, csrf, {"pairs": pairs, "minutes": str(minutes)}, "Start timer", "primary")
                  + '<p class="small">When the timer ends, stop. It counts as a session, finished or not.</p></div>')
-        buttons = (_post("pickdone", "/web/home", csrf, {"pairs": pairs}, "Done", "primary", True)
+        buttons = (_post("pickdone", "/web/home", csrf, {"pairs": pairs}, "Done", "ghost", True)  # "Start timer" is the one main button
                    + (f'<a class="ghost" href="/web/home/pick?min={minutes}&n={n + 1}">Another job</a>' if len(jobs) > 1 else "")
                    + _post("skip", back, csrf, {"pairs": pairs}, "Not today"))
         more = [(i, jobs[i]) for i in ((n + 1) % len(jobs), (n + 2) % len(jobs)) if i != n]
@@ -182,9 +195,11 @@ def _flat(d: dict, csrf: str) -> str:
     for c in (c for c in d["chores"] if c["zone_id"] is None):
         mine = [p for p in d["pairs"] if p["chore"]["id"] == c["id"]]
         mine.sort(key=lambda p: p["zone"]["sort_order"])
+        all_today = bool(mine) and all(p["age"] == 0 for p in mine)  # a second tap takes today's ticks back, like a tile
+        label = ("All done ✓", ' aria-pressed="true" title="Done in every zone today. Tap again to take it back."') if all_today else ("All done", "")
         out.append(f'<div class="hoflat"><div class="hoflathead"><h3>{esc(c["name"])} <span class="small">· {esc(home.interval_text(c["interval_days"]))}</span></h3>'
                    f'<form method="post" action="/web/home/alldone">{hidden("csrf", csrf)}{hidden("chore", str(c["id"]))}{hidden("key", key())}{here("/web/home/zones")}'
-                   f'<button class="ghost sm" type="submit">All done</button></form></div>'
+                   f'<button class="ghost sm" type="submit"{label[1]}>{label[0]}</button></form></div>'
                    f'<div class="hotiles">{"".join(_tile(p, csrf, "/web/home/zones") for p in mine)}</div></div>')
     if not out:
         return ""
@@ -230,10 +245,12 @@ def render_history(csrf: str, q=None) -> str:
 # ---- Edit zones ------------------------------------------------------------------------------------
 
 def _chore_form(c: dict | None, zones: list, csrf: str, action: str, button: str, back: str) -> str:
+    """`zones` is every zone: the active ones are offered, a retired one only when it is this chore's own (so Save keeps it)."""
     c = c or {}
     here_zone = "flat" if c and c.get("zone_id") is None else str(c.get("zone_id") or "")
     opts = '<option value="flat"' + (" selected" if here_zone == "flat" else "") + ">Whole flat (each zone on its own)</option>" + "".join(
-        f'<option value="{z["id"]}"{" selected" if here_zone == str(z["id"]) else ""}>{esc(z["name"])}</option>' for z in zones)
+        f'<option value="{z["id"]}"{" selected" if here_zone == str(z["id"]) else ""}>{esc(z["name"])}{"" if z["active"] else " (retired)"}</option>'
+        for z in zones if z["active"] or here_zone == str(z["id"]))
     ident = hidden("chore", str(c["id"])) if c.get("id") else ""
     return (f'<form class="fbox" method="post" action="/web/home/{action}">{hidden("csrf", csrf)}{ident}{here(back)}<div class="fields">'
             f'<label>Name<input name="name" maxlength="60" required value="{esc(c.get("name", ""))}" placeholder="e.g. Clean the oven"></label>'
@@ -269,7 +286,7 @@ def _zone_edit(z: dict, d: dict, csrf: str, back: str) -> str:
     toggle = (f'<form method="post" action="/web/home/zoneactive">{hidden("csrf", csrf)}{hidden("zone", str(z["id"]))}{hidden("on", "0" if on else "1")}{here(back)}'
               f'<button class="ghost sm" type="submit">{"Retire this zone" if on else "Bring back"}</button><span class="small"> History stays.</span></form>')
     return (f'<div class="card{"" if on else " retired"}"><h2><span>{esc(z["name"])}{"" if on else " · retired"}</span><span class="small">{_n(len([c for c in mine if c["active"]]), "chore")}</span></h2>'
-            + "".join(_chore_edit(c, d["zones"], csrf, back) for c in mine) + form + toggle + "</div>")
+            + "".join(_chore_edit(c, d["all_zones"], csrf, back) for c in mine) + form + toggle + "</div>")
 
 
 def render_edit(csrf: str, q=None) -> str:
@@ -285,8 +302,8 @@ def render_edit(csrf: str, q=None) -> str:
                  '<button class="primary sm" type="submit">Save</button></form>'
                  '<p class="small">A session is a day with a job done or a timer run out.</p></div>')
     flat_card = ('<div class="card"><h2><span>Whole flat</span><span class="small">each zone is tracked on its own</span></h2>'
-                 + "".join(_chore_edit(c, d["zones"], csrf, back) for c in flat) + "</div>") if flat else ""
-    new_chore = (f'<details class="lookup"><summary class="ghost">+ New chore</summary>{_chore_form(None, d["zones"], csrf, "chorenew", "Add", back)}</details>')
+                 + "".join(_chore_edit(c, d["all_zones"], csrf, back) for c in flat) + "</div>") if flat else ""
+    new_chore = (f'<details class="lookup"><summary class="ghost">+ New chore</summary>{_chore_form(None, d["all_zones"], csrf, "chorenew", "Add", back)}</details>')
     new_zone = (f'<details class="lookup"><summary class="ghost">+ New zone</summary><form class="fbox" method="post" action="/web/home/zonenew">{hidden("csrf", csrf)}{here(back)}'
                 '<div class="fields"><label>Name<input name="name" maxlength="40" required placeholder="e.g. Balcony"></label>'
                 '<label>Tile label (optional)<input name="short" maxlength="12"></label>'
@@ -300,15 +317,22 @@ def render_edit(csrf: str, q=None) -> str:
 # ---- the Home card on Today --------------------------------------------------------------------------
 
 def today_card() -> str:
-    """"Home": the chore waiting longest, this week's sessions, a 15 minutes button and Open Home. Empty before there are chores."""
+    """"Home": the chore waiting longest (not one marked "Not today"), this week's sessions, a 15 minutes button and Open Home.
+    Empty before there are chores."""
     with connect() as conn, conn.cursor() as cur:
         d = home.load(cur)
         w = home.week(cur)
-    rows = home.worst(d["pairs"])
-    if not rows:
+        skips = home.skipped(cur, d["today"])
+    if not d["pairs"]:
         return ""
-    p = rows[0]
-    return (f'<div class="card homecard"><h2><span>{icon("home")}Home</span><span class="small">this week {w["this"]} of {w["goal"]}</span></h2><p class="small">Waiting longest</p>'
-            f'<p class="honext"><b>{esc(home.label(p["chore"], p["zone"]))}</b></p>'
-            f'<p class="small">{esc(home.age_text(p["age"]))} · {esc(home.interval_text(p["interval"]))}</p>'
+    shown = home.visible(d["pairs"], skips)
+    rows = home.worst(shown)
+    if rows:
+        p = rows[0]
+        nxt = (f'<p class="small">Waiting longest</p><p class="honext"><b>{esc(home.label(p["chore"], p["zone"]))}</b></p>'
+               f'<p class="small">{esc(home.age_text(p["age"]))} · {esc(home.interval_text(p["interval"]))}</p>')
+    else:
+        nxt = '<p class="small">Nothing else is waiting today.</p>'
+    return (f'<div class="card homecard"><h2><span>{icon("home")}Home</span><span class="small">this week {w["this"]} of {w["goal"]}</span></h2>'
+            f'{nxt}{_hidden_line(d, shown)}'
             '<div class="hobtns"><a class="primary" href="/web/home/pick?min=15">15 minutes</a><a class="ghost" href="/web/home">Open Home</a></div></div>')

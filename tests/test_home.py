@@ -39,7 +39,7 @@ def token(page):
 
 def age_days(chore, zone, days):
     owner_sql("""INSERT INTO home_done (chore_id, zone_id, done_at, day, source) VALUES (%s, %s, now() - make_interval(days => %s),
-                 log_day(now() - make_interval(days => %s)), 'web')""", cid(chore), zid(zone), days, days)
+                 log_day(now()) - %s, 'web')""", cid(chore), zid(zone), days, days)  # whole logging days (a clock change in between once made 60 days 59)
 
 
 # ---- the starter list and the words -----------------------------------------------------------------

@@ -15,9 +15,11 @@ from . import home
 from .record import QUESTION_HOURS
 
 VERBS = {"vacuumed", "hoovered", "dusted", "mopped", "cleaned", "wiped", "scrubbed", "washed", "did", "done", "finished", "changed", "tidied",
-         "sorted", "checked", "cleared", "emptied", "organized", "organised"}
+         "sorted", "checked", "cleared", "emptied", "organized", "organised",
+         "watered", "descaled", "tested", "turned", "flipped", "bled", "took", "defrosted"}  # the maintenance jobs (04.11.2026)
 FILLER = {"i", "ve", "the", "a", "an", "my", "all", "of", "in", "up", "out", "and", "again", "just", "also", "now", "then", "finally", "quickly",
-          "some", "today", "it", "whole", "entire", "off", "down", "with", "to", "was", "were", "have", "had"}
+          "some", "today", "it", "whole", "entire", "off", "down", "with", "to", "was", "were", "have", "had",
+          "floor", "floors"}  # "mopped the floor": the floor is where Vacuum and Mop are done anyway (04.11.2026)
 FLATISH = {"flat", "apartment", "house", "rooms", "zones"}
 EVERY = {"everything", "everywhere"}
 NO = re.compile(r"^\s*(no|nope|nein|skip|cancel|stop|drop)\b", re.I)

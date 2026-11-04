@@ -28,13 +28,17 @@ WHOLE = "whole flat"
 
 
 def interval_text(days: int) -> str:
-    """7 -> weekly, 14 -> every 2 weeks, 30 -> monthly, 90 -> every 3 months."""
+    """7 -> weekly, 14 -> every 2 weeks, 30 -> monthly, 90 -> every 3 months, 365 -> yearly, 730 -> every 2 years."""
     if days == 1:
         return "daily"
     if days == 7:
         return "weekly"
     if days == 30:
         return "monthly"
+    if days == 365:
+        return "yearly"
+    if days == 730:
+        return "every 2 years"
     if days % 30 == 0 and days <= 360:
         return f"every {days // 30} months"
     if days % 7 == 0:
@@ -127,6 +131,11 @@ def load(cur) -> dict:
             pairs.append({"chore": c, "zone": z, "interval": interval, "age": age, "done_at": seen and seen["done_at"], "rank": rank})
     pairs.sort(key=lambda p: p["rank"])
     return {"today": day, "zones": zones, "all_zones": all_zones, "chores": chores, "all_chores": all_chores, "pairs": pairs}
+
+
+def visible(pairs: list[dict], hidden: set) -> list[dict]:
+    """The pairs without those marked "Not today" (home_skips of this logging day)."""
+    return [p for p in pairs if (p["chore"]["id"], p["zone"]["id"]) not in hidden]
 
 
 def worst(pairs: list[dict]) -> list[dict]:
@@ -235,7 +244,8 @@ def tick(form, key=None, session=None) -> dict:
 
 
 def all_done(form, key=None, session=None) -> dict:
-    """"All done" on a whole-flat chore: every active zone is stamped done now, as one message."""
+    """"All done" on a whole-flat chore: every active zone not done today yet is stamped done now, as one message. When every zone
+    is done today already, the tap takes today's ticks of that chore back (like a second tap on a tile); Undo puts them back."""
     chore_id = _id(form.get("chore"))
     req = hashlib.sha256(json.dumps(["all", chore_id]).encode()).hexdigest()
     with connect() as conn, conn.cursor() as cur:
@@ -247,9 +257,20 @@ def all_done(form, key=None, session=None) -> dict:
         if not c:
             return _rejected("That is not a whole-flat chore.")
         cur.execute("SELECT id FROM home_zones WHERE active ORDER BY sort_order, id")
-        zones = [z["id"] for z in cur.fetchall()]
+        every = [z["id"] for z in cur.fetchall()]
         day = today(cur)
         said = f'{c["name"]} · {WHOLE}'
+        cur.execute("SELECT to_jsonb(d) AS j FROM home_done d WHERE chore_id = %s AND day = %s ORDER BY id", (c["id"], day))
+        today_rows = cur.fetchall()
+        have = {g["j"]["zone_id"] for g in today_rows}
+        zones = [z for z in every if z not in have]
+        if every and not zones:  # all done today already: this tap takes it back
+            cur.execute("DELETE FROM home_done WHERE id = ANY(%s)", ([g["j"]["id"] for g in today_rows],))
+            out = {"outcome": "changed", "head": f"Ticked off: {said}", "home_undo": {"restore": [{"t": "home_done", "row": g["j"]} for g in today_rows],
+                                                                                    "back": f"Undone: {said} is done again."}}
+            logbook._audit(cur, "home", "removed", {"rows": len(today_rows)}, logbook.WEB)
+            _remember(cur, key, req, out)
+            return out
         cur.execute("INSERT INTO raw_inbox (channel, content, metadata) VALUES ('web', %s, %s) RETURNING id", (f"home: {said}", Jsonb({"home": True})))
         raw = cur.fetchone()["id"]
         ids = stamp(cur, [(c["id"], z) for z in zones], "web", raw, day)
@@ -433,17 +454,39 @@ def skipped(cur, day) -> set:
 
 
 def _single(p: dict, over: bool = False) -> dict:
+    """One job. A whole-flat chore is a verb with the zone: "Vacuum the bathroom", "Dust the dressing area". Its steps are the chore's
+    own; the zone's spots only when the chore has none (Dust)."""
     c, z = p["chore"], p["zone"]
     flat = c["zone_id"] is None
     return {"pairs": [(c["id"], z["id"])], "session": False, "over": over, "zone": z["name"], "age": p["age"], "minutes": c["minutes"],
-            "title": (f'{c["name"]} the {z["name"].lower()}' + ("" if z["name"].lower().endswith("area") else " area")) if flat else c["name"],  # a whole-flat chore is a verb: Dust the sleeping area
-            "steps": list(z["spots"] if flat else c["steps"])[:STEPS], "howto": c["howto"]}
+            "title": f'{c["name"]} the {z["name"].lower()}' if flat else c["name"],
+            "steps": list(c["steps"] or (z["spots"] if flat else []))[:STEPS], "howto": c["howto"]}
+
+
+def _place(p: dict) -> tuple:
+    """The order inside a zone session: Dust first, then the zone's own jobs, then the other whole-flat chores (Vacuum, Mop): top to
+    bottom, the floor last."""
+    c = p["chore"]
+    if c["zone_id"] is not None:
+        return (1, c["sort_order"], c["id"])
+    dust = c["name"].lower().startswith("dust") or "dust" in c["words"]
+    return (0 if dust else 2, c["sort_order"], c["id"])
+
+
+def _session(chosen: list[dict]) -> dict:
+    chosen = sorted(chosen, key=_place)
+    ages = [p["age"] for p in chosen]
+    z = chosen[0]["zone"]
+    return {"pairs": [(p["chore"]["id"], p["zone"]["id"]) for p in chosen], "session": True, "over": False, "zone": z["name"],
+            "age": None if None in ages else max(ages), "minutes": sum(p["chore"]["minutes"] for p in chosen), "title": f'{z["name"]}: {len(chosen)} jobs',
+            "steps": [f'{p["chore"]["name"]} ({p["chore"]["minutes"]} min)' for p in chosen], "howto": None}
 
 
 def candidates(d: dict, minutes: int, hidden: set) -> list[dict]:
     """The jobs that fit `minutes`, best first: one per chore (its most overdue zone) in the Now list's order, without what was done
-    today or marked "Not today". At 60 minutes a zone session (the most overdue job's zone, its due chores together) comes first when
-    two or more fit. When nothing fits, the shortest job is offered with over = True ("do what fits, stopping counts")."""
+    today or marked "Not today". At 60 minutes a zone session (the most overdue job's zone, its due chores together, in the order of
+    _place) comes first when two or more fit. When nothing fits, the shortest job is offered with over = True ("do what fits, stopping
+    counts")."""
     avail = [p for p in d["pairs"] if p["age"] != 0 and (p["chore"]["id"], p["zone"]["id"]) not in hidden]
     fits = [p for p in avail if p["chore"]["minutes"] <= minutes]
     jobs: list[dict] = []
@@ -455,10 +498,7 @@ def candidates(d: dict, minutes: int, hidden: set) -> list[dict]:
                 chosen.append(p)
                 total += p["chore"]["minutes"]
         if len(chosen) >= 2:
-            ages = [p["age"] for p in chosen]
-            jobs.append({"pairs": [(p["chore"]["id"], p["zone"]["id"]) for p in chosen], "session": True, "over": False, "zone": z["name"],
-                         "age": None if None in ages else max(ages), "minutes": total, "title": f'{z["name"]}: {len(chosen)} jobs',
-                         "steps": [f'{p["chore"]["name"]} ({p["chore"]["minutes"]} min)' for p in chosen], "howto": None})
+            jobs.append(_session(chosen))
     seen = set()
     for p in fits:
         if p["chore"]["id"] not in seen:
@@ -478,13 +518,7 @@ def job_of(d: dict, pairs: list[tuple[int, int]]) -> Optional[dict]:
     found = [by[x] for x in pairs if x in by]
     if not found:
         return None
-    if len(found) == 1:
-        return _single(found[0])
-    ages = [p["age"] for p in found]
-    z = found[0]["zone"]
-    return {"pairs": [(p["chore"]["id"], p["zone"]["id"]) for p in found], "session": True, "over": False, "zone": z["name"],
-            "age": None if None in ages else max(ages), "minutes": sum(p["chore"]["minutes"] for p in found), "title": f'{z["name"]}: {len(found)} jobs',
-            "steps": [f'{p["chore"]["name"]} ({p["chore"]["minutes"]} min)' for p in found], "howto": None}
+    return _single(found[0]) if len(found) == 1 else _session(found)
 
 
 def _valid(cur, pairs: list) -> list[tuple[int, int]]:

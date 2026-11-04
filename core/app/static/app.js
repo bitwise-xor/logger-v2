@@ -153,6 +153,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Home page, pick screen: the countdown of a running timer. The server keeps the end time; this only draws the seconds left.
   document.querySelectorAll(".hoclock[data-left]").forEach(setupClock);
+  document.querySelectorAll("[data-countdown]").forEach(setupCountdown);
 
   // Coaching: while a card says "Coaching…", ask every 5 s whether it is ready, then show the page again (not while words are being typed)
   const wait = document.querySelector("[data-coach-wait]");
@@ -169,14 +170,42 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 });
 
+// The Pick page's running timer (the end is kept on the server). The screen stays on while it runs (the browser's wake lock, asked
+// again when the page comes back into view); at zero Pause goes, "Stop timer" becomes "Finished" and the screen may sleep again.
 function setupClock(el) {
   const end = Date.now() + Number(el.dataset.left) * 1000, over = document.querySelector("[data-over]");
+  let lock = null, done = false;
+  const wake = async () => {
+    if (done || lock || !("wakeLock" in navigator) || document.visibilityState !== "visible") return;
+    try { lock = await navigator.wakeLock.request("screen"); lock.addEventListener("release", () => { lock = null; }); }
+    catch (e) { /* not allowed now (battery saver, no tap yet): the timer runs on anyway */ }
+  };
+  document.addEventListener("visibilitychange", wake);
   const show = () => {
     const s = Math.max(0, Math.round((end - Date.now()) / 1000));
     el.textContent = String(Math.floor(s / 60)).padStart(2, "0") + ":" + String(s % 60).padStart(2, "0");
-    if (s === 0) { el.classList.add("over"); if (over) over.hidden = false; clearInterval(tick); }
+    if (s === 0) {
+      done = true; clearInterval(tick);
+      el.classList.add("over"); if (over) over.hidden = false;
+      document.querySelectorAll("[data-gone-at-zero]").forEach(f => { f.hidden = true; });
+      document.querySelectorAll("[data-finish-at-zero] button").forEach(b => { b.textContent = "Finished"; });
+      if (lock) lock.release().catch(() => {});
+    }
   };
   const tick = setInterval(show, 500);
+  show();
+  wake();
+}
+
+// The Timer card on Now: "12:34 left", counting down, then "time is up".
+function setupCountdown(el) {
+  const end = Date.now() + Number(el.dataset.countdown) * 1000;
+  const show = () => {
+    const s = Math.max(0, Math.round((end - Date.now()) / 1000));
+    el.textContent = s === 0 ? "time is up" : Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0") + " left";
+    if (s === 0) clearInterval(tick);
+  };
+  const tick = setInterval(show, 1000);
   show();
 }
 
