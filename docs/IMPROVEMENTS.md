@@ -24,7 +24,7 @@ the doc's Current tab first.
    Claude Opus at high effort, on demand; no thoughts or private entries; mockup https://claude.ai/artifact/4z4HLimQeLi2jo4Z6ZX3ND).
 4. **45 + core 19 Export of everything: export part done 05.11.2026, deploy 60** (Settings > Export; the digest part of 45 stays open) (S-M): one CSV/JSON download, apart from the Sheet and the encrypted backup; useful before the
    mini PC move.
-5. **40 Water target** (S): drinks are logged already; a daily water bar on Today.
+5. **40 Water target: done 05.11.2026, deploy 61** (S): Settings > Food targets "Water (ml)"; a water bar on Today (every drink counts by its amount) with "+ 250 ml water".
 
 **Most effort among the open items (biggest first):**
 
@@ -144,7 +144,7 @@ Collected from the user's list of 30.10.2026 and the answers on 31.10.2026. Noth
 | 37 | Mood and energy check-in: 1 to 5 buttons in a small card on Today and in chat ("mood 4, energy 3") | User: "next version". Undecided: which scales (mood and energy, or also stress), once in the evening or morning and evening. Would feed the Insights page and could be a nudge | M |
 | 38 | Minutes for practices (Shoonya, meditation, study) as minutes, not only a tick | A twice-a-day count already works as a habit target | M |
 | 39 | Activity: steps or walk minutes, typed or from the phone health export | The `health-export` channel already carried 23 messages | M |
-| 40 | Water as its own daily target with a bar on Today | Drinks are logged already; needs a target per day | S |
+| 40 | Water as its own daily target with a bar on Today; done 05.11.2026, deploy 61 | Drinks are logged already; needs a target per day | S |
 | 41 | Weight trend: 7-day average, weekly change, an optional goal weight | Smooths day-to-day jumps; the Health chart already has a 7-day average line | S-M |
 | 42 | Lab report upload with trends (item 16): photo or PDF read by Claude, shown to check, then saved | The label-photo flow (`labelread.py`, `webfood.label_add`) is the pattern: read, check, add | L |
 | 43 | Medication schedule: dose and time with a reminder | The nudge code (`nudges.py`, web push) can carry it | M |

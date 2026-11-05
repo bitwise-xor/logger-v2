@@ -87,6 +87,8 @@ def targets(form, key: Optional[str], session) -> dict:
                     [valid_from] + [vals[c] for c in cols] + [note])  # column names are the fixed list above
         logbook._audit(cur, "web_change", "changed", {"what": "food targets"}, logbook.WEB)
     shown = ", ".join(f"{label} {vals[k]:g}{' ' + u if u == 'mg' else ''}" for k, label, u in settingspage.TARGET_FIELDS[:5] if vals[k] is not None)
+    if vals.get("water_ml") is not None:
+        shown += (", " if shown else "") + f"Water {vals['water_ml']:g} ml"
     return {"outcome": "changed", "head": f"Targets from {valid_from:%d.%m.%Y} saved: {shown}."}
 
 

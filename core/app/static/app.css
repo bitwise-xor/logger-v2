@@ -4,15 +4,15 @@
 @font-face{font-family:Inter;src:url(inter.woff2) format("woff2");font-weight:400 700;font-style:normal;font-display:swap}
 :root{--bg:#f5f4f0;--card:#fff;--ink:#1d1d1b;--dim:#62625c;--line:#ebe9e3;--line2:#dcdad3;--accent:#2f6f4f;--accent-soft:#e3efe7;
       --warn:#8f5408;--warn-soft:#fbf0dc;--bad:#b3261e;--bad-soft:#fbe8e6;--bar:#ebeae4;--field:#f7f6f2;--c2:#3d6fb6;
-      --mp:#3d6fb6;--mc:#c4513a;--mf:#c98c12;--shadow:0 1px 2px rgba(25,25,20,.05),0 8px 24px rgba(25,25,20,.05);
+      --mp:#3d6fb6;--mc:#c4513a;--mf:#c98c12;--mw:#1f8597;--shadow:0 1px 2px rgba(25,25,20,.05),0 8px 24px rgba(25,25,20,.05);
       --shadow-pop:0 12px 32px rgba(25,25,20,.16);color-scheme:light}
 @media (prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#111211;--card:#1b1c1b;--ink:#ecece8;--dim:#a6a6a0;--line:#2a2b29;
       --line2:#3a3b38;--accent:#76c99c;--accent-soft:#1d3226;--warn:#f0b35a;--warn-soft:#3a2d17;--bad:#ff8f86;--bad-soft:#3b1f1d;
-      --bar:#2b2c29;--field:#151615;--c2:#8db2ea;--mp:#8db2ea;--mc:#ee8a72;--mf:#f0c14f;--shadow:0 0 0 1px #262725;
+      --bar:#2b2c29;--field:#151615;--c2:#8db2ea;--mp:#8db2ea;--mc:#ee8a72;--mf:#f0c14f;--mw:#62c6d6;--shadow:0 0 0 1px #262725;
       --shadow-pop:0 12px 32px rgba(0,0,0,.55);color-scheme:dark}}
 :root[data-theme=dark]{--bg:#111211;--card:#1b1c1b;--ink:#ecece8;--dim:#a6a6a0;--line:#2a2b29;--line2:#3a3b38;--accent:#76c99c;
       --accent-soft:#1d3226;--warn:#f0b35a;--warn-soft:#3a2d17;--bad:#ff8f86;--bad-soft:#3b1f1d;--bar:#2b2c29;--field:#151615;
-      --c2:#8db2ea;--mp:#8db2ea;--mc:#ee8a72;--mf:#f0c14f;--shadow:0 0 0 1px #262725;--shadow-pop:0 12px 32px rgba(0,0,0,.55);color-scheme:dark}
+      --c2:#8db2ea;--mp:#8db2ea;--mc:#ee8a72;--mf:#f0c14f;--mw:#62c6d6;--shadow:0 0 0 1px #262725;--shadow-pop:0 12px 32px rgba(0,0,0,.55);color-scheme:dark}
 *{box-sizing:border-box}
 [hidden]{display:none!important}
 body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 Inter,system-ui,-apple-system,"Segoe UI",sans-serif;
@@ -114,6 +114,9 @@ h2 a:hover{color:var(--ink);text-decoration:underline}
 .meter .fill.protein{fill:var(--mp)}
 .meter .fill.fat{fill:var(--mf)}
 .meter .fill.carbs{fill:var(--mc)}
+.meter .fill.water{fill:var(--mw)}
+.total.water{margin:-.25rem 0 1.25rem}
+.total.water .wrow{display:flex;justify-content:space-between;align-items:center;gap:.75rem;flex-wrap:wrap}
 .meter .fill.over{fill:var(--warn)}
 .tablewrap{overflow-x:auto}
 .ft{width:100%;border-collapse:separate;border-spacing:0;font-variant-numeric:tabular-nums}

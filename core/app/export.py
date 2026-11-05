@@ -66,7 +66,7 @@ FILES: list[tuple[str, str, str]] = [
         FROM medications ORDER BY start_date NULLS FIRST, id"""),
     ("body_height", "Height in cm, each valid from a date.", "SELECT valid_from, height_cm, logged_at FROM body_height ORDER BY valid_from"),
     ("food_targets", "Daily food targets, each valid from a date.",
-     """SELECT valid_from, kcal, protein, fat, sat_fat, carbs, fibre, sugar_added, sodium_mg, note FROM food_targets ORDER BY valid_from"""),
+     """SELECT valid_from, kcal, protein, fat, sat_fat, carbs, fibre, sugar_added, sodium_mg, water_ml, note FROM food_targets ORDER BY valid_from"""),
     ("usual_meals", "Usual meals, one row per food in a meal.",
      """SELECT m.id AS meal_id, m.name AS meal, m.aliases, m.is_drink, m.note, f.name AS food, i.grams
         FROM usual_meals m LEFT JOIN usual_meal_items i ON i.meal_id = m.id LEFT JOIN foods f ON f.id = i.food_id

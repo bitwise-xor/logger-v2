@@ -57,6 +57,8 @@ def again_foods(cur, today: date, wake_at=None, now: Optional[datetime] = None) 
         out += [dict(r) for r in cur.fetchall() if r["id"] not in have][:AGAIN - len(out)]
     return out
 MACROS = (("kcal", "Calories", "kcal"), ("protein", "Protein", "g"), ("fat", "Fat", "g"), ("carbs", "Carbs", "g"))
+GOALS = ("protein", "water")  # targets to reach; the others are limits (past them the bar turns amber)
+WATER_GLASS = 250  # ml logged by the water bar's one-tap button
 THOUGHT_TYPES = ("idea", "question", "task", "project", "note", "journal", "reading", "progress")
 AREAS = ("health", "projects", "finance", "immigration", "learning", "personal")
 # The Health card's rows: key, label, sub-label, log type, period, unit
@@ -119,6 +121,11 @@ def load(asked: date | None = None) -> dict:
         cur.execute("""SELECT meal, meal_label, kcal, protein, fat, carbs, target_kcal, target_protein, target_fat, target_carbs
                        FROM v_food_day WHERE day = %s ORDER BY meal IS NULL, meal = 0, meal""", (day,))
         food = cur.fetchall()
+        # water (05.11.2026, item 40, the owner's rule A): every drink counts by its amount (a drink in g counts 1 g = 1 ml)
+        cur.execute("""SELECT (SELECT coalesce(sum(amount), 0) FROM food_entries WHERE day = %s AND is_drink) AS drunk,
+                              (SELECT water_ml FROM food_targets WHERE valid_from <= %s ORDER BY valid_from DESC LIMIT 1) AS target""",
+                    (day, day))
+        water = cur.fetchone()
         cur.execute("""SELECT id, meal, time, food, amount, unit, portion_text, kcal, protein, fat, carbs FROM v_food_log
                        WHERE day = %s ORDER BY meal, time NULLS LAST, id""", (day,))
         foods = cur.fetchall()
@@ -189,7 +196,7 @@ def load(asked: date | None = None) -> dict:
         due = body.due(cur, today, bool(w)) if day == today else None  # body measurements every 4 weeks, after the wake-up
     return {"day": day, "food": food, "foods": foods, "usual": usual, "habits": habits, "last_tick": last_tick, "health": health,
             "review": review, "prefs": prefs, "today": today, "past": day < today, "again": again, "checkin": checkin, "body_due": due,
-            "ci_day": ci_day, "ci_got": ci_got, "avoid": avoid, "watch_up": watch_up}
+            "ci_day": ci_day, "ci_got": ci_got, "avoid": avoid, "watch_up": watch_up, "water": water}
 
 
 def _checkin_day(cur, day: date, today: date, w, got: dict):
@@ -221,22 +228,22 @@ def _checkin_day(cur, day: date, today: date, w, got: dict):
 # ---- food -----------------------------------------------------------------------------------------
 
 def _bar(value, target, k: str = "") -> str:
-    """A thin bar in the macro's colour; past the target it turns amber (not for protein, a goal to reach)."""
+    """A thin bar in the macro's colour; past the target it turns amber (not for protein or water, goals to reach)."""
     pct = min(100.0, float(value or 0) / float(target) * 100) if target else 0
-    over = " over" if target and k != "protein" and float(value or 0) > float(target) else ""
+    over = " over" if target and k not in GOALS and float(value or 0) > float(target) else ""
     return (f'<svg class="meter" viewBox="0 0 100 4" preserveAspectRatio="none" aria-hidden="true">'
             f'<rect class="track" width="100" height="4" rx="2"/><rect class="fill {k}{over}" width="{pct:.1f}" height="4" rx="2"/></svg>')
 
 
 def _left(value, target, unit: str, k: str) -> str:
-    """Under a tile: what is left of the target, or how far over it (protein is a goal to reach, the others a limit)."""
+    """Under a tile: what is left of the target, or how far over it (protein and water are goals to reach, the others limits)."""
     if not target:
         return ""
     gap = float(target) - float(value or 0)
-    amount = f'{_n(abs(gap))}{" g" if unit == "g" else " kcal"}'
-    if gap >= 0:
+    amount = f'{_n(abs(gap))} {unit}'
+    if gap > 0 or (gap == 0 and k not in GOALS):
         return f'<div class="left small num">{amount} {"to go" if k == "protein" else "left"}</div>'
-    if k == "protein":
+    if k in GOALS:
         return '<div class="left small num met">target reached</div>'
     return f'<div class="left small num over">{amount} over</div>'
 
@@ -278,9 +285,23 @@ def _food_section(d: dict, csrf: str) -> str:
              else f'<p class="empty">Nothing logged {"on this day" if d["past"] else "yet today"}.</p>')
     usual = "" if d["past"] else _again_section(d, csrf) + _usual_section(d, csrf) + _scanner(csrf)  # logged for today only
     scan = "" if d["past"] else f'<button class="ghost sm" type="button" data-scan hidden>{icon("barcode")}Scan</button>'
-    return (f'<div class="totals">{tiles}</div>{_macro_block(total)}'
+    return (f'<div class="totals">{tiles}</div>{_water(d, csrf)}{_macro_block(total)}'
             f'<div class="card"><h2>Food and drinks<span class="row">{scan}<a href="/web/food?day={d["day"].isoformat()}">Open food log</a></span></h2>'
             f'{table}{usual}</div>')
+
+
+def _water(d: dict, csrf: str) -> str:
+    """The water bar (05.11.2026, item 40): the day's drinks in ml against the water target, with a one-tap glass of water
+    (today only). Hidden while no water target is set (Settings > Food targets)."""
+    w = d["water"]
+    if not w or not w["target"]:
+        return ""
+    glass = "" if d["past"] else (
+        f'<form method="post" action="/web/food/water">{hidden("csrf", csrf)}{hidden("key", key())}'
+        f'<button class="ghost sm" type="submit" title="Log a glass of water">+ {WATER_GLASS} ml water</button></form>')
+    return (f'<div class="total water"><div class="wrow"><div><div class="lbl">Water <span class="small">all drinks</span></div>'
+            f'<span class="n num">{_n(w["drunk"])} ml</span> <span class="of num">/ {_n(w["target"])} ml</span></div>{glass}</div>'
+            f'{_bar(w["drunk"], w["target"], "water")}{_left(w["drunk"], w["target"], "ml", "water")}</div>')
 
 
 def _scanner(csrf: str) -> str:

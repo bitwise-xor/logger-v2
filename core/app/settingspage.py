@@ -15,7 +15,8 @@ TABS = (("targets", "Food targets"), ("today", "Today page"), ("body", "Body"), 
         ("notify", "Notifications"), ("export", "Export"))
 BACK = re.compile(r"/web/settings(\?[A-Za-z0-9=&._%+-]*)?")
 TARGET_FIELDS = (("kcal", "Calories", "kcal"), ("protein", "Protein", "g"), ("fat", "Fat", "g"), ("sat_fat", "Saturated fat", "g"),
-                 ("carbs", "Carbs", "g"), ("fibre", "Fibre", "g"), ("sugar_added", "Added sugar", "g"), ("sodium_mg", "Sodium", "mg"))
+                 ("carbs", "Carbs", "g"), ("fibre", "Fibre", "g"), ("sugar_added", "Added sugar", "g"), ("sodium_mg", "Sodium", "mg"),
+                 ("water_ml", "Water", "ml"))  # water (05.11.2026, item 40): every drink counts, by its amount
 
 
 def url(**q) -> str:
@@ -53,16 +54,16 @@ def _targets(session, csrf: str) -> str:
     fields = "".join(f'<label><span>{lbl} <span class="small">{unit}</span></span><input type="number" name="{k}" min="0" step="any" inputmode="decimal" '
                      f'value="{_plain(cur[k]) if cur else ""}" placeholder="none"></label>' for k, lbl, unit in TARGET_FIELDS)
     hist = "".join(f'<tr><td>{r["valid_from"]:%d.%m.%Y}</td>' + "".join(f'<td>{_plain(r[k]) or "–"}</td>' for k, _l, _u in TARGET_FIELDS[:5])
-                   + f'<td class="l">{esc(r["note"] or "")}</td></tr>' for r in rows)
+                   + f'<td>{_plain(r["water_ml"]) or "–"}</td><td class="l">{esc(r["note"] or "")}</td></tr>' for r in rows)
     since = f"valid from {cur['valid_from']:%d.%m.%Y}" if cur else "none set yet"
     return (f'<div class="card"><h2>Daily food targets <span class="small">now {since}</span></h2>'
             f'<form method="post" action="/web/settings/targets">{hidden("csrf", csrf)}<div class="fields">'
             f'<label>Valid from<input type="date" name="valid_from" value="{today.isoformat()}" required></label>{fields}</div>'
             '<div class="fields wide"><label>Note (optional)<input name="note" maxlength="200" placeholder="why it changed"></label></div>'
             '<p class="row"><button class="primary" type="submit">Save targets</button>'
-            '<span class="small">New targets count from the date; earlier days keep the targets they had. An empty field means no target for it.</span></p></form></div>'
+            '<span class="small">New targets count from the date; earlier days keep the targets they had. An empty field means no target for it. Water counts every drink by its amount.</span></p></form></div>'
             f'<div class="card"><h2>History</h2><div class="tablewrap"><table class="ft hist"><thead><tr><th>From</th><th>kcal</th><th>Protein</th><th>Fat</th><th>Sat fat</th>'
-            f'<th>Carbs</th><th class="l">Note</th></tr></thead><tbody>{hist or "<tr><td colspan=7 class=empty>No targets yet.</td></tr>"}</tbody></table></div></div>')
+            f'<th>Carbs</th><th>Water ml</th><th class="l">Note</th></tr></thead><tbody>{hist or "<tr><td colspan=8 class=empty>No targets yet.</td></tr>"}</tbody></table></div></div>')
 
 
 # ---- body measurements (03.11.2026) ------------------------------------------------------------------

@@ -1283,7 +1283,7 @@ _FOOD_FIELDS = set(_NUT) | _FOOD_TEXT | {"name", "aliases", "add_aliases", "remo
                                          "needs_review", "review_reason", "default", "units", "drink"}
 
 
-_TARGET_COLS = ("kcal", "protein", "fat", "sat_fat", "carbs", "fibre", "sugar_added", "sodium_mg")
+_TARGET_COLS = ("kcal", "protein", "fat", "sat_fat", "carbs", "fibre", "sugar_added", "sodium_mg", "water_ml")
 
 
 def _fnum(v, what: str, lo: float = 0, hi: Optional[float] = None) -> float:
@@ -1847,7 +1847,8 @@ def _target_line(t: dict) -> str:
     vf = t["valid_from"]
     return (f"T{t['id']} from {vf.strftime('%d.%m.%Y') if hasattr(vf, 'strftime') else vf}: kcal {_n(t['kcal'])}, protein {_n(t['protein'])}, fat {_n(t['fat'])}, "
             f"sat fat {_n(t['sat_fat']) if t['sat_fat'] is not None else '-'}, carbs {_n(t['carbs'])}, fibre {_n(t['fibre'])}, "
-            f"added sugar {_n(t['sugar_added'])}, sodium {_n(t['sodium_mg'])} mg" + (f" ({t['note']})" if t.get("note") else ""))
+            f"added sugar {_n(t['sugar_added'])}, sodium {_n(t['sodium_mg'])} mg"
+            + (f", water {_n(t['water_ml'])} ml" if t.get("water_ml") is not None else "") + (f" ({t['note']})" if t.get("note") else ""))
 
 
 _TOP = {"sodium": "sodium_mg", "salt": "sodium_mg", "sugar": "sugar_added", "added sugar": "sugar_added", "total sugar": "sugar_total",

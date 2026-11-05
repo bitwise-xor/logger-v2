@@ -7,7 +7,7 @@ import re
 from datetime import datetime, timedelta
 from typing import Optional
 
-from . import commands, foodpage, logbook, record, v1_log
+from . import commands, foodpage, logbook, record, todaypage, v1_log
 from .db import connect
 from .todaypage import _plain
 from .v1_log import ReadBack, RecipeDef, RecipeItem, Reject
@@ -140,6 +140,28 @@ def again(form, key: Optional[str]) -> dict:
             "cooked": False, "drink": f["is_drink"], "when": when, "note": None}
     text = f"{f['name']} {_plain(a)} {f['basis']} again" + (f" at {when}" if when else "")
     return logbook.log(text, key, _pred(food=[item]), channel=logbook.WEB)
+
+
+def water(form, key: Optional[str]) -> dict:
+    """The water bar's button on Today (05.11.2026, item 40): a glass of water logged as a drink, like an Again chip.
+    The first tap adds "Water" to the catalogue (0 kcal, per 100 ml, a drink); an entry from here is always a drink."""
+    with connect() as conn, conn.cursor() as cur:
+        f = cur.execute("SELECT id, active, basis FROM foods WHERE lower(name) = 'water'").fetchone()
+        if f and not f["active"]:
+            return _rejected("Water is retired in your catalogue: bring it back on the Food page first.")
+        if f and f["basis"] != "ml":
+            return _rejected("Water in your catalogue is measured in g: change it to ml on the Food page first.")
+        if not f:
+            f = cur.execute("""INSERT INTO foods (name, basis, kcal, protein, fat, sat_fat, carbs, fibre, sugar_total, sugar_added,
+                                                  sodium_mg, caffeine_mg, source, source_note, is_drink, created_by)
+                               VALUES ('Water', 'ml', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 'database', 'plain water, added by the water bar',
+                                       true, 'user') RETURNING id""").fetchone()
+            logbook._audit(cur, "web_change", "changed", {"what": "water added to the catalogue", "ids": [f["id"]]}, logbook.WEB)
+    ml = todaypage.WATER_GLASS
+    item = {"food": f"N{f['id']}", "food_en": "Water", "amount": ml, "unit": "ml", "grams_per_unit": None,
+            "cooked": False, "drink": True, "when": None, "note": None}
+    # button: two glasses within 30 minutes are meant, not a repeat to ask about (a double tap is stopped by the key)
+    return logbook.log(f"Water {ml} ml (water bar)", key, _pred(food=[item]), channel=logbook.WEB, button=True)
 
 
 def note(form, key: Optional[str]) -> dict:
@@ -540,4 +562,4 @@ def label_add(form, key: Optional[str]) -> dict:
 ACTIONS = {"entry": (entry, None), "note": (note, None), "copy": (copy, "/web/food"), "usualnew": (usual_new, None), "usualcreate": (usual_create, None),
            "values": (values, None), "words": (words, None), "barcode": (barcode, None), "reviewed": (reviewed, None),
            "basics": (basics, None), "unit": (unit_add, None),
-           "lookup": (lookup, "/web/"), "usualmeal": (usual_meal, None), "again": (again, "/web/"), "labeladd": (label_add, "/web/")}
+           "lookup": (lookup, "/web/"), "usualmeal": (usual_meal, None), "again": (again, "/web/"), "water": (water, "/web/"), "labeladd": (label_add, "/web/")}
