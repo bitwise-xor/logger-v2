@@ -35,7 +35,7 @@ the doc's Current tab first.
 5. **51 Voice without the browser's speech recognition** (M-L): only if Safari's fails.
 
 **Next after the first five:** 48 "All look right" (S), 26 error page in the app's layout (S), gym workouts and home chores in the Search
-page (S), 49 more nudges (S-M), 50 more Insights (M, now with mood data), 38 minutes for practices (M), 43 medication schedule (M, only if
+page (S): done 05.11.2026, deploy 62; 49 more nudges (S-M), 50 more Insights (M, now with mood data), 38 minutes for practices (M), 43 medication schedule (M, only if
 wanted), 18 link thoughts (M), 56 T2 body measurements (M), 57 a notification when the Home timer ends (S-M); on the core list 16, 13, 24,
 20, 12.
 **Look at later:** core 3, the second-read data, around mid-November.
