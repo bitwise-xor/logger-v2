@@ -16,7 +16,7 @@ from starlette.concurrency import run_in_threadpool
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 
-from . import (activitypage, auth, foodpage, gym, gympage, habitspage, healthpage, home as home_actions, homepage, coach, coachpage, ideaspage, insightspage, labelread, labspage, logbook, privatepage, recentpage, searchpage, settingspage, todaypage,
+from . import (activitypage, auth, export, foodpage, gym, gympage, habitspage, healthpage, home as home_actions, homepage, coach, coachpage, ideaspage, insightspage, labelread, labspage, logbook, privatepage, recentpage, searchpage, settingspage, todaypage,
                trendspage, usagepage, webactions, weekpage, webentry, webfood, webheld, webideas, weblabs, webprivate, webhabits, websettings,
                webquestions, webpush, webundo)
 from .ai.provider import ProviderError
@@ -848,6 +848,22 @@ def add_routes(mcp) -> None:
 
     for _name, _fn in websettings.ACTIONS.items():
         mcp.custom_route(f"/web/settings/{_name}", methods=["POST"])(settings_form(_fn))
+
+    @mcp.custom_route("/web/settings/export", methods=["POST"])
+    async def settings_export(request: Request) -> Response:
+        """Settings > Export: the ZIP of everything logged comes back as the answer itself (a download, no page change)."""
+        session, form = await post_form(request)
+        if form is None:
+            return session
+        try:
+            data, name = await run_in_threadpool(lambda: export.download(form, session))
+        except Exception as e:  # noqa: BLE001 - the kind only
+            log.error("the export failed: %s", type(e).__name__)
+            return done(session, {"outcome": "rejected", "reason": "The export could not be made (the database did not answer). Try again in a moment."},
+                        "/web/settings?tab=export")
+        return Response(data, media_type="application/zip",
+                        headers={"Content-Disposition": f'attachment; filename="{name}"', "Cache-Control": "no-store",
+                                 "X-Content-Type-Options": "nosniff"})
 
     @mcp.custom_route("/web/review", methods=["POST"])
     async def review(request: Request) -> Response:

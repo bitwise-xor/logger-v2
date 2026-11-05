@@ -16,7 +16,7 @@ For the core, in order:
 1. **29 Night-time test failures: resolved 04.11.2026 without a code change**: the failures were the clock-dependent tests fixed on 30.10.
    (`fd60ce3`) and one chance failure on 02.11. (fixed in `31c49f9`); all 19 runs since passed, and the full suite passes at a simulated 03:15.
 2. **26 Usage page complete: done 04.11.2026, deploy 50** (`logbook._ai` for every kind; `answer()` records the AI calls it makes; label photos named; notifications counted).
-3. **19 Export** (S-M): with web 45.
+3. **19 Export: done 05.11.2026, deploy 60** (S-M): with web 45; `export.py` (ZIP of CSVs + all.json, private only when ticked, audit row `export`).
 4. **16 `answer()` handlers** (S-M): one small handler per question kind; there are 9 kinds now (`home_choice` added 03.11.2026). Before
    Telegram or coaching add more.
 5. **13 Remove the pilot tools** (S-M): 9 hidden tools still in `mcp_app.py`, plus `service.py` and its tests; fewer tests also make runs
@@ -87,7 +87,7 @@ For the core, in order:
 |---|---|---|---|
 | 17 | A daily or weekly digest: yesterday's kcal and protein against the target, habits missed, BP and weight averages | Comes to you without opening the app or the Sheet; best with Telegram | M |
 | 18 | Reminders: no weight by 10:00, a habit not ticked by the evening, a question open for a day | Needs a channel that can send to you (Telegram) | M |
-| 19 | Export everything you logged (CSV or JSON, one download) | Your data in an open form, apart from the Sheet and the encrypted backup | S-M |
+| 19 | Export everything you logged (CSV or JSON, one download); done 05.11.2026, deploy 60 | Your data in an open form, apart from the Sheet and the encrypted backup | S-M |
 | 20 | Food look-up: search German words in Open Food Facts; prefer full-fat when no fat level is said ("greek yogurt" comes back low-fat) | Known gaps from HANDOVER section 6 | S-M |
 
 ## 6. Food matching (found 29.10.2026, "oat cookie" logged as pasta)

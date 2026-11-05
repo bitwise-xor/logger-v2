@@ -22,7 +22,7 @@ the doc's Current tab first.
    call records its tokens, answers that call the AI are recorded, the page names each kind with its tokens, phone notifications counted.
 3. **52 Coaching: done 04.11.2026, deploy 51** (Coach card on Today, Week review card, Coach page under More, Settings > Coach "My goals";
    Claude Opus at high effort, on demand; no thoughts or private entries; mockup https://claude.ai/artifact/4z4HLimQeLi2jo4Z6ZX3ND).
-4. **45 + core 19 Export of everything** (S-M): one CSV/JSON download, apart from the Sheet and the encrypted backup; useful before the
+4. **45 + core 19 Export of everything: export part done 05.11.2026, deploy 60** (Settings > Export; the digest part of 45 stays open) (S-M): one CSV/JSON download, apart from the Sheet and the encrypted backup; useful before the
    mini PC move.
 5. **40 Water target** (S): drinks are logged already; a daily water bar on Today.
 
@@ -149,7 +149,7 @@ Collected from the user's list of 30.10.2026 and the answers on 31.10.2026. Noth
 | 42 | Lab report upload with trends (item 16): photo or PDF read by Claude, shown to check, then saved | The label-photo flow (`labelread.py`, `webfood.label_add`) is the pattern: read, check, add | L |
 | 43 | Medication schedule: dose and time with a reminder | The nudge code (`nudges.py`, web push) can carry it | M |
 | 44 | A photo attached to a food entry (a memory aid when the amount was a guess) | Needs somewhere to keep photos (disk is at about 82%) | M-L |
-| 45 | A daily or weekly digest, and an export of everything logged (CSV or JSON) | Same as core items 17 and 19 | M |
+| 45 | A daily or weekly digest, and an export of everything logged (CSV or JSON); export done 05.11.2026, deploy 60 | Same as core items 17 and 19 | M |
 | 46 | One-tap usual meals: a tap logs the meal with its saved weights, the editor stays for changes | Today has "+ meal" buttons that open an editor first | S |
 | 47 | Phone home-screen shortcuts that open straight at Log food or Weight | iOS limits what a web app can offer; check what works | S |
 | 48 | "All look right" on the review box | One button for a whole list of items that are fine | S |

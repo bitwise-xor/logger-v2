@@ -1,18 +1,18 @@
 """The web app's Settings page (decided 29.10.2026). Tabs: Food targets (the day's targets, new ones start on a date and the old ones
 stay as history), Habits (label, daily count, order, active; add a habit), Today page (what shows on Today and in which order),
 Body (03.11.2026: height from a date, how often body measurements are due, which measures show), Devices (the signed-in
-devices), Notifications (31.10.2026: turn nudges on per device, pick them and their times).
+devices), Notifications (31.10.2026: turn nudges on per device, pick them and their times), Export (05.11.2026: export.py).
 The forms post to websettings.py; this module only reads."""
 import re
 from urllib.parse import urlencode
 
-from . import body, coachpage, nudges, rules, uiprefs, webpush
+from . import body, coachpage, export, nudges, rules, uiprefs, webpush
 from .db import connect
 from .todaypage import HEALTH_ROWS, _plain
 from .webentry import esc, hidden
 
 TABS = (("targets", "Food targets"), ("today", "Today page"), ("body", "Body"), ("coach", "Coach"), ("devices", "Devices"),
-        ("notify", "Notifications"))
+        ("notify", "Notifications"), ("export", "Export"))
 BACK = re.compile(r"/web/settings(\?[A-Za-z0-9=&._%+-]*)?")
 TARGET_FIELDS = (("kcal", "Calories", "kcal"), ("protein", "Protein", "g"), ("fat", "Fat", "g"), ("sat_fat", "Saturated fat", "g"),
                  ("carbs", "Carbs", "g"), ("fibre", "Fibre", "g"), ("sugar_added", "Added sugar", "g"), ("sodium_mg", "Sodium", "mg"))
@@ -228,4 +228,4 @@ def render(session, q) -> str:
     tab = q.get("tab") if q.get("tab") in dict(TABS) else TABS[0][0]
     csrf = session["csrf"]
     return _tabs(tab) + {"targets": _targets, "habits": _habits, "today": _today_tab, "body": _body, "coach": coachpage.settings_tab, "devices": _devices,
-                         "notify": _notify}[tab](session, csrf)
+                         "notify": _notify, "export": export.settings_tab}[tab](session, csrf)

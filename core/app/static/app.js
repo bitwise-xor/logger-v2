@@ -102,6 +102,8 @@ document.addEventListener("DOMContentLoaded", () => {
       const bs = [...f.querySelectorAll("button:not([type=button])")].filter(b => !b.disabled);
       bs.forEach(b => { b.disabled = true; b.dataset.sent = "1"; });
       setTimeout(() => bs.forEach(b => { b.disabled = false; delete b.dataset.sent; }), 8000);
+      // a download (Settings > Export) stays on the page: no busy cursor once it has started (05.11.2026)
+      if (f.hasAttribute("data-download")) setTimeout(() => document.body.classList.remove("busy"), 3000);
     }, 0);
   });
   window.addEventListener("pageshow", () => {
