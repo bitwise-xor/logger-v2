@@ -463,6 +463,6 @@ def render_history(csrf: str, q=None) -> str:
         for r in sets.get(w["id"], []):
             by.setdefault(r["exercise_id"], []).append(r)
         lines = "".join(f'<tr><td>{esc(rs[0]["name"])}</td><td>{esc(", ".join(gym.row_text(r) for r in rs))}</td></tr>' for rs in by.values())
-        cards.append(f'<div class="card"><h2><span>{w["day"]:%a %d.%m.%Y}</span><span class="small">{esc(split)} · {when}</span></h2>'
+        cards.append(f'<div class="card" id="w{w["id"]}"><h2><span>{w["day"]:%a %d.%m.%Y}</span><span class="small">{esc(split)} · {when}</span></h2>'
                      f'<table class="ft plain"><tbody>{lines or "<tr><td class=empty>Nothing logged.</td></tr>"}</tbody></table></div>')
     return _tabs("history") + "".join(cards)

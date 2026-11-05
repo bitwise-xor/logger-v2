@@ -57,7 +57,7 @@ def test_history_by_date_with_the_day_of_the_split(web):
     session(3, [(chest, 3, 10, 40, None), (bike, None, None, None, 15)], push)
     session(1, [(chest, 3, 10, 42.5, None)])
     page = web[0].get("/web/gym/history").text
-    cards = re.findall(r'<div class="card"><h2><span>(.*?)</span><span class="small">(.*?)</span></h2>(.*?)</div>', page, re.S)
+    cards = re.findall(r'<div class="card" id="w\d+"><h2><span>(.*?)</span><span class="small">(.*?)</span></h2>(.*?)</div>', page, re.S)
     assert len(cards) == 2 and "Free workout" in cards[0][1] and "Push" in cards[1][1] and "Day 1" not in cards[1][1]
     assert re.search(r"\d\d:\d\d–\d\d:\d\d", cards[1][1])  # from the first tick to the last
     assert "Chest press" in cards[1][2] and "3 × 10 at 40 kg" in cards[1][2] and "15 min" in cards[1][2]

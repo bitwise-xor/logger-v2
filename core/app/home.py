@@ -174,12 +174,15 @@ def label(chore: dict, zone: dict) -> str:
     return f'{chore["name"]} · {zone["name"]}'
 
 
-def recent(cur, limit: int = 5, starts: bool = False) -> list[dict]:
+def recent(cur, limit: int = 5, starts: bool = False, match: tuple[str, tuple] = ("", ())) -> list[dict]:
     """The last done rows, newest first; rows stamped together (All done, "dusted everything") come back as one entry.
-    Each: ids, at, day, dated, label, source, zones. Starting points only with starts=True (History)."""
+    Each: ids, at, day, dated, label, source, zones. Starting points only with starts=True (History). `match`: an extra SQL
+    condition on d, c and z with its values (Search)."""
+    where = [w for w in ("" if starts else "d.source <> 'start'", match[0]) if w]
     cur.execute(f"""SELECT d.id, d.done_at, d.day, d.dated, d.source, d.chore_id, d.zone_id, c.name AS chore, c.zone_id AS chore_zone, c.zone_off, z.name AS zone
                     FROM home_done d JOIN home_chores c ON c.id = d.chore_id JOIN home_zones z ON z.id = d.zone_id
-                    {"" if starts else "WHERE d.source <> 'start'"} ORDER BY d.done_at DESC, d.id DESC LIMIT %s""", (limit * 9 + 9,))
+                    {"WHERE " + " AND ".join(f"({w})" for w in where) if where else ""} ORDER BY d.done_at DESC, d.id DESC LIMIT %s""",
+                (*match[1], limit * 9 + 9))
     rows = cur.fetchall()
     cur.execute("SELECT id FROM home_zones WHERE active")
     active = [r["id"] for r in cur.fetchall()]
