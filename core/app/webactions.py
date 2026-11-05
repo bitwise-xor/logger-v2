@@ -8,7 +8,7 @@ from typing import Optional
 
 from psycopg.types.json import Jsonb
 
-from . import body, commands, habitspage, healthpage, logbook, webundo
+from . import body, commands, cycle, habitspage, healthpage, logbook, webundo
 from .db import connect
 from .todaypage import AREAS, CHECKIN, HEALTH_ROWS, THOUGHT_TYPES
 from .v1_log import Reject, _words_in
@@ -217,7 +217,9 @@ def health(row: str, ref: str, form, key: Optional[str]) -> dict:
                 d = c.execute("SELECT log_day(now()) AS d").fetchone()["d"]
                 w = c.execute("""SELECT max(e.event_at) AS w FROM events e JOIN log_types lt ON lt.id = e.type_id
                                  WHERE lt.name = 'wake' AND e.day = %s""", (d,)).fetchone()["w"]
-            fields = {"when": healthpage.bed_when(t, healthpage.bed_anchor(d, d, w))}
+            if w and datetime.now(BERLIN) - w > timedelta(hours=cycle.NEW_DAY_H):
+                w = None  # the next sleep's bed: the last such time before now, as the Today card shows it (06.11.2026)
+            fields ={"when": healthpage.bed_when(t, healthpage.bed_anchor(d, d, w))}
     else:
         v1 = _num(form.get("v1", ""))
         v2 = _num(form.get("v2", "")) if ltype == "bp" else None

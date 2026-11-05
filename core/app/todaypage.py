@@ -78,6 +78,23 @@ def clock() -> datetime:
     return datetime.now(rules.BERLIN)
 
 
+def _next_sleep(cur, health: dict, wake_at: datetime) -> None:
+    """More than 12 hours (cycle.NEW_DAY_H) after the day's wake-up, Bed and Woke up are for the next sleep (06.11.2026): Woke up
+    starts empty, so a typed time logs a new wake-up instead of moving the last one; Bed shows a bed time logged after that wake-up
+    (a correction changes it), else it starts empty too. The last times stay as small text. Before, typing the new times into the
+    filled fields moved the last night's entries."""
+    health["wake"].update(id="", v=[""], at="last " + _hm(wake_at))
+    cur.execute("""SELECT e.id, e.event_at FROM events e JOIN log_types t ON t.id = e.type_id WHERE t.name = 'bed' AND e.event_at > %s
+                     AND NOT EXISTS (SELECT 1 FROM events x JOIN log_types tx ON tx.id = x.type_id AND tx.name = 'nap'
+                                     WHERE x.event_at > e.event_at)
+                   ORDER BY e.event_at DESC, e.id DESC LIMIT 1""", (wake_at,))
+    b = cur.fetchone()
+    if b:
+        health["bed"] = {"id": f"e{b['id']}", "v": [_hm(b["event_at"])], "at": ""}
+    elif "bed" in health:
+        health["bed"] = {"id": "", "v": [""], "at": "last " + health["bed"]["v"][0]}
+
+
 def _n(x, digits: int = 0) -> str:
     if x is None:
         return "–"
@@ -177,6 +194,8 @@ def load(asked: date | None = None) -> dict:
         naps = cycle.naps(cur, day)  # naps and night wakings that started no day
         if naps and "wake" in health:
             health["wake"]["naps"] = ", ".join("nap " + _hours(n["wake_at"] - n["bed_at"]) for n in naps)
+        if w and day == today and clock() - w["event_at"] > timedelta(hours=cycle.NEW_DAY_H):
+            _next_sleep(cur, health, w["event_at"])
         watch_up = cycle.watch_wake(cur, clock()) if day == today else None
         cur.execute("""SELECT * FROM (
                          SELECT 't' || t.id AS ref, 'thought' AS kind, t.summary AS what, (t.logged_at AT TIME ZONE 'Europe/Berlin')::date AS day,
@@ -495,7 +514,8 @@ def _health_section(d: dict, csrf: str) -> str:
                     f'<span class=small>{up:%a %d.%m.} · not typed yet</span></span><span class="val">{up:%H:%M}</span>'
                     '<span class="end"><button class="ghost save" type="submit">Use it</button></span></form>')
     hint = ("Values of this day, shown only." if d["past"] else
-            "Type a value and press Enter or Save. An empty field logs a new value; a filled one corrects today's entry.")
+            "Type a value and press Enter or Save. An empty field logs a new value; a filled one corrects today's entry. "
+            "12 hours after the wake-up, Bed and Woke up are for the next sleep.")
     return ('<div class="card"><h2>Health</h2>' + "".join(rows) + f'<p class="small hint">{hint}</p></div>')
 
 

@@ -45,7 +45,7 @@ The first six are small and make everything after them safer or quicker; 7 to 9 
 **Parked or dropped:** 42 and 16 lab report upload (owner, 02.11.2026: "not interested at the moment"), 35 swipe (not needed), 41 weight
 trend (dropped), 44 photo on a food entry (disk), 47 home-screen shortcuts (iOS limits), 51 server-side voice (only if Safari's fails),
 20/21 chat usual meal and exchange log (no ask since 29.10.), core 6 shorter prompt (not worth it now).
-**Done since 04.11.:** 59 to 62 sleep cycle (deploy 59, 05.11.), 45 export part + core 19 (60), 40 water target (61), gym workouts and
+**Done since 04.11.:** the Health card's Bed and Woke up log the next sleep 12 h after the wake-up instead of moving the last one (bug, deploy 63, 06.11.), 59 to 62 sleep cycle (deploy 59, 05.11.), 45 export part + core 19 (60), 40 water target (61), gym workouts and
 home chores in Search (62); before that: Home page round 2 (53, 57), 52 coaching (51), 29 + core 26 Usage page (50), 53, 54, 55 and the
 Medical name (49), 37 mood and energy (44), 46 one-tap usual meals (43), 56 body measurements T1 (46), the Home page (47, 48).
 
