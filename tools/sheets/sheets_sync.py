@@ -276,7 +276,7 @@ def habit_name(t):
 def build_habits(data):
     count = {}
     for e in data["events"]:
-        if e["type"] not in ("wake", "bed"):
+        if e["type"] not in ("wake", "bed", "nap"):  # sleep, not habits (nap: 05.11.2026)
             key = (d(e["day"]), e["type"])
             count[key] = count.get(key, 0) + 1
     total = {}

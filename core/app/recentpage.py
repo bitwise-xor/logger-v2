@@ -27,7 +27,7 @@ def load() -> dict:
     with connect() as conn, conn.cursor() as cur:
         cur.execute("SELECT log_day(now()) AS d")
         today = cur.fetchone()["d"]
-        cur.execute("""SELECT id, received_at, channel, content FROM raw_inbox WHERE channel = ANY(%s)
+        cur.execute("""SELECT id, received_at, log_day(received_at) AS logday, channel, content FROM raw_inbox WHERE channel = ANY(%s)
                        ORDER BY received_at DESC, id DESC LIMIT %s""", (list(CHANNELS), LIMIT))
         msgs = [dict(m, kind="raw") for m in cur.fetchall()]
         ids = [m["id"] for m in msgs]
@@ -77,7 +77,7 @@ def load() -> dict:
         for r in cur.fetchall():
             saved[r["raw_id"]].append(("Task", f"{r['n']} to-do change{'' if r['n'] == 1 else 's'}"))
         try:  # private entries have their own inbox
-            cur.execute("""SELECT id, received_at, channel, content, label FROM private.entries
+            cur.execute("""SELECT id, received_at, log_day(received_at) AS logday, channel, content, label FROM private.entries
                            ORDER BY received_at DESC, id DESC LIMIT %s""", (LIMIT,))
             msgs += [dict(p, kind="private") for p in cur.fetchall()]
         except Exception:  # noqa: BLE001 - no access in this view: the page shows the rest
@@ -100,7 +100,7 @@ def render(csrf: str, waiting: str = "") -> str:
     out, last = [], None
     for m in d["msgs"]:
         at = m["received_at"].astimezone(rules.BERLIN)
-        logday = (at.replace(tzinfo=None) - timedelta(hours=5)).date()  # like log_day(): to 05:00 it is still the day before
+        logday = m.get("logday") or (at.replace(tzinfo=None) - timedelta(hours=5)).date()  # log_day(): from the wake-up (05.11.2026)
         if logday != last:
             last = logday
             out.append(f'<h3 class="rc-day">{_day_head(last, d["today"])}</h3>')

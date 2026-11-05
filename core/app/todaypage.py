@@ -4,7 +4,7 @@ import math
 from datetime import date, datetime, timedelta
 from typing import Optional
 
-from . import body, bodypage, coachpage, gympage, habitaim, healthpage, homepage, rules, uiprefs
+from . import body, bodypage, coachpage, cycle, gympage, habitaim, healthpage, homepage, rules, uiprefs
 from .db import connect
 from .webentry import esc, hidden, icon, key
 
@@ -161,6 +161,16 @@ def load(asked: date | None = None) -> dict:
             s = cur.fetchone()
             if s:
                 health["wake"]["slept"] = "slept " + _hours(w["event_at"] - s["bed_at"])
+        if w and day == today:  # how long the day has run (05.11.2026, cycle.py): a day can be much shorter or longer than 24 hours
+            cur.execute("""SELECT 1 FROM events e JOIN log_types t ON t.id = e.type_id WHERE t.name = 'bed' AND e.event_at > %s
+                             AND NOT EXISTS (SELECT 1 FROM events x JOIN log_types tx ON tx.id = x.type_id AND tx.name = 'nap'
+                                             WHERE x.event_at > e.event_at)""", (w["event_at"],))
+            if not cur.fetchone() and clock() > w["event_at"]:
+                health["wake"]["awake"] = "awake " + _hours(clock() - w["event_at"])
+        naps = cycle.naps(cur, day)  # naps and night wakings that started no day
+        if naps and "wake" in health:
+            health["wake"]["naps"] = ", ".join("nap " + _hours(n["wake_at"] - n["bed_at"]) for n in naps)
+        watch_up = cycle.watch_wake(cur, clock()) if day == today else None
         cur.execute("""SELECT * FROM (
                          SELECT 't' || t.id AS ref, 'thought' AS kind, t.summary AS what, (t.logged_at AT TIME ZONE 'Europe/Berlin')::date AS day,
                                 t.review_reason AS reason, t.logged_at AS at, t.thought_type AS a, t.area AS b, NULL::numeric AS v1, NULL::numeric AS v2, NULL AS unit
@@ -179,21 +189,23 @@ def load(asked: date | None = None) -> dict:
         due = body.due(cur, today, bool(w)) if day == today else None  # body measurements every 4 weeks, after the wake-up
     return {"day": day, "food": food, "foods": foods, "usual": usual, "habits": habits, "last_tick": last_tick, "health": health,
             "review": review, "prefs": prefs, "today": today, "past": day < today, "again": again, "checkin": checkin, "body_due": due,
-            "ci_day": ci_day, "ci_got": ci_got, "avoid": avoid}
+            "ci_day": ci_day, "ci_got": ci_got, "avoid": avoid, "watch_up": watch_up}
 
 
 def _checkin_day(cur, day: date, today: date, w, got: dict):
     """Which day the check-in card asks about, and what it has (04.11.2026): today from 10 hours after the wake-up (without
     one: from 17:00 to 05:00); before today's wake-up, from 05:00, the day that just ended while it is not answered yet (a
-    day with a wake-up or food). Once one of the two is in, the card stays until both are."""
+    day with a wake-up or food). Once one of the two is in, the card stays until both are. Since 05.11.2026 the day starts at the
+    wake-up (cycle.py), so in the 10 hours after it the day that just ended is asked about too, while it is not answered."""
     if day != today:
         return None, {}
     now = clock()
     if got:
         return today, got
     if w:
-        return (today, got) if now >= w["event_at"] + timedelta(hours=CHECKIN_AFTER_WAKE_H) else (None, {})
-    if now.hour >= CHECKIN_FROM or now.hour < 5:
+        if now >= w["event_at"] + timedelta(hours=CHECKIN_AFTER_WAKE_H):
+            return today, got
+    elif now.hour >= CHECKIN_FROM or now.hour < 5:
         return today, got
     y = today - timedelta(days=1)
     cur.execute("""SELECT DISTINCT ON (t.name) t.name, m.value1 FROM measurements m JOIN log_types t ON t.id = m.type_id
@@ -445,7 +457,7 @@ def _health_section(d: dict, csrf: str) -> str:
         else:
             a = _plain(cur["v"][0]) if cur else ""
             fields = (f'<input type="number" name="v1" id="h-{k}" step="any" inputmode="decimal" value="{a}" data-orig="{a}" placeholder="–" aria-label="{label}">')
-        small = " · ".join(x for x in (sub, unit, cur["at"] if cur else "", (cur or {}).get("slept", "")) if x)
+        small = " · ".join(x for x in (sub, unit, cur["at"] if cur else "", *((cur or {}).get(k, "") for k in ("slept", "awake", "naps"))) if x)
         if d["past"]:
             said = "–" if not cur else cur["v"][0] if k in ("wake", "bed") else "/".join(_plain(v) for v in cur["v"] if v is not None)
             rows.append(f'<div class="hrow ro"><span class="lbl">{label}{f"<span class=small>{esc(small)}</span>" if small else ""}</span>'
@@ -455,6 +467,12 @@ def _health_section(d: dict, csrf: str) -> str:
                     f'{hidden("id", cur["id"] if cur else "")}{hidden("key", key())}'
                     f'<span class="lbl">{label}{f"<span class=small>{esc(small)}</span>" if small else ""}</span>'
                     f'<span class="val">{fields}</span><span class="end"><button class="primary save" type="submit">Save</button></span></form>')
+    up = d.get("watch_up")
+    if up and not d["past"]:  # the watch's sleep ended and no wake-up was typed for it (05.11.2026, cycle.py)
+        rows.append(f'<form class="hrow" method="post" action="/web/health">{hidden("csrf", csrf)}{hidden("row", "wake")}{hidden("id", "")}'
+                    f'{hidden("t", f"{up:%H:%M}")}{hidden("key", key())}<span class="lbl">Your watch says you got up'
+                    f'<span class=small>{up:%a %d.%m.} · not typed yet</span></span><span class="val">{up:%H:%M}</span>'
+                    '<span class="end"><button class="ghost save" type="submit">Use it</button></span></form>')
     hint = ("Values of this day, shown only." if d["past"] else
             "Type a value and press Enter or Save. An empty field logs a new value; a filled one corrects today's entry.")
     return ('<div class="card"><h2>Health</h2>' + "".join(rows) + f'<p class="small hint">{hint}</p></div>')

@@ -45,9 +45,11 @@ def due(cur, now: datetime) -> list[dict]:
     if now < wake or now > wake + timedelta(hours=AWAKE_HOURS):
         return []
     cur.execute("""SELECT 1 FROM events e JOIN log_types t ON t.id = e.type_id
-                   WHERE t.name = 'bed' AND e.event_at > %s AND e.event_at <= %s""", (wake, now))
+                   WHERE t.name = 'bed' AND e.event_at > %s AND e.event_at <= %s
+                     AND NOT EXISTS (SELECT 1 FROM events x JOIN log_types tx ON tx.id = x.type_id AND tx.name = 'nap'
+                                     WHERE x.event_at > e.event_at AND x.event_at <= %s)""", (wake, now, now))
     if cur.fetchone():
-        return []  # gone to bed
+        return []  # gone to bed (a bed time followed by getting up from a nap does not count, 05.11.2026)
     out = []
     if s["weight"] and now >= wake + timedelta(hours=float(s["weight_after"])):
         cur.execute("SELECT 1 FROM measurements m JOIN log_types t ON t.id = m.type_id WHERE t.name = 'weight' AND m.day = %s", (day,))

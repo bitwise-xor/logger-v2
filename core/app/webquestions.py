@@ -25,7 +25,7 @@ def load(limit: int = LIMIT) -> list[dict]:
     """Open questions, newest first, with the message they came from and the foods they name."""
     with connect() as c:
         # A 'log' question keeps its own question in payload.text; the message is the raw_inbox row it belongs to.
-        rows = c.execute("""SELECT p.id, p.tool, p.payload, p.reason, p.created_at, p.expires_at,
+        rows = c.execute("""SELECT p.id, p.tool, p.payload, p.reason, p.created_at, p.expires_at, log_day(p.created_at) = log_day(now()) AS same_day,
                                    CASE WHEN p.tool = 'log' THEN r.content ELSE coalesce(p.payload->>'text', r.content) END AS message
                             FROM pending p LEFT JOIN raw_inbox r ON r.id = (p.payload->>'raw_id')::bigint
                             WHERE p.resolved_at IS NULL AND p.expires_at > now() AND p.tool = ANY(%s)
@@ -61,7 +61,8 @@ def card(q: dict, csrf: str, back: str = "/web/") -> str:
     p, tool = q["payload"], q["tool"]
     at = q["created_at"].astimezone(rules.BERLIN)
     # questions stay open for days: an earlier one says its day too (04.11.2026)
-    asked = at.strftime("%H:%M") if (at.replace(tzinfo=None) - timedelta(hours=5)).date() == _logday() else at.strftime("%a %d.%m. %H:%M")
+    same = q["same_day"] if "same_day" in q else (at.replace(tzinfo=None) - timedelta(hours=5)).date() == _logday()  # the logging day
+    asked = at.strftime("%H:%M") if same else at.strftime("%a %d.%m. %H:%M")
     until = q["expires_at"].astimezone(rules.BERLIN).strftime("%d.%m.")
     msg = f' · your message: "{esc(q["message"])}"' if q["message"] else ""
     head = f'<div class="small">{asked}{msg} · open until {until}</div>'
@@ -106,6 +107,12 @@ def card(q: dict, csrf: str, back: str = "/web/") -> str:
                         for i, c in enumerate(p.get("cands") or [], 1))
         body = (f'<div class="ask">{esc(q["reason"].split(" 1. ")[0])}</div><div class="row">{cands}</div>'
                 f'<div class="row"><button class="ghost" type="submit" name="quick" value="all" formnovalidate>All of them</button>{_skip()}</div>')
+        return f'<div class="q">{head}{_form(q, csrf, back, body)}</div>'
+    if tool == "log_confirm" and p.get("nap"):  # a wake-up soon after the last one or after a short sleep (cycle.py, 05.11.2026)
+        body = (f'<pre>{esc(readable(q["reason"]))}</pre><div class="ask">A new day, or up from a nap or a night waking?</div><div class="row">'
+                '<button class="primary" type="submit" name="quick" value="yes">New day</button>'
+                '<button class="ghost" type="submit" name="quick" value="nap">Nap or night waking</button>'
+                '<button class="ghost dim" type="submit" name="quick" value="no">Neither, drop it</button></div>')
         return f'<div class="q">{head}{_form(q, csrf, back, body)}</div>'
     if tool in _YES_NO and not (tool == "command_confirm" and p.get("ask_past")):
         fix = (f'<button class="ghost dim" type="button" data-fill="{esc(q["message"])}">Correct it</button>'

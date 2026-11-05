@@ -253,12 +253,23 @@ def health(row: str, ref: str, form, key: Optional[str]) -> dict:
 _FIELDS = ("w", "bm1", "bm2", "be1", "be2", "s", "bed", "wake", "mo", "en")
 
 
-def _when(day: date, col: str, t: str, anchor: Optional[datetime] = None) -> str:
+def _when(day: date, col: str, t: str, anchor: Optional[datetime] = None, wake_on: Optional[date] = None) -> str:
     """The date and time for the change function or the parser answer; a bed time is the last such time before the day's
-    wake-up (healthpage.bed_anchor; was "from noon on, the evening before" until 04.11.2026)."""
+    wake-up (healthpage.bed_anchor; was "from noon on, the evening before" until 04.11.2026); a wake-up is on wake_on."""
     if col == "bed" and anchor is not None:
         return healthpage.bed_when(t, anchor)
+    if col == "wake" and wake_on is not None:
+        return f"{wake_on:%d.%m.%Y} {t}"
     return f"{day:%d.%m.%Y} {t}"
+
+
+def _wake_on(day: date, t: str, had: Optional[datetime]) -> date:
+    """The calendar date of a wake-up typed in a day's row (05.11.2026): a day's wake-up can be on the date before (up at 23:40, the
+    date already had one: cycle.py). The date of the one there already; else the day, or the day before when that would lie ahead."""
+    if had is not None:
+        return had.astimezone(BERLIN).date()
+    at = datetime(day.year, day.month, day.day, int(t[:2]), int(t[3:5]), tzinfo=BERLIN)
+    return day - timedelta(days=1) if at > datetime.now(BERLIN) + timedelta(hours=1) else day
 
 
 def health_day(day_s: str, r: str, form, key: Optional[str]) -> dict:
@@ -278,8 +289,12 @@ def health_day(day_s: str, r: str, form, key: Optional[str]) -> dict:
     steps, items, words, said, deletes = [], [], [], [], []
     wake_at = (now_vals.get("wake") or {}).get("at")  # the bed pairs with the row's wake-up, the one typed now if it changed
     wm = TIME.match(str(form.get("wake") or "").strip())
-    if wm and (not now_vals.get("wake") or now_vals["wake"]["v"][0] != f"{int(wm[1]):02d}:{wm[2]}"):
-        wake_at = datetime(day.year, day.month, day.day, int(wm[1]), int(wm[2]), tzinfo=BERLIN)
+    wake_on = None
+    if wm:
+        typed = f"{int(wm[1]):02d}:{wm[2]}"
+        wake_on = _wake_on(day, typed, wake_at)
+        if not now_vals.get("wake") or now_vals["wake"]["v"][0] != typed:
+            wake_at = datetime(wake_on.year, wake_on.month, wake_on.day, int(wm[1]), int(wm[2]), tzinfo=BERLIN)
     anchor = healthpage.bed_anchor(day, today, wake_at)
     for col, _h, _s, ltype, period, kind in healthpage.COLS:
         name, cur_v = healthpage.NAMES[col], now_vals.get(col)
@@ -310,13 +325,13 @@ def health_day(day_s: str, r: str, form, key: Optional[str]) -> dict:
             return _rejected(f"{name}: give both numbers.")
         shown = "/".join(new)
         if cur_v:
-            fields = {"when": _when(day, col, new[0], anchor)} if kind == "t" else {"value": nums[0], **({"value2": nums[1]} if kind == 2 else {})}
+            fields = {"when": _when(day, col, new[0], anchor, wake_on)} if kind == "t" else {"value": nums[0], **({"value2": nums[1]} if kind == 2 else {})}
             if form.get("confirmed") == "1":
                 fields["confirmed"] = True
             steps.append({"action": "change", "args": {"id": cur_v["id"], "fields": fields}})
             said.append(f"{name} {'/'.join(old)} → {shown}")
         else:
-            when = _when(day, col, new[0], anchor) if kind == "t" else (None if day == today else f"{day:%d.%m.%Y}")
+            when = _when(day, col, new[0], anchor, wake_on) if kind == "t" else (None if day == today else f"{day:%d.%m.%Y}")
             items.append({"type": ltype, "value": nums[0] if nums else None, "value2": nums[1] if kind == 2 else None,
                           "period": period, "session": None, "when": when})
             words.append({"weight": f"weight {shown}", "bp": f"bp {shown} {period}", "blood_sugar": f"sugar {shown} fasted",

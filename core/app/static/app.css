@@ -883,3 +883,10 @@ ol.steps{padding-left:1.2rem;display:grid;gap:.35rem}
 .coparts{border:1px solid var(--line);border-radius:12px;padding:.6rem .9rem .8rem;margin:0;display:flex;flex-direction:column;gap:.35rem}
 .coparts legend{font-weight:600;padding:0 .3rem}
 .coparts label.row{min-height:2.2rem;align-items:center}
+/* 05.11.2026: the Health page's sleep-times chart (healthpage._times): one row per date, the clock across */
+svg.times{display:block;width:100%;height:auto;margin:.4rem 0 .2rem}
+svg.times text{fill:var(--dim);font-size:11px;font-family:Inter,system-ui,sans-serif}
+svg.times .grid{stroke:var(--line);stroke-width:1}
+svg.times .slp{fill:var(--accent)}
+svg.times .slp.nap{fill:var(--accent-soft);stroke:var(--accent);stroke-width:1}
+svg.times .up{stroke:var(--ink);stroke-width:2}

@@ -126,6 +126,15 @@ def settle(cur, cat: dict, types: dict, pred: dict, now: datetime) -> Reading:
     return r
 
 
+def as_nap(cur, pred: dict) -> dict:
+    """The parser's answer with its wake-ups made naps: the answer "nap" to "a new day, or up from a nap?" (cycle.py, 05.11.2026)."""
+    _, types = _types(cur)
+    out = dict(pred)
+    out["health"] = [dict(h, type="nap") if (_resolve_type(types, h["type"])[0] or {}).get("name") == "wake" else h
+                     for h in pred.get("health", [])]
+    return out
+
+
 def read(cur, provider: Provider, text: str, now: datetime, previous=(), meals=(), pred: Optional[dict] = None,
          escalate: bool = True) -> tuple[Reading, list[Usage], bool]:
     """Parse with the small model (or take a given answer), settle it, and when something stays open, read the message

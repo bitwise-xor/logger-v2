@@ -4,7 +4,7 @@ and that table: the Body measurements card (bodypage.py, 03.11.2026).
 The charts are drawn by app.js from the numbers in each chart's data-chart attribute; without the script the
 table below still shows every value."""
 import json
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 
 from . import bodypage, rules
 from .db import connect
@@ -63,11 +63,12 @@ def pick_bed(beds: list, wakes: list, anchor: datetime):
 
 
 def beds_near(cur, first: date, last: date) -> tuple[list, list]:
-    """Every bed [(id, at)] and wake-up [at] that the rows first to last can pair with."""
+    """Every bed [(id, at)] and wake-up [at] that the rows first to last can pair with. Getting up from a nap counts as a wake-up
+    here (05.11.2026): a bed time before a nap is not the bed of the next night."""
     lo = datetime(first.year, first.month, first.day, tzinfo=rules.BERLIN) - timedelta(days=2)
     hi = datetime(last.year, last.month, last.day, tzinfo=rules.BERLIN) + timedelta(days=2)
     cur.execute("""SELECT e.id, e.event_at, t.name FROM events e JOIN log_types t ON t.id = e.type_id
-                   WHERE t.name IN ('bed', 'wake') AND e.event_at >= %s AND e.event_at < %s ORDER BY e.event_at, e.id""", (lo, hi))
+                   WHERE t.name IN ('bed', 'wake', 'nap') AND e.event_at >= %s AND e.event_at < %s ORDER BY e.event_at, e.id""", (lo, hi))
     rows = cur.fetchall()
     return [(r["id"], r["event_at"]) for r in rows if r["name"] == "bed"], [r["event_at"] for r in rows if r["name"] == "wake"]
 
@@ -110,7 +111,62 @@ def load(days: int) -> dict:
             weights[r["day"]] = float(r["value1"])
         cur.execute("SELECT wake_day, bed_at, wake_at, hours FROM v_sleep WHERE wake_day BETWEEN %s AND %s ORDER BY wake_at", (start, today))
         sleep = {r["wake_day"]: r for r in cur.fetchall()}
-    return {"today": today, "start": start, "days": days, "vals": vals, "weights": weights, "sleep": sleep}
+        # the sleep-times chart (05.11.2026): every sleep with a bed time, naps too, and wake-ups that have none
+        lo = datetime.combine(today - timedelta(days=min(days, TIMES_DAYS) + 1), time(0), rules.BERLIN)
+        cur.execute("SELECT bed_at, wake_at, nap FROM v_sleeps WHERE wake_at >= %s ORDER BY wake_at", (lo,))
+        sleeps = cur.fetchall()
+        cur.execute("""SELECT e.event_at, t.name = 'nap' AS nap FROM events e JOIN log_types t ON t.id = e.type_id
+                       WHERE t.name IN ('wake', 'nap') AND e.time_known AND e.event_at >= %s
+                         AND NOT EXISTS (SELECT 1 FROM v_sleeps s WHERE s.wake_id = e.id) ORDER BY e.event_at""", (lo,))
+        lone = cur.fetchall()
+    return {"today": today, "start": start, "days": days, "vals": vals, "weights": weights, "sleep": sleep, "sleeps": sleeps, "lone": lone}
+
+
+TIMES_DAYS = 30  # rows of the sleep-times chart at most
+
+
+def _times(d: dict) -> str:
+    """When you slept, one row per calendar date and the clock across (05.11.2026): a sleep cycle that moves shows as a diagonal band.
+    A sleep over midnight is split over its two rows; naps are lighter; a wake-up without a bed time is a tick."""
+    now = datetime.now(rules.BERLIN).replace(tzinfo=None)
+    last = max(now.date(), d["today"])
+    n = min(d["days"], TIMES_DAYS)
+    dates = [last - timedelta(days=n - 1 - i) for i in range(n)]
+    left, width, rh, top = 40, 320, 13, 16  # sized for a phone: about 1:1 at 375 px, so the text stays readable
+    x = lambda t, day: left + width * (t - datetime.combine(day, time(0))).total_seconds() / 86400  # noqa: E731
+    local = lambda ts: ts.astimezone(rules.BERLIN).replace(tzinfo=None)  # noqa: E731
+    out = []
+    for h in range(0, 25, 6):
+        gx = left + width * h / 24
+        out.append(f'<line class="grid" x1="{gx:.1f}" y1="{top - 4}" x2="{gx:.1f}" y2="{top + n * rh}"/>'
+                   f'<text x="{gx:.1f}" y="{top - 7}" text-anchor="middle">{h:02d}</text>')
+    for i, day in enumerate(dates):
+        y = top + i * rh
+        lbl = f"{day:%d.%m.}" if i == n - 1 or day.weekday() == 0 or n <= 7 else ""  # the last row and each Monday
+        if lbl:
+            out.append(f'<text x="{left - 6}" y="{y + rh - 4}" text-anchor="end">{lbl}</text>')
+        start, end = datetime.combine(day, time(0)), datetime.combine(day + timedelta(days=1), time(0))
+        for s in d["sleeps"]:
+            b, w = local(s["bed_at"]), local(s["wake_at"])
+            a, z = max(b, start), min(w, end)
+            if a >= z:
+                continue
+            span = w - b
+            tip = f'{"Nap" if s["nap"] else "Sleep"}: bed {b:%a %H:%M}, up {w:%a %H:%M} ({int(span.total_seconds() // 3600)} h {int(span.total_seconds() % 3600 // 60):02d})'
+            out.append(f'<rect class="slp{" nap" if s["nap"] else ""}" x="{x(a, day):.1f}" y="{y + 2}" width="{max(x(z, day) - x(a, day), 1.5):.1f}" '
+                       f'height="{rh - 4}" rx="2"><title>{esc(tip)}</title></rect>')
+        for e in d["lone"]:
+            t = local(e["event_at"])
+            if start <= t < end:
+                out.append(f'<line class="up" x1="{x(t, day):.1f}" y1="{y + 1}" x2="{x(t, day):.1f}" y2="{y + rh - 1}">'
+                           f'<title>{"Up from a nap" if e["nap"] else "Woke up"} {t:%a %H:%M}, no bed time</title></line>')
+    h = top + n * rh + 4
+    svg = (f'<svg class="times" viewBox="0 0 {left + width + 8} {h}" role="img" aria-label="Sleep times of the last {n} days">'
+           + "".join(out) + "</svg>")
+    note = "" if d["sleeps"] or d["lone"] else '<p class="empty">No bed and wake-up times in this range yet.</p>'
+    return ('<div class="card"><h2>Sleep times <span class="small">a row per date, the clock across</span></h2>'
+            f'{note}{svg}<p class="legend"><i class="key sq d"></i>sleep <i class="key sq h"></i>nap or night waking · '
+            'a tick is a wake-up without a bed time · rows start on Mondays · a cycle that moves later each day shows as a diagonal band</p></div>')
 
 
 def _dm(d: date) -> str:
@@ -199,7 +255,7 @@ def _charts(d: dict) -> str:
                    '<i class="key ref"></i>amber under 7 h <i class="key ref r"></i>red under 6 h')
             + card('Mood and energy <span class="small">1 to 5</span>', fstat, mood,
                    '<i class="key a"></i>mood <i class="key b"></i>energy · from the evening check-in on Today')
-            + "</div>")
+            + _times(d) + "</div>")
 
 
 def _field(day: date, col: str, kind, cur, fid: str) -> str:

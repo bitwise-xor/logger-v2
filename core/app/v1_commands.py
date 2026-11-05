@@ -9,6 +9,7 @@ from decimal import Decimal
 from typing import Optional
 from zoneinfo import ZoneInfo
 
+from . import cycle
 from .v1_food import _find_foods, _fkey, _food_cat, _norm, _num, _resolve_type, _to_amount, _types
 from .v1_log import (BERLIN, FOOD_VERSION, Reject, _NUT, _NUT_LABEL, _day_line, _day_of, _dm, _fdesc, _food_line100, _food_today,
                      _meal_spec_items, _n, _range_problems, fmt, parse_when)
@@ -40,11 +41,12 @@ def _hm(r: dict) -> str:
 def _find_health(cur, what: str, since, until, limit) -> str:
     limit = max(1, min(int(limit or 20), 50))
     now = datetime.now(BERLIN)
-    today = _day_of(now, "")
+    cur.execute("SELECT log_day(%s) AS d", (now,))
+    today = cur.fetchone()["d"]  # the day of the last wake-up, else the 05:00 rule (05.11.2026)
     key = _norm(what)
     lo_b, hi_b = _bound(since, False), _bound(until, True)
     lo, hi = (lo_b.date() if lo_b else None), (hi_b.date() if hi_b else None)
-    rule = " (before 05:00 still counts as the previous day)" if now.hour < 5 else ""
+    rule = " (before 05:00 still counts as the previous day)" if now.hour < 5 and not _food_today_wake(cur, now) else ""
     lab = _find_lab(cur, key, what, lo, hi, limit)
     if lab is not None:
         return lab
@@ -1179,8 +1181,9 @@ def _change_health(cur, kind: str, hid: int, fields: dict, delete: bool, now: da
         ts, date_only = w
         sets += ["event_at = %s", "time_known = %s"]; params += [ts, not date_only]
         notes.append(f"time set to {fmt(*w)}{' (date only)' if w[1] else ''}")
-    if "when" in f or "type" in f:
-        sets.append("day = %s"); params.append(_day_of(ts, t["name"]))
+    if "when" in f or "type" in f:  # the day follows the wake-up (cycle.py, 05.11.2026; was the 05:00 rule)
+        only_date = w[1] if "when" in f else not row["time_known"]
+        sets.append("day = %s"); params.append(cycle.entry_day(cur, t["name"], ts, only_date, except_id=hid if kind == "e" else None))
     problems: list[str] = []
     if kind == "m":
         for k in ("value", "value2"):

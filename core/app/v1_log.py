@@ -11,7 +11,7 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
-from . import body
+from . import body, cycle
 from .v1_food import (_UNIT_BASE, _UNIT_GENERIC, _UNIT_SYN, _find_foods, _fkey, _food_cat, _norm, _num, _resolve_type,
                       _silent_close, _sing, _to_amount, _types, _unit_rows, _use_counts, _words_in)
 from .when import BERLIN, _day_of, parse_when
@@ -133,6 +133,17 @@ def _prepare_entries(cur, entries: list[Entry], now: datetime) -> list[dict]:
     prepared: list[dict] = []
     soft: list[str] = []
     tally: dict = defaultdict(int)  # entries of this same message count too
+    # v2 (05.11.2026): a wake-up in this message starts the day of the entries after it ("woke up 00:20, weight 80"), and a bed time
+    # in it is the start of that wake-up's sleep (cycle.py)
+    msg_wakes, msg_beds = [], []
+    for e in entries:
+        t0, _s = _resolve_type(idx, e.type)
+        w0 = (parse_when(e.when, now) if e.when else (now, False)) if t0 and t0["name"] in ("wake", "bed") else None
+        if w0 and not w0[1]:
+            if t0["name"] == "wake":
+                msg_wakes.append((w0[0], cycle.entry_day(cur, "wake", w0[0], False)))
+            else:
+                msg_beds.append(w0[0])
     for i, e in enumerate(entries, 1):
         t, sess_text = _resolve_type(idx, e.type)
         if not t:
@@ -146,7 +157,7 @@ def _prepare_entries(cur, entries: list[Entry], now: datetime) -> list[dict]:
         if e.when and not w:
             raise Reject(f"could not read the time '{e.when}' for {name}")
         ts, date_only = w if w else (now, False)
-        day = _day_of(ts, name)
+        day = cycle.entry_day(cur, name, ts, date_only, msg_wakes)  # was the 05:00 rule (_day_of) until 05.11.2026
         p = {"t": t, "name": name, "ts": ts, "date_only": date_only, "day": day, "v1": None, "v2": None,
              "period": None, "details": {}, "note": e.note, "notes": [], "confirmed": False}
         problems: list[str] = []
@@ -230,12 +241,16 @@ def _prepare_entries(cur, entries: list[Entry], now: datetime) -> list[dict]:
                 elif n:
                     p["notes"].append(f"{name} was already logged for {_dm(day)}")
                 tally[(name, day)] += 1
-            if name in ("wake", "bed") and not date_only:
+            if name in ("wake", "bed", "nap") and not date_only:
                 cur.execute("""SELECT t.name, e.event_at FROM events e JOIN log_types t ON t.id = e.type_id
-                               WHERE t.name IN ('wake','bed') AND e.event_at < %s ORDER BY e.event_at DESC LIMIT 1""", (ts,))
+                               WHERE t.name IN ('wake','bed','nap') AND e.event_at < %s ORDER BY e.event_at DESC LIMIT 1""", (ts,))
                 prev = cur.fetchone()
-                if prev and prev["name"] == name:
-                    p["notes"].append(f"the previous sleep event is also a {name} ({fmt(prev['event_at'])}); sleep pairing may be off")
+                if prev and (prev["name"] == "bed") == (name == "bed"):
+                    p["notes"].append(f"the previous sleep event is also a {prev['name']} ({fmt(prev['event_at'])}); sleep pairing may be off")
+            if name == "wake" and not date_only:  # soon after the last wake-up or after a short sleep: a new day, or a nap? (05.11.2026)
+                q = cycle.new_day_question(cur, ts, day, msg_beds)
+                if q:
+                    problems.append(q)
 
         if problems:
             if e.confirmed:
@@ -285,8 +300,16 @@ def _insert_entries(cur, raw_id: int, prepared: list[dict], out: list[str], note
             line += " [confirmed by user]"
         out.append(line)
         notes += p["notes"]
+        if p["name"] == "nap" and known:  # a nap or night waking (05.11.2026): counts as sleep, starts no day
+            cur.execute("SELECT bed_at, hours FROM v_sleeps WHERE wake_at = %s AND nap LIMIT 1", (ts,))
+            s = cur.fetchone()
+            if s:
+                out.append(f"  nap {_num(float(s['hours']))} h (bed {fmt(s['bed_at'])}); the day stays {_dm(p['day'])}")
+            else:
+                notes.append(f"no bed time found within 24 h before this, so no nap length; the day stays {_dm(p['day'])}")
         if p["name"] == "wake" and known:
             _move_fallback_food(cur, ts, p["day"], notes)
+            _move_health(cur, ts, p["day"], notes)
             cur.execute("SELECT bed_at, hours FROM v_sleep WHERE wake_at = %s LIMIT 1", (ts,))
             s = cur.fetchone()
             if s:
@@ -766,6 +789,20 @@ def _move_fallback_food(cur, wake_ts: datetime, wake_day: date, notes: list[str]
     if moved:
         notes.append(f"{len(moved)} food entr{'y' if len(moved) == 1 else 'ies'} logged earlier with the 05:00 rule moved to "
                      f"{_dm(wake_day)} (wake-up {fmt(wake_ts)[11:]})")
+
+
+def _move_health(cur, wake_ts: datetime, wake_day: date, notes: list[str]) -> None:
+    """v2 (05.11.2026): health entries with a time, logged before this wake-up was, in its 18 hours and with no later wake-up before
+    them, move to its day ("weight 80" at 00:30, then "woke up at 00:20")."""
+    moved = 0
+    for table, extra in (("measurements", ""), ("events", "AND x.type_id NOT IN (SELECT id FROM log_types WHERE name = 'wake')")):
+        cur.execute(f"""UPDATE {table} x SET day = %s WHERE x.time_known AND x.event_at >= %s AND x.event_at < %s AND x.day <> %s {extra}
+                        AND NOT EXISTS (SELECT 1 FROM events w JOIN log_types tw ON tw.id = w.type_id AND tw.name = 'wake'
+                                        WHERE w.event_at > %s AND w.event_at <= x.event_at)""",
+                    (wake_day, wake_ts, wake_ts + timedelta(hours=cycle.DAY_H), wake_day, wake_ts))  # table: one of two fixed names
+        moved += cur.rowcount
+    if moved:
+        notes.append(f"{moved} health entr{'y' if moved == 1 else 'ies'} logged after this wake-up moved to {_dm(wake_day)}")
 
 
 def _food_today(cur, now: datetime) -> date:

@@ -8,7 +8,7 @@ from typing import Any, Optional
 
 from psycopg.types.json import Jsonb
 
-from . import rules
+from . import cycle, rules
 from .db import connect
 
 EXTRACTOR = "v2-pilot-1"
@@ -42,10 +42,11 @@ def _type(cur, kind: str) -> dict:
     return cur.fetchone()
 
 
-def _day(cur, kind: str, at: datetime):
-    """Health day: local time minus 5 hours. A wake-up belongs to its own calendar date."""
+def _day(cur, kind: str, at: datetime, exclude: Optional[int] = None):
+    """Health day (05.11.2026, cycle.py): the day of the last wake-up in the 18 hours before, else local time minus 5 hours. A wake-up
+    belongs to its own calendar date, or the next one when an earlier wake-up already has that date."""
     if kind == "wake":
-        cur.execute("SELECT (%s AT TIME ZONE 'Europe/Berlin')::date AS d", (at,))
+        cur.execute("SELECT wake_day(%s, %s) AS d", (at, exclude))
     else:
         cur.execute("SELECT log_day(%s) AS d", (at,))
     return cur.fetchone()["d"]
@@ -69,7 +70,7 @@ def _reasons(cur, kind: str, t: dict, vals: dict, at: datetime, known: bool, now
             out.append("systolic is not higher than diastolic (the two numbers may be swapped)")
     if rules.is_future(at, now):
         out.append(f"the time {rules.fmt(at)} is in the future")
-    day = _day(cur, kind, at)
+    day = _day(cur, kind, at, exclude)
     table = KINDS[kind]["table"]
     cols = "value1, value2, period, event_at, time_known" if table == "measurements" else "event_at, time_known"
     cur.execute(f"SELECT {cols} FROM {table} WHERE type_id=%s AND day=%s AND id IS DISTINCT FROM %s ORDER BY event_at", (t["id"], day, exclude))
@@ -81,6 +82,14 @@ def _reasons(cur, kind: str, t: dict, vals: dict, at: datetime, known: bool, now
             out.append(f"there is already a {vals['period']} blood pressure for {day.strftime('%d.%m.')}: {_bp_text(r)} ({when})")
         elif kind == "wake":
             out.append(f"there is already a wake-up for {day.strftime('%d.%m.')} ({when})")
+    if kind == "wake" and known:  # a second wake-up on one date now starts the next date (cycle.py, 05.11.2026); one soon after the
+        cur.execute("""SELECT e.event_at FROM events e WHERE e.type_id = %s AND e.time_known AND e.event_at < %s AND e.event_at > %s
+                       AND e.id IS DISTINCT FROM %s ORDER BY e.event_at DESC LIMIT 1""",  # last one still asks first
+                    (t["id"], at, at - timedelta(hours=cycle.NEW_DAY_H), exclude))
+        r = cur.fetchone()
+        if r:
+            out.append(f"there is already a wake-up {cycle.hours(at - r['event_at'])} earlier ({rules.fmt(r['event_at'])}); "
+                       f"as a new wake-up this starts {day.strftime('%d.%m.')}")
     return out
 
 
@@ -326,7 +335,7 @@ def _apply_amend(cur, receipt_id: str, changes: dict) -> dict:
         return {"outcome": "rejected", "message": f"{receipt_id} was not found, or was not logged by this service."}
     kind, row = found
     vals, at, known = _merged(kind, row, changes)
-    day = _day(cur, kind, at)
+    day = _day(cur, kind, at, row["id"])
     old = {"event_at": row["event_at"].isoformat(), "time_known": row["time_known"], "amended_at": _now().isoformat()}
     table = KINDS[kind]["table"]
     if table == "measurements":

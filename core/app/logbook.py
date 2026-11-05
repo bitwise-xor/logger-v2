@@ -13,7 +13,7 @@ from typing import Any, Optional
 
 from psycopg.types.json import Jsonb
 
-from . import commands, held, labs, lookup, record, tape, todos
+from . import commands, cycle, held, labs, lookup, record, tape, todos
 from .ai import parser
 from .ai.provider import LIVE, AnthropicProvider, Provider, ProviderError
 from .db import connect
@@ -32,6 +32,8 @@ YES = re.compile(r"^\s*(yes|y|ok|okay|confirm(ed)?|correct|right|ja|jawohl|stimm
 ANSWER_TOOLS = ("log", "log_confirm", "log_repeat", "add_food_confirm", "command", "command_confirm", "lookup_confirm",
                 "report_confirm", "home_choice")
 NO = re.compile(r"^\s*(no|nope|nein|skip|cancel|stop|drop)\b", re.I)
+# The answer to "a new day, or up from a nap or a night waking?" (cycle.py, 05.11.2026): the wake-up is saved as a nap instead.
+NAP = re.compile(r"^\s*(nap|a nap|napped|night waking|mittagsschlaf|nickerchen)\b", re.I)
 
 
 def clock() -> datetime:
@@ -286,10 +288,12 @@ def _save(cur, text: str, now: datetime, r: record.Reading, usages: list, escala
         out["notes"] = out.get("notes", []) + sent["receipt"] + sent["notes"]
     if out["outcome"] == "needs_confirmation":  # v1's read-back: keep the reading, the user's yes saves it
         pid = "p" + secrets.token_hex(4)
+        nap = cycle.NAP_HINT in out["read_back"]  # a wake-up that may be a nap: yes = a new day, nap = a nap (05.11.2026)
         cur.execute("INSERT INTO pending (id, tool, payload, reason, expires_at) VALUES (%s, 'log_confirm', %s, %s, %s)",
-                    (pid, Jsonb({"text": text, "pred": r.pred, "now": now.isoformat()}), out["read_back"][:500],
-                     now + timedelta(hours=record.QUESTION_HOURS)))
-        out["questions"] = [{"pending_id": pid, "question": "Confirm this (yes), or correct it by logging again."}]
+                    (pid, Jsonb({"text": text, "pred": r.pred, "now": now.isoformat(), **({"nap": True} if nap else {})}),
+                     out["read_back"][:500], now + timedelta(hours=record.QUESTION_HOURS)))
+        out["questions"] = [{"pending_id": pid, "question": "A new day (yes), up from a nap or a night waking (nap), or not at all (no)?"
+                             if nap else "Confirm this (yes), or correct it by logging again."}]
     if out["outcome"] == "not_logged" and out.get("intent") == "command":  # a look-up or a change
         out, used = commands.handle(cur, provider(), r.pred.get("command_text") or text, now, prev)
         usages += used
@@ -426,6 +430,13 @@ def answer(question_id: str, reply: str, channel: str = CHANNEL) -> dict[str, An
         elif p["tool"] == "command_confirm" and p["payload"].get("ask_past") and (yes or re.match(r"^\s*(no|nein)\b", reply, re.I)):
             out = commands.apply(cur, p["payload"], now, past="yes" if yes else "no")
             if out["outcome"] == "changed":
+                cur.execute("UPDATE pending SET resolved_at = now(), resolution = 'confirmed' WHERE id = %s", (question_id,))
+        elif p["tool"] == "log_confirm" and p["payload"].get("nap") and NAP.match(reply):  # the wake-up was a nap or night waking
+            d = p["payload"]
+            asked = datetime.fromisoformat(d["now"])
+            r = record.settle(cur, _food_cat(cur), _types(cur)[1], record.as_nap(cur, d["pred"]), asked)
+            out = record.save(cur, r, d["text"], channel, asked, confirmed=True)
+            if out["outcome"] in ("saved", "partly_saved"):
                 cur.execute("UPDATE pending SET resolved_at = now(), resolution = 'confirmed' WHERE id = %s", (question_id,))
         elif NO.match(reply):
             cur.execute("UPDATE pending SET resolved_at = now(), resolution = 'cancelled' WHERE id = %s", (question_id,))
