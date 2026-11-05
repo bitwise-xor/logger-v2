@@ -7,43 +7,47 @@ Before building one, plan it in the doc first (with a clickable mockup for a new
 
 Size: S = about an hour, M = about half a day, L = a day or more. Rough guesses.
 
-## Priorities (reviewed 04.11.2026, after the Home page, deploy 48)
+## Priorities (reviewed 05.11.2026, after deploy 62)
 
-Re-ranked against the app as it is now: daily logging is fast and safe, and the Gym section, mood check-in, body measurements (T1)
-and the Home page are live. What is missing most is the *meaning* of the data (coaching) and the small items the owner asked for on
-03.11. Ranked by value for the effort, together with the core list (`docs/CORE-IMPROVEMENTS.md`). Nothing is decided: plan each one in
-the doc's Current tab first.
+Re-ranked against the app after deploys 59 to 62: the day follows the wake-up (sleep cycle, naps, Sleep times chart), and the export,
+the water target and gym and home in Search are live. Ranked by value for the effort. Nothing is decided: plan each one in the doc's
+Current tab first. Size: S about an hour, M about half a day, L a day or more.
 
-**Do first (Claude's recommendation, in order):**
+**Web, top 10 (in order):**
 
-1. **Next major build: 53 + 54 + 55: done 04.11.2026, deploy 49**, with "Labs and medication" renamed to "Medical" (name only) and
-   core 29 resolved (old flakes, no code change).
-2. **29 + core 26 Usage page complete: done 04.11.2026, deploy 50** (with Home moved right after Gym in both menus): every kind of AI
-   call records its tokens, answers that call the AI are recorded, the page names each kind with its tokens, phone notifications counted.
-3. **52 Coaching: done 04.11.2026, deploy 51** (Coach card on Today, Week review card, Coach page under More, Settings > Coach "My goals";
-   Claude Opus at high effort, on demand; no thoughts or private entries; mockup https://claude.ai/artifact/4z4HLimQeLi2jo4Z6ZX3ND).
-4. **45 + core 19 Export of everything: export part done 05.11.2026, deploy 60** (Settings > Export; the digest part of 45 stays open) (S-M): one CSV/JSON download, apart from the Sheet and the encrypted backup; useful before the
-   mini PC move.
-5. **40 Water target: done 05.11.2026, deploy 61** (S): Settings > Food targets "Water (ml)"; a water bar on Today (every drink counts by its amount) with "+ 250 ml water".
+1. **48 "All look right"** (S): one tap clears the whole review box.
+2. **26 Error page in the app's layout** (S): today an error shows a bare page.
+3. **50 More Insights** (M): sleep length and timing against mood, energy and fasting sugar, now that sleep times are reliable.
+4. **58 + 56 T2 Edit the body measures** (M): add, rename and reorder them in Settings > Body, neck and calf included (one change for both).
+5. **49 More nudges** (S-M): "your watch says you're up, log it?", evening blood pressure, a question open for a day.
+6. **45 Digest** (M): a short daily or weekly summary sent to the owner (the export part is done; coaching on demand covers some of it).
+7. **38 Minutes for practices** (M): Shoonya, meditation, study as minutes, not only a tick.
+8. **57 A notification when the Home timer ends** (S-M): needs a scheduler more precise than the 5-minute cron.
+9. **43 Medication schedule with reminders** (M): only if wanted.
+10. **18 Link thoughts** (M).
 
-**Most effort among the open items (biggest first):**
+**Combined top 10 with the core list (Claude's recommendation, in order):**
 
-1. **42 / 16 Lab report upload with trends** (L): parked by the owner on 02.11.2026.
-2. **Core 25 Telegram as a second channel** (M-L, more with core 17 digest).
-3. **52 Coaching** (M-L): done 04.11.2026.
-4. **44 A photo on a food entry** (M-L): parked (disk).
-5. **51 Voice without the browser's speech recognition** (M-L): only if Safari's fails.
+1. Core 30 Safe parallel sessions (S-M)
+2. Web 48 "All look right" (S)
+3. Web 26 Error page (S)
+4. Core 31 Check the watch's sleep import (S)
+5. Core 16 One handler per question kind (S-M)
+6. Core 13 Remove the pilot tools (S-M)
+7. Web 50 More Insights with sleep (M)
+8. Web 58 + 56 T2 Edit the body measures (M)
+9. Web 49 More nudges (S-M)
+10. Core 24 Words review (S)
 
-**Next after the first five:** 48 "All look right" (S), 26 error page in the app's layout (S), gym workouts and home chores in the Search
-page (S): done 05.11.2026, deploy 62; 49 more nudges (S-M), 50 more Insights (M, now with mood data), 38 minutes for practices (M), 43 medication schedule (M, only if
-wanted), 18 link thoughts (M), 56 T2 body measurements (M), 57 a notification when the Home timer ends (S-M); on the core list 16, 13, 24,
-20, 12.
+The first six are small and make everything after them safer or quicker; 7 to 9 build on the sleep and body data now logged.
+
 **Look at later:** core 3, the second-read data, around mid-November.
 **Parked or dropped:** 42 and 16 lab report upload (owner, 02.11.2026: "not interested at the moment"), 35 swipe (not needed), 41 weight
 trend (dropped), 44 photo on a food entry (disk), 47 home-screen shortcuts (iOS limits), 51 server-side voice (only if Safari's fails),
 20/21 chat usual meal and exchange log (no ask since 29.10.), core 6 shorter prompt (not worth it now).
-**Done since 02.11.:** Home page round 2, steps A and B (deploys 53 and 57, 04.11.), 52 coaching (deploy 51, 04.11.), 29 + core 26 complete Usage page and Home after Gym in the menus (deploy 50, 04.11.), 53, 54, 55 and the Medical name (deploy 49, 04.11.), 37 mood and energy (deploy 44), 46 one-tap usual meals (43), 56 body measurements T1 (46), the Home page (47 and 48;
-spec on the branch `docs/home-page-spec`), core 5 (42), 9 and 28 (45), 27.
+**Done since 04.11.:** 59 to 62 sleep cycle (deploy 59, 05.11.), 45 export part + core 19 (60), 40 water target (61), gym workouts and
+home chores in Search (62); before that: Home page round 2 (53, 57), 52 coaching (51), 29 + core 26 Usage page (50), 53, 54, 55 and the
+Medical name (49), 37 mood and energy (44), 46 one-tap usual meals (43), 56 body measurements T1 (46), the Home page (47, 48).
 
 ## Status (31.10.2026; the first build run of 29.10. is described in `docs/reports/web-app-2026-10-29.md`)
 

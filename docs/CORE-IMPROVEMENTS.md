@@ -8,25 +8,28 @@ The v1 files (`v1_*.py`) are copied unchanged on purpose and are left as they ar
 
 Size: S = about an hour, M = about half a day, L = a day or more. Rough guesses.
 
-## Priorities (reviewed 04.11.2026, after deploy 48)
+## Priorities (reviewed 05.11.2026, after deploy 62)
 
-The combined ranking with the web list, with the top 5 to do first and the top 5 by effort, is at the top of `docs/IMPROVEMENTS.md`.
-For the core, in order:
+The combined top 10 with the web list is at the top of `docs/IMPROVEMENTS.md`. For the core, in order (S about an hour, M about half a
+day, L a day or more):
 
-1. **29 Night-time test failures: resolved 04.11.2026 without a code change**: the failures were the clock-dependent tests fixed on 30.10.
-   (`fd60ce3`) and one chance failure on 02.11. (fixed in `31c49f9`); all 19 runs since passed, and the full suite passes at a simulated 03:15.
-2. **26 Usage page complete: done 04.11.2026, deploy 50** (`logbook._ai` for every kind; `answer()` records the AI calls it makes; label photos named; notifications counted).
-3. **19 Export: done 05.11.2026, deploy 60** (S-M): with web 45; `export.py` (ZIP of CSVs + all.json, private only when ticked, audit row `export`).
-4. **16 `answer()` handlers** (S-M): one small handler per question kind; there are 9 kinds now (`home_choice` added 03.11.2026). Before
-   Telegram or coaching add more.
-5. **13 Remove the pilot tools** (S-M): 9 hidden tools still in `mcp_app.py`, plus `service.py` and its tests; fewer tests also make runs
-   shorter.
-6. **24 Words review** (S): a list of all learned words by date (the catalogue shows each food's words since 02.11.).
-7. **3 Second read**: look at the data again around mid-November (owner agreed on 02.11.).
-8. **Later:** 25 Telegram (M-L, with 17 digest, or the coach's week review, web 52), 20 food look-up gaps, 12 update watch (Diun);
-   6 shorter prompt is not worth it now.
+1. **30 Safe parallel sessions** (S-M, new): its own test database per worktree, and a deploy guard. On 05.11.2026 three sessions
+   worked at once and clashed in the shared test database at first.
+2. **16 `answer()` handlers** (S-M): one small handler per question kind; the chain has 10 kinds since the nap answer (05.11.2026).
+3. **13 Remove the pilot tools** (S-M): 9 hidden tools in `mcp_app.py`, plus `service.py` and its tests; dead code that still had to
+   follow the new day rule on 05.11.2026.
+4. **31 Check the watch's sleep import** (S, new): no sleep rows have arrived; Today's watch wake-up and the Activity page's sleep need them.
+5. **24 Words review** (S): all learned food words by date, so a wrong one is easy to find.
+6. **3 Second read** (S): look at the data again around mid-November (owner agreed on 02.11.).
+7. **28 Faster tests, step 2** (M): run in parallel with one test database per worker; goes with 30.
+8. **12 Update alerts** (S): Diun for the images, a monthly look at the pinned Python packages.
+9. **17 + 25 Digest and Telegram** (M-L): a summary and nudges that reach the owner away from home.
+10. **20 Food look-up gaps** (S-M): German words in Open Food Facts; full-fat when no fat level is said.
+
+**Not worth it now:** 6 shorter prompt. **Open owner decisions:** GitHub's test run as the check before a deploy; whether the repo stays
+public; the mini PC move; ending the v1 fallback.
 **Done:** 1, most of 2 (01.11.), 4, 5 (02.11., deploy 42), 7, 8, 9 (deploy 45), 10, 11, 14, 15 (GitHub runs every push), 18 (web push),
-21, 22, 23, 27 and 28 (02.11.).
+19 export (deploy 60, 05.11.), 21, 22, 23, 26 (deploy 50), 27 and 28 step 1 (02.11.), 29 (resolved 04.11.).
 
 ## Status (01.11.2026)
 
@@ -122,6 +125,13 @@ token counts for food look-ups and lab reports (web list 21, 20, 29).
 | 27 | Disk headroom: `docker builder prune` (keep a little cache) at the end of `tools/deploy.sh`, and a disk-use check (warn above 90%) in `uptime-kuma/push-checks.sh`. **Done 02.11.2026:** cleaned up from 86% (5.4 GB free) to 80% (7.4 GB free): build cache trimmed to 1 GB, unused images removed (hello-world and its exited container, traefik/whoami, alpine:3, alpine:latest, python:3.13-slim), three old Claude Code versions in `~/.local/share/claude/versions` (2.1.306-308). `deploy.sh` now ends with a clean-up: it removes `trial-fixes<N-3>` and trims the build cache to 1 GB. The disk check was already in `push-checks.sh` (down above 90%); it alerts only once Kuma has an alert channel (the owner's task). Left: `sudo apt clean` (145 MB) and old journal logs need sudo (the owner) | The disk was at 86% (5.3 GB free); the build cache held 2.2 GB that could be reclaimed, and every deploy adds a 309 MB image (three are kept) | S |
 | 28 | A faster test run: find the slowest tests (`pytest --durations=25`), share set-up where tests only read, and look at running in parallel with one test database per worker. **Step 1 done 02.11.2026: 15 min 15 s → 10 min 13 s** (405 tests): the tests hash passwords with a tiny scrypt cost (`auth.SCRYPT_N`, lowered in `conftest.py`; the live app keeps 2^15; sign-in cost 2 × 0.4 s per signed-in test), and the test database runs in memory without syncing (`tests/test-db.sh`: tmpfs, fsync off, scram_iterations 1; emptying the tables 340 → 220 ms per test). **Measured next:** opening a connection costs about 45 ms on this VM and a page opens 4 to 8 (the Today page 2.3 s in a test, 1.6 s of it connections; live, Today takes about 0.6 s to build, half of it 2 connections). A small connection pool (item 9) would speed up the tests and every live page. GitHub's runners take about 3 minutes for the whole suite | A full run takes about 15 to 17 minutes before every deploy; it was about 4 minutes at 223 tests | M |
 | 29 | **Resolved 04.11.2026, no code change** (see Priorities). Night-time test failures: 4 GitHub test runs failed, all between about 03:00 and 06:00 Berlin time (seen 02.11.2026); find the tests that depend on the 05:00 day change and fix their clock | GitHub's run can then be the check before a deploy (an open owner decision) | S |
+
+## 9. New after 05.11.2026 (three sessions in parallel; the sleep-cycle work)
+
+| # | Idea | Why | Size |
+|---|---|---|---|
+| 30 | Safe parallel sessions: `tests/test-db.sh` and `conftest.py` take the port and container name from the environment (one test database per worktree, e.g. derived from the folder name), and `tools/deploy.sh` refuses to run when the checkout has uncommitted changes or another deploy holds a lock file | Deploy builds from the checkout, so a session's unfinished code would ship with another's deploy; tests in two sessions empty each other's tables (seen 05.11.2026 until the water session moved to its own test database) | S-M |
+| 31 | Check the watch's sleep import: no `sleep_analysis` rows in `watch_metrics` yet. Check that the Health Auto Export automation sends Sleep Analysis, then confirm a night arrives and Today offers the watch's wake-up | Today's "Your watch says you got up" (deploy 59) and the Activity page's sleep card stay empty without it; mostly a setting on the owner's phone | S |
 
 ## Suggested order
 
