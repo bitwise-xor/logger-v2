@@ -102,7 +102,7 @@ def test_an_unknown_page_says_so_inside_the_app(web):
     c, _ = web
     r = c.get("/web/nothing-here")
     assert r.status_code == 404 and "Page not found" in r.text and 'href="/web/"' in r.text and 'id="entry-text"' in r.text
-    assert client().get("/web/nothing-here").status_code == 404  # signed out: a plain 404, no hint which pages exist
+    assert client().get("/web/nothing-here").status_code == 404  # signed out: the bare frame (test_weberrors.py), no hint which pages exist
     assert client("log.example.test").get("/web/nothing-here").status_code == 404
     assert c.get("/web/static/app.css").status_code == 200  # the files are still served
 

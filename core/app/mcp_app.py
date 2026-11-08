@@ -197,7 +197,9 @@ watch.add_routes(mcp)
 
 def build_app():
     hosts = ["127.0.0.1:*", "localhost:*", *EXTRA_ALLOWED_HOSTS]
-    return mcp.streamable_http_app(
+    app = mcp.streamable_http_app(
         streamable_http_path=MCP_PATH, stateless_http=True, json_response=True,
         transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=True, allowed_hosts=hosts, allowed_origins=[]),
     )
+    app.add_exception_handler(Exception, web.server_error)  # a page of the web app that fails: the error page in the app's layout
+    return app

@@ -242,6 +242,10 @@ form.uq:has(+details.uq-edit[open])>button{border-right:1px solid var(--line);bo
 .login{max-width:24rem;margin:4rem auto;padding:2rem;background:var(--card);border-radius:18px;box-shadow:var(--shadow)}
 .login label{display:block;font-weight:500;font-size:.9rem}
 .login input,.login button{width:100%;padding:.65rem;margin:.35rem 0 1.1rem}
+/* the error page (web item 26) */
+.errpage{max-width:30rem;margin:2.5rem auto;padding:1.75rem 2rem;background:var(--card);border-radius:18px;box-shadow:var(--shadow)}
+.errpage h1{margin-top:0}
+.errpage p:last-child{margin-bottom:0}
 
 @media (max-width:520px){
   main{padding:1rem .85rem 3rem}

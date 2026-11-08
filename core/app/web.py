@@ -14,7 +14,7 @@ from datetime import datetime, timedelta, timezone
 from psycopg.types.json import Jsonb
 from starlette.concurrency import run_in_threadpool
 from starlette.requests import Request
-from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
+from starlette.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response
 
 from . import (activitypage, auth, export, foodpage, gym, gympage, habitspage, healthpage, home as home_actions, homepage, coach, coachpage, ideaspage, insightspage, labelread, labspage, logbook, privatepage, recentpage, searchpage, settingspage, todaypage,
                trendspage, usagepage, webactions, weekpage, webentry, webfood, webheld, webideas, weblabs, webprivate, webhabits, websettings,
@@ -162,6 +162,50 @@ def shell(session, body: str, status: int = 200, active: str = "") -> HTMLRespon
                 f'<nav class="tabs" aria-label="Main menu">{tabs}</nav>', status)
     _renew(session, resp)
     return resp
+
+
+def bare_frame(title: str, body: str, status: int = 200) -> HTMLResponse:
+    """A page for someone who may not be signed in: the top bar with the name and the light/dark switch only (no menus, no data)."""
+    icon = webentry.icon
+    bar = (f'<header><div class="bar"><a class="brand" href="/web/">{icon("logo")}Logger</a>'
+           f'<button class="iconbtn themebtn" type="button" data-theme-toggle aria-label="Switch between light and dark">'
+           f'{icon("moon", "moon")}{icon("sun", "sun")}</button></div></header>')
+    return page(title, f'<a class="skip" href="#main">Skip to content</a>{bar}<main id="main">{body}</main>', status)
+
+
+# Web item 26 (08.11.2026): every error page of the app in its layout, with a short plain message and the way back to Today.
+# Never a stack trace or any detail: the kind of error goes to the log only.
+ERRORS = {404: ("Page not found", "This page does not exist."),
+          403: ("Nothing was sent", "This form did not come from the app's own page, so nothing was saved. Open the page again and try once more."),
+          500: ("Something went wrong", "Something went wrong. Nothing was lost; try again.")}
+
+
+def error_page(session, status: int) -> HTMLResponse:
+    """The error page: signed in, the full frame (menus, entry box); signed out, the bare frame. If the full frame cannot be
+    made (the database is the error, say), the bare one."""
+    head, msg = ERRORS[status]
+    body = (f'<section class="errpage"><h1>{head}</h1><p>{html.escape(msg)}</p>'
+            f'<p><a class="primary" href="/web/">Back to Today</a></p></section>')
+    if session:
+        try:
+            return shell(session, body, status)
+        except Exception as e:  # noqa: BLE001 - the kind only
+            log.error("the error page could not show the menus: %s", type(e).__name__)
+    return bare_frame(f"{head} · Logger", body, status)
+
+
+def server_error(request: Request, exc: Exception) -> Response:
+    """The app's handler for an error nobody caught (Starlette still passes it on to the server's log, traceback included).
+    A page of the app opened in the browser gets the error page; everything else (the MCP endpoint, other hosts, the page's
+    own fetches for JSON) the plain 500 as before."""
+    if not (is_app_request(request) and request.url.path.startswith("/web/") and "text/html" in request.headers.get("accept", "")):
+        return PlainTextResponse("Internal Server Error", status_code=500)
+    log.error("a web page failed: %s", type(exc).__name__)
+    try:
+        session = current_session(request)
+    except Exception:  # noqa: BLE001 - the database may be the error
+        session = None
+    return error_page(session, 500)
 
 
 def _renew(session, resp) -> None:
@@ -367,7 +411,7 @@ def add_routes(mcp) -> None:
         if (r := hidden(request)) is not None:
             return r
         if not _origin_ok(request):
-            return Response("Forbidden", status_code=403)
+            return error_page(None, 403)
         form = await request.form()
         password, code = str(form.get("password", "")), str(form.get("code", ""))
         device_token = request.cookies.get(DEVICE_COOKIE)
@@ -411,7 +455,7 @@ def add_routes(mcp) -> None:
             return RedirectResponse("/web/login", status_code=303, headers={"Cache-Control": "no-store"}), None
         form = await request.form()
         if not _origin_ok(request):
-            return Response("Forbidden", status_code=403), None
+            return error_page(None, 403), None
         if not csrf_ok(session, form):  # a page from before signing in again: say so, and give typed words back (04.11.2026)
             _set_flash(session, {"outcome": "rejected", "head": "Nothing saved.",
                                  "reason": "That page was out of date. It is fresh now: please do it again.",
@@ -880,13 +924,13 @@ def add_routes(mcp) -> None:
         session = current_session(request)
         form = await request.form()
         if not _origin_ok(request):
-            return Response("Forbidden", status_code=403)
+            return error_page(None, 403)
         if not session:  # already signed out (e.g. "Sign out all other devices" elsewhere): it showed "Forbidden" until 04.11.2026
             resp = RedirectResponse("/web/login", status_code=303, headers={"Cache-Control": "no-store"})
             resp.delete_cookie(COOKIE, path="/", secure=True, httponly=True, samesite="strict")
             return resp
         if not csrf_ok(session, form):
-            return Response("Forbidden", status_code=403)
+            return error_page(None, 403)
         with connect() as c:
             c.execute("DELETE FROM web_sessions WHERE token_hash=%s", (session["token_hash"],))
         resp = RedirectResponse("/web/login", status_code=303, headers={"Cache-Control": "no-store"})
@@ -898,6 +942,4 @@ def add_routes(mcp) -> None:
         if (r := hidden(request)) is not None:
             return r
         session = current_session(request)
-        if not session:
-            return Response("Not found", status_code=404)  # a stranger learns nothing about which pages exist
-        return shell(session, '<h1>Page not found</h1><p>There is no such page. <a href="/web/">Back to Today</a></p>', 404)
+        return error_page(session, 404)  # signed out: the bare frame, the same for every path, so no hint which pages exist
