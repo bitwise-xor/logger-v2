@@ -90,6 +90,8 @@ def test_a_wake_up_soon_after_the_last_one_asks_and_nap_keeps_the_day(monkeypatc
     assert "3 h 40 min after the last wake-up (05.11. 00:20)" in out["message"] and cycle.NAP_HINT in out["message"]
     p = owner_sql("SELECT id, payload FROM pending WHERE tool = 'log_confirm'")[0]
     assert p["payload"]["nap"] is True
+    # asked at the test's clock (05.11.2026), so it ended 24 h later by the real clock that the card and the answer use
+    owner_sql("UPDATE pending SET expires_at = now() + interval '1 day' WHERE id = %s", p["id"])
     card = webquestions.today_section("csrf")
     assert 'value="nap"' in card and "New day" in card and "A new day, or up from a nap or a night waking?" in card
     out = logbook.answer(p["id"], "nap", logbook.WEB)
