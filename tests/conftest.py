@@ -1,7 +1,20 @@
 import os
+import subprocess
 import sys
 
-os.environ.update(DB_HOST="127.0.0.1", DB_PORT="55433", APP_OWNER_PASSWORD="testowner", CORE_RW_PASSWORD="testcore",
+
+def _test_db_port():
+    """The port of this checkout's own test database: 55433 in the main checkout, a port of its own in a git worktree
+    (core item 30). tests/test-db.sh decides it, so the two never disagree; TESTDB_PORT overrides both."""
+    script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "test-db.sh")
+    try:
+        out = subprocess.run(["bash", script, "where"], capture_output=True, text=True, check=True, timeout=30).stdout.split()
+        return out[1]
+    except (OSError, subprocess.SubprocessError, IndexError):
+        return os.environ.get("TESTDB_PORT", "55433")
+
+
+os.environ.update(DB_HOST="127.0.0.1", DB_PORT=_test_db_port(), APP_OWNER_PASSWORD="testowner", CORE_RW_PASSWORD="testcore",
                   MCP_PATH="/mcp-testpath", ALLOWED_HOSTS="log.example.test", PUBLIC_URL="https://log.example.test", APP_HOST="app.example.test", PILOT_TOOLS="1")
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "core"))
 
