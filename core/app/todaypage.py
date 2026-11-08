@@ -376,20 +376,27 @@ def _item(f: dict, d: dict, csrf: str) -> str:
 
 
 def _again_section(d: dict, csrf: str) -> str:
-    """Again chips: the latest different foods; a tap opens the amount (the one used last) and the time, then Log."""
+    """Again chips: one tap logs the food at the amount used last and the time now (08.11.2026, like the usual meals' one tap);
+    the pencil next to it opens the amount and time first. Undo is on the reply; the same food again within 30 minutes asks."""
     if not d["again"]:
         return ""
     now = _hm(datetime.now(rules.BERLIN))
-    chips = "".join(
-        f'<details class="usual again{" more" if i >= AGAIN_PHONE else ""}"><summary>+ {esc(a["name"])} '
-        f'<span class="small num">{_plain(a["amount"])} {a["basis"]}</span></summary>'
-        f'<form class="again-form" method="post" action="/web/food/again">{hidden("csrf", csrf)}{hidden("key", key())}{hidden("food", str(a["id"]))}'
-        f'<label>Amount <input type="number" name="amount" id="ag-a-{a["id"]}" min="0" max="5000" step="any" inputmode="decimal" '
-        f'value="{_plain(a["amount"])}"> {a["basis"]}</label>'
-        f'<label>Time <input type="time" name="time" id="ag-t-{a["id"]}" value="{now}" data-nowtime></label>'
-        '<button class="primary sm" type="submit">Log</button></form></details>'
-        for i, a in enumerate(d["again"]))
-    return f'<div class="usual-row again-row"><span class="small">Again:</span>{chips}</div>'
+    out = []
+    for i, a in enumerate(d["again"]):
+        more = " more" if i >= AGAIN_PHONE else ""
+        amt = f'{_plain(a["amount"])} {a["basis"]}'
+        out.append(
+            f'<form class="uq aq{more}" method="post" action="/web/food/again">{hidden("csrf", csrf)}{hidden("key", key())}'
+            f'{hidden("food", str(a["id"]))}{hidden("amount", _plain(a["amount"]))}'
+            f'<button type="submit" title="Log {esc(a["name"])} {amt} now">+ {esc(a["name"])} <span class="small num">{amt}</span></button></form>'
+            f'<details class="usual uq-edit again{more}"><summary title="Change the amount or time of {esc(a["name"])} first">{icon("edit")}'
+            f'<span class="uq-n">Change {esc(a["name"])}<span class="sr"> before logging</span></span></summary>'
+            f'<form class="again-form" method="post" action="/web/food/again">{hidden("csrf", csrf)}{hidden("key", key())}{hidden("food", str(a["id"]))}'
+            f'<label>Amount <input type="number" name="amount" id="ag-a-{a["id"]}" min="0" max="5000" step="any" inputmode="decimal" '
+            f'value="{_plain(a["amount"])}"> {a["basis"]}</label>'
+            f'<label>Time <input type="time" name="time" id="ag-t-{a["id"]}" value="{now}" data-nowtime></label>'
+            '<button class="primary sm" type="submit">Log</button></form></details>')
+    return f'<div class="usual-row again-row"><span class="small">Again:</span>{"".join(out)}</div>'
 
 
 def _usual_section(d: dict, csrf: str) -> str:

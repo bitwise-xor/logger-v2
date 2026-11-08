@@ -161,6 +161,8 @@ details.uq-edit[open]{margin-left:0}
 details.uq-edit[open]>summary{border-radius:2rem;padding:0 .95rem;gap:.45rem}
 details.uq-edit:not([open]) .uq-n{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 form.uq:has(+details.uq-edit[open])>button{border-right:1px solid var(--line);border-radius:2rem;padding-right:.95rem}
+/* One-tap Again chips (08.11.2026): the amount beside the name, dimmer */
+form.aq>button .small{margin-left:.35rem;color:var(--dim)}
 .editor{margin-top:.7rem;border:1px solid var(--line);border-radius:14px;padding:.9rem 1rem;background:var(--field)}
 .editor .foot{display:flex;flex-wrap:wrap;gap:.6rem;align-items:center;justify-content:space-between;margin-top:.7rem;border-top:1px solid var(--line);padding-top:.7rem}
 
@@ -713,7 +715,7 @@ dialog.scan{max-height:calc(100dvh - 1.5rem);overflow-y:auto}
 .row.between{justify-content:space-between;align-items:flex-start;flex-wrap:nowrap}
 .row.between>p{flex:1 1 auto;min-width:0}
 .ac li b .w{margin-left:.45rem;font-size:.85em;font-weight:400;color:var(--dim)}
-@media (max-width:1080px){details.again.more{display:none}}
+@media (max-width:1080px){.again-row>.more{display:none}}
 /* Gym (02.11.2026): today's exercises with a round tick like the habit chips, the − / + editor, the 4-week grid, the Today card */
 .gx-list{display:flex;flex-direction:column}
 .gx{display:flex;gap:.75rem;align-items:flex-start;padding:.7rem 0;border-top:1px solid var(--line)}
