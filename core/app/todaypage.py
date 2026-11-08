@@ -552,6 +552,10 @@ def _review_section(d: dict, csrf: str) -> str:
         return (f'<p class="small notice">{n} item{"" if n == 1 else "s"} to review is hidden here · '
                 '<a href="/web/settings?tab=today">show the box</a></p>') if n else ""
     items = (bodypage.today_line(csrf, due) if due else "") + "".join(_review_item(r, csrf) for r in d["review"])
+    if len(d["review"]) >= 2:  # one tap for the whole box (web 48): exactly the items shown, so one that came in meanwhile stays
+        items += (f'<div class="rev"><div class="row"><form method="post" action="/web/review">{hidden("csrf", csrf)}{hidden("act", "all")}'
+                  f'{hidden("refs", " ".join(r["ref"] for r in d["review"]))}'
+                  f'<button class="ghost" type="submit">All {len(d["review"])} look right</button></form></div></div>')
     return ('<div class="card"><h2>To review</h2>'
             + (items or f'<div class="allgood"><span class="ok-dot">{icon("check")}</span><p class="empty">Nothing to review.</p></div>') + '</div>')
 

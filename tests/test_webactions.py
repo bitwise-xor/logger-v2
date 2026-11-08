@@ -199,6 +199,64 @@ def test_review_refuses_unknown_items(web):
     assert "Unknown item" in act(web, "/web/review", ref="t1", act="drop").text
 
 
+def shown_refs(page: str) -> str:
+    import re
+    return re.search(r'name="act" value="all">.*?name="refs" value="([^"]*)"', page, re.S)[1]
+
+
+def test_all_look_right_shows_only_with_two_or_more_items(web):
+    from test_webtoday import today
+    assert "look right</button>" not in today(web)
+    eat("Test bar", 900, 2, review=True)
+    page = today(web)
+    assert page.count("Looks right") == 1 and "look right</button>" not in page
+    flagged_thought()
+    page = today(web)
+    assert "All 2 look right</button>" in page and len(shown_refs(page).split()) == 2
+
+
+def test_all_look_right_clears_only_the_shown_items_in_one_audit_row(web):
+    from test_webtoday import today
+    eat("Test bar", 900, 2, review=True)
+    tid = flagged_thought()
+    refs = shown_refs(today(web))
+    eat("Test late bar", 500, 2, review=True)  # arrives after the page was shown: stays for review
+    eat("Test fine bar", 400, 2)  # never flagged: not touched
+    owner_sql("TRUNCATE audit_log")
+    page = act(web, "/web/review", act="all", refs=refs)
+    assert "Kept 2 items. The flags are cleared." in page.text
+    assert owner_sql("SELECT needs_review FROM thoughts WHERE id = %s", tid) == [{"needs_review": False}]
+    assert owner_sql("""SELECT f.name, e.needs_review FROM food_entries e JOIN foods f ON f.id = e.food_id ORDER BY f.name""") == [
+        {"name": "Test bar", "needs_review": False}, {"name": "Test fine bar", "needs_review": False},
+        {"name": "Test late bar", "needs_review": True}]
+    assert owner_sql("SELECT tool, outcome, client, detail->>'what' AS what, jsonb_array_length(detail->'ids') AS ids FROM audit_log") == [
+        {"tool": "web_change", "outcome": "changed", "client": "web", "what": "review all", "ids": 2}]
+    assert page.text.count("Looks right") == 1 and "look right</button>" not in page.text
+    again = act(web, "/web/review", act="all", refs=refs)  # a second tap: nothing left of those
+    assert "Nothing there is waiting for review any more." in again.text
+
+
+def test_all_look_right_can_be_undone_and_skips_gone_items(web):
+    eat("Test bar", 900, 2, review=True)
+    eat("Test other bar", 800, 2, review=True)
+    eat("Test gone bar", 700, 2, review=True)
+    ids = [r["id"] for r in owner_sql("SELECT id FROM food_entries ORDER BY id")]
+    owner_sql("DELETE FROM food_entries WHERE id = %s", ids[2])  # deleted elsewhere after the page was shown
+    page = act(web, "/web/review", act="all", refs=" ".join(f"f{i}" for i in ids))
+    assert "Kept 2 items." in page.text and n("SELECT count(*) AS n FROM food_entries WHERE needs_review") == 0
+    from test_gym import token
+    back = act(web, "/web/undo/last", token=token(page.text))
+    assert n("SELECT count(*) AS n FROM food_entries WHERE needs_review") == 2 and "All 2 look right" in back.text
+
+
+def test_all_look_right_refuses_bad_refs(web):
+    eat("Test bar", 900, 2, review=True)
+    fid = owner_sql("SELECT id FROM food_entries")[0]["id"]
+    for bad in ("", "x1", f"f{fid} drop", " ".join(f"f{i}" for i in range(30))):
+        assert "Unknown item" in act(web, "/web/review", act="all", refs=bad).text
+    assert n("SELECT count(*) AS n FROM food_entries WHERE needs_review") == 1
+
+
 def test_tick_untick_and_tick_again_ticks_without_asking(web, fake):
     """The same words twice within 30 minutes ask "log it again?"; a tick's words carry the click time (bug until 04.11.2026)."""
     act(web, "/web/habit", name="meds", action="tick", key="h7")
