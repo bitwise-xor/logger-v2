@@ -87,3 +87,13 @@ def test_the_page_renders_with_no_data_and_is_in_the_menu(web):
     page = web[0].get("/web/insights").text
     assert "<h1>Insights</h1>" in page and page.count("Not enough days yet") == 3 and 'aria-current="page">Insights' in page
     assert "not proof" in page
+
+
+def test_weight_changes_in_grams_and_no_sign_on_zero():
+    """08.11.2026: "+0.0 kg" against "-0.0 kg" said nothing; grams, and a zero without a sign."""
+    ins = {i["key"]: i for i in insightspage.insights(sample(12))}
+    assert ins["sleep"]["unit"] == "g" and 'kg' not in insightspage.card(ins["sleep"])
+    assert insightspage._fmt(-0.004, 1, True, "kg") == "0.0 kg" and insightspage._fmt(-0.3, 0, False, "mg/dL") == "0 mg/dL"
+    assert insightspage._fmt(40.2, 0, True, "g") == "+40 g"
+    same = dict(ins["late"], pairs=[(True, 100.0)] * 4 + [(False, 100.2)] * 4)
+    assert '<span class="dp">no difference</span>' in insightspage.card(same)

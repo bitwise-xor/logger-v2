@@ -102,7 +102,7 @@ def test_a_usual_meal_in_one_tap(web, fake, breakfast):
     page = web[0].get("/web/").text
     tap = page[page.index('<form class="uq"'):]
     tap = tap[:tap.index("</form>")]
-    assert f'name="meal" value="{mid}"' in tap and 'name="quick" value="1"' in tap and "+ usual breakfast</button>" in tap
+    assert f'name="meal" value="{mid}"' in tap and 'name="quick" value="1"' in tap and "+ usual breakfast</span></button>" in tap
     assert 'class="usual uq-edit"' in page and "Change usual breakfast<span class=\"sr\"> before logging" in page and 'name="on_' in page
     done = act(web, "/web/usual", meal=str(mid), key="u6", quick="1")
     assert "Saved." in done.text and fake.calls == [] and 'action="/web/undo"' in done.text  # a mistaken tap is one Undo away

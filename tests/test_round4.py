@@ -24,7 +24,7 @@ def test_twelve_again_chips_and_the_last_four_hidden_on_phones(web):
     for i in range(14):
         eat_on(day(), f"07:{i:02d}", food(f"Food {i:02d}"), 50)  # Food 13 is the newest
     page = web[0].get("/web/").text
-    chips = re.findall(r'<form class="uq aq( more)?"[^>]*>.*?<button[^>]*>\+ (Food \d\d)', page)  # one tap since 08.11.2026
+    chips = re.findall(r'<span class="uqp( more)?"><form class="uq aq"[^>]*>.*?<button[^>]*><span class="nm">\+ (Food \d\d)', page)  # one tap since 08.11.2026
     assert [c[1] for c in chips] == [f"Food {i:02d}" for i in range(13, 1, -1)]  # the 12 newest, newest first
     assert [bool(c[0]) for c in chips] == [False] * todaypage.AGAIN_PHONE + [True] * 4
     css = web[0].get("/web/static/app.css").text

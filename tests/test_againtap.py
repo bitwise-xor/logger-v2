@@ -24,7 +24,7 @@ def test_one_tap_logs_the_last_amount_now(web, fake):
     eat_on(day(), "08:10", oid, 60)
     page = web[0].get("/web/").text
     tap = chip(page, oid)
-    assert 'name="amount" value="60"' in tap and 'name="time"' not in tap and '+ Test oats <span class="small num">60 g</span></button>' in tap
+    assert 'name="amount" value="60"' in tap and 'name="time"' not in tap and '<span class="nm">+ Test oats</span><span class="small num">60 g</span></button>' in tap
     done = act(web, "/web/food/again", food=str(oid), amount="60", key="aq1")
     assert "Saved." in done.text and fake.calls == [] and 'action="/web/undo"' in done.text  # a wrong tap is one Undo away
     assert n("SELECT count(*) AS n FROM food_entries WHERE amount = 60 AND abs(extract(epoch FROM eaten_at - now())) < 300") == 1
@@ -50,3 +50,32 @@ def test_the_pencil_opens_the_amount_and_time_first(web, fake):
     assert "Change Test oats" in edit and f'id="ag-a-{oid}"' in edit and 'value="60"' in edit and f'id="ag-t-{oid}"' in edit
     act(web, "/web/food/again", food=str(oid), amount="45", time="09:30", key="aq4")
     assert sorted(float(r["amount"]) for r in owner_sql("SELECT amount FROM food_entries")) == [45.0, 60.0]
+
+
+# ---- the polish round of 08.11.2026 --------------------------------------------------------------
+
+def test_chip_names_drop_a_bracket_unless_two_would_read_alike():
+    from app.todaypage import chip_names
+    assert chip_names(["Skyr, unsweetened (Vogtlandmilch)", "Omega-3 seed mix (50% flax, 25% chia)", "Water"]) == [
+        "Skyr, unsweetened", "Omega-3 seed mix", "Water"]
+    assert chip_names(["Milk, whole", "Milk, whole (carton label)"]) == ["Milk, whole", "Milk, whole (carton label)"]
+
+
+def test_a_chip_and_its_pencil_are_one_unit_with_the_full_name_in_the_tooltip(web, fake):
+    oid = owner_sql("""INSERT INTO foods (name, basis, kcal, protein, fat, carbs, source)
+                       VALUES ('Test skyr (Brand X)', 'g', 60, 11, 0, 4, 'label') RETURNING id""")[0]["id"]
+    eat_on(day(), "08:10", oid, 150)
+    page = web[0].get("/web/").text
+    unit = re.search(r'<span class="uqp">(?:(?!<span class="uqp).)*?name="food" value="%d".*?</details></span>' % oid, page, re.S)[0]
+    assert 'title="Log Test skyr (Brand X) 150 g now"' in unit and '<span class="nm">+ Test skyr</span>' in unit
+    assert "Change Test skyr (Brand X)" in unit
+    css = web[0].get("/web/static/app.css").text
+    assert ".uqp{display:inline-flex" in css and ".grid>section>.quick{order:-1}" in css and ".ms tfoot td:first-child{white-space:normal}" in css
+
+
+def test_quick_chips_are_their_own_card_after_the_food_table(web, fake):
+    oid = oats()
+    eat_on(day(), "08:10", oid, 60)
+    page = web[0].get("/web/").text
+    assert '<div class="card quick">' in page and page.index("Food and drinks") < page.index('<div class="card quick">') < page.index("Again:")
+    assert '<span class="small amt">60 g</span>' in page  # the amount never splits

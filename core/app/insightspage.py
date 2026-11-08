@@ -56,7 +56,7 @@ def insights(d: dict) -> list[dict]:
         if bed and w is not None and w0 is not None:
             hours = (up - bed).total_seconds() / 3600
             if 2 <= hours <= 14:
-                short.append((hours < SHORT_H, w - w0))
+                short.append((hours < SHORT_H, (w - w0) * 1000))  # in grams (08.11.2026): "+0.0 kg" hid the difference
     shares = []
     for day, (p, c, f) in d["macros"].items():
         s, energy = d["sugar"].get(day + one), p * 4 + c * 4 + f * 9
@@ -69,7 +69,7 @@ def insights(d: dict) -> list[dict]:
          "say": "On the {ny} days your last food was less than " + str(LATE_H) + " hours before bed, fasting sugar the next morning "
                 "averaged {my}, against {mn} after the {nn} days with a longer gap.",
          "needs": "days with a bed time, the time of the last food and a fasting sugar the next morning"},
-        {"key": "sleep", "title": "Short nights and weight", "pairs": short, "unit": "kg", "digits": 1, "sign": True,
+        {"key": "sleep", "title": "Short nights and weight", "pairs": short, "unit": "g", "digits": 0, "sign": True,
          "yes": f"Under {SHORT_H} h of sleep", "no": f"{SHORT_H} h or more",
          "say": "After the {ny} nights with less than " + str(SHORT_H) + " hours of sleep, weight changed by {my} from the day before on "
                 "average, against {mn} after the {nn} longer nights.",
@@ -83,6 +83,9 @@ def insights(d: dict) -> list[dict]:
 
 
 def _fmt(v: float, digits: int, sign: bool, unit: str) -> str:
+    """A value as shown; a value that rounds to zero has no sign ("-0 mg/dL" and "+0.0 kg" before 08.11.2026)."""
+    if round(v, digits) == 0:
+        return f"{0:.{digits}f} {unit}"
     return f"{v:+.{digits}f} {unit}" if sign else f"{v:.{digits}f} {unit}"
 
 
@@ -113,7 +116,8 @@ def card(i: dict) -> str:
     fmt = lambda v: _fmt(v, i["digits"], i["sign"], i["unit"])  # noqa: E731
     diff = my - mn
     said = i["say"].format(ny=len(yes), nn=len(no), my=f"<b>{fmt(my)}</b>", mn=f"<b>{fmt(mn)}</b>")
-    return (f'<div class="card insight"><h2>{esc(i["title"])}<span class="dp">{diff:+.{i["digits"]}f} {i["unit"]}</span></h2>'
+    corner = "no difference" if round(diff, i["digits"]) == 0 else f'{diff:+.{i["digits"]}f} {i["unit"]}'
+    return (f'<div class="card insight"><h2>{esc(i["title"])}<span class="dp">{corner}</span></h2>'
             f'<p class="isay">{said}</p>{_bars([(i["yes"], my, len(yes), "a"), (i["no"], mn, len(no), "b")], i["digits"], i["sign"], i["unit"])}</div>')
 
 

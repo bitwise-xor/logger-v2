@@ -1,6 +1,7 @@
 ﻿"""The web app's Today page: food with its four macros against the day's targets, usual meals with editable weights,
 habit toggles, the Health card (edited in place) and items to review. web.py wraps it in the page and the sign-in."""
 import math
+import re
 from datetime import date, datetime, timedelta
 from typing import Optional
 
@@ -143,8 +144,10 @@ def load(asked: date | None = None) -> dict:
                               (SELECT water_ml FROM food_targets WHERE valid_from <= %s ORDER BY valid_from DESC LIMIT 1) AS target""",
                     (day, day))
         water = cur.fetchone()
-        cur.execute("""SELECT id, meal, time, food, amount, unit, portion_text, kcal, protein, fat, carbs FROM v_food_log
-                       WHERE day = %s ORDER BY meal, time NULLS LAST, id""", (day,))
+        cur.execute("""SELECT l.id, l.meal, l.time, l.food, l.amount, l.unit, l.portion_text, l.kcal, l.protein, l.fat, l.carbs,
+                              l.raw_id, e.usual_meal_id, u.name AS usual
+                       FROM v_food_log l JOIN food_entries e ON e.id = l.id LEFT JOIN usual_meals u ON u.id = e.usual_meal_id
+                       WHERE l.day = %s ORDER BY l.meal, l.time NULLS LAST, l.id""", (day,))
         foods = cur.fetchall()
         cur.execute("""SELECT u.id AS meal_id, u.name AS meal, i.id, i.grams, f.name, f.basis, f.kcal, f.protein, f.fat, f.carbs
                        FROM usual_meals u JOIN usual_meal_items i ON i.meal_id = u.id JOIN foods f ON f.id = i.food_id
@@ -298,15 +301,54 @@ def _food_section(d: dict, csrf: str) -> str:
         rows = items.get(r["meal"], [])
         times = [f["time"] for f in rows if f["time"]]
         when = f' <span class="small">{min(times).strftime("%H:%M")}</span>' if times and r["meal"] != 0 else ""
-        lines = "".join(f'<tr class="item"><td>{_item(f, d, csrf)}</td>{_cols(f)}</tr>' for f in rows)
-        groups.append(f'<tbody><tr class="mealrow"><td>{esc(r["meal_label"])}{when}</td>{_cols(r)}</tr>{lines}</tbody>')
+        head = f'<tr class="mealrow"><td>{esc(r["meal_label"])}{when}</td>{_cols(r)}</tr>'
+        groups.append(_meal_body(head, rows, d, csrf))
     table = (f'<div class="tablewrap"><table class="ft">{_head()}{"".join(groups)}</table></div>' if groups
              else f'<p class="empty">Nothing logged {"on this day" if d["past"] else "yet today"}.</p>')
-    usual = "" if d["past"] else _again_section(d, csrf) + _usual_section(d, csrf) + _scanner(csrf)  # logged for today only
+    # logged for today only; their own card since 08.11.2026, so phones can show it right under the totals (app.css)
+    usual = "" if d["past"] else f'<div class="card quick">{_again_section(d, csrf)}{_usual_section(d, csrf)}{_scanner(csrf)}</div>'
     scan = "" if d["past"] else f'<button class="ghost sm" type="button" data-scan hidden>{icon("barcode")}Scan</button>'
     return (f'<div class="totals">{tiles}</div>{_water(d, csrf)}{_macro_block(total)}'
             f'<div class="card"><h2>Food and drinks<span class="row">{scan}<a href="/web/food?day={d["day"].isoformat()}">Open food log</a></span></h2>'
-            f'{table}{usual}</div>')
+            f'{table}</div>{usual}')
+
+
+def _meal_body(head: str, rows: list, d: dict, csrf: str) -> str:
+    """One meal of the food table. A usual meal logged at once (one message, 2 or more items) is one line with its sums that opens
+    to its items, each still changeable (08.11.2026: a hot chocolate was four rows). The opening is CSS only (app.css, tbody.ug):
+    each group is its own tbody; "mid" marks a tbody that is not the meal's last, so only the last one gets the space below."""
+    groups: dict = {}
+    for f in rows:
+        if f["usual_meal_id"] and f["usual"]:
+            groups.setdefault((f["usual_meal_id"], f["raw_id"]), []).append(f)
+    parts: list = []  # (class, rows html)
+    plain, done = "", set()
+    for f in rows:
+        g = (f["usual_meal_id"], f["raw_id"])
+        its = groups.get(g) if f["usual_meal_id"] and f["usual"] else None
+        if its and len(its) >= 2:
+            if g in done:
+                continue
+            done.add(g)
+            if plain or not parts:
+                parts.append(("", plain))
+                plain = ""
+            sums = {k: sum(float(i[k] or 0) for i in its) for k, _, _ in MACROS}
+            n = len(its)
+            parts.append(("ug", f'<tr class="item ugrow"><td><details class="ugt"><summary title="Show the {n} items">{esc(f["usual"])}'
+                                f' <span class="small">· {n} items</span></summary></details></td>{_cols(sums)}</tr>'
+                                + "".join(f'<tr class="item gi"><td>{_item(i, d, csrf)}</td>{_cols(i)}</tr>' for i in its)))
+        else:
+            plain += f'<tr class="item"><td>{_item(f, d, csrf)}</td>{_cols(f)}</tr>'
+    if plain or not parts:
+        parts.append(("", plain))
+    if not parts[0][1]:  # the meal row goes into the first tbody that has rows
+        parts = parts[1:] if len(parts) > 1 else parts
+    out = []
+    for i, (cls, body) in enumerate(parts):
+        c = " ".join(x for x in (cls, "" if i == len(parts) - 1 else "mid") if x)
+        out.append(f'<tbody{f" class={chr(34)}{c}{chr(34)}" if c else ""}>{head if i == 0 else ""}{body}</tbody>')
+    return "".join(out)
 
 
 def _water(d: dict, csrf: str) -> str:
@@ -361,7 +403,7 @@ def _scanner(csrf: str) -> str:
 def _item(f: dict, d: dict, csrf: str) -> str:
     """One food of the table. Today: a tap opens a small editor in place (amount, time, Delete; Undo instead of a question).
     An earlier day: a link to the entry on the Food log."""
-    shown = f' <span class="small">{esc(f["shown"])}</span>'
+    shown = f' <span class="small amt">{esc(f["shown"])}</span>'
     if d["past"]:
         href = f'/web/food?day={d["day"].isoformat()}&amp;edit=f{f["id"]}#f{f["id"]}'
         return f'<a href="{href}" title="Change or delete">{esc(f["food"])}</a>{shown}'
@@ -382,21 +424,32 @@ def _again_section(d: dict, csrf: str) -> str:
         return ""
     now = _hm(datetime.now(rules.BERLIN))
     out = []
+    names = chip_names([a["name"] for a in d["again"]])
     for i, a in enumerate(d["again"]):
         more = " more" if i >= AGAIN_PHONE else ""
         amt = f'{_plain(a["amount"])} {a["basis"]}'
         out.append(
-            f'<form class="uq aq{more}" method="post" action="/web/food/again">{hidden("csrf", csrf)}{hidden("key", key())}'
+            f'<span class="uqp{more}"><form class="uq aq" method="post" action="/web/food/again">{hidden("csrf", csrf)}{hidden("key", key())}'
             f'{hidden("food", str(a["id"]))}{hidden("amount", _plain(a["amount"]))}'
-            f'<button type="submit" title="Log {esc(a["name"])} {amt} now">+ {esc(a["name"])} <span class="small num">{amt}</span></button></form>'
-            f'<details class="usual uq-edit again{more}"><summary title="Change the amount or time of {esc(a["name"])} first">{icon("edit")}'
+            f'<button type="submit" title="Log {esc(a["name"])} {amt} now"><span class="nm">+ {esc(names[i])}</span>'
+            f'<span class="small num">{amt}</span></button></form>'
+            f'<details class="usual uq-edit again"><summary title="Change the amount or time of {esc(a["name"])} first">{icon("edit")}'
             f'<span class="uq-n">Change {esc(a["name"])}<span class="sr"> before logging</span></span></summary>'
             f'<form class="again-form" method="post" action="/web/food/again">{hidden("csrf", csrf)}{hidden("key", key())}{hidden("food", str(a["id"]))}'
             f'<label>Amount <input type="number" name="amount" id="ag-a-{a["id"]}" min="0" max="5000" step="any" inputmode="decimal" '
             f'value="{_plain(a["amount"])}"> {a["basis"]}</label>'
             f'<label>Time <input type="time" name="time" id="ag-t-{a["id"]}" value="{now}" data-nowtime></label>'
-            '<button class="primary sm" type="submit">Log</button></form></details>')
+            '<button class="primary sm" type="submit">Log</button></form></details></span>')
     return f'<div class="usual-row again-row"><span class="small">Again:</span>{"".join(out)}</div>'
+
+
+def chip_names(names: list) -> list:
+    """A chip's short name (08.11.2026): without a bracket at the end ("Skyr, unsweetened (Vogtlandmilch)" -> "Skyr, unsweetened");
+    the full name where two chips would read alike. app.css cuts a name that is still long with "…"; the full name is the
+    chip's tooltip and the pencil's "Change …"."""
+    short = [re.sub(r"\s*\([^()]*\)\s*$", "", n).strip() or n for n in names]
+    low = [x.lower() for x in short]
+    return [x if low.count(x.lower()) == 1 else n for x, n in zip(short, names)]
 
 
 def _usual_section(d: dict, csrf: str) -> str:
@@ -418,15 +471,15 @@ def _usual_section(d: dict, csrf: str) -> str:
         tot = [sum(float(i[k]) * float(i["grams"]) / 100 for i in its) for k, _, _ in MACROS]
         # One tap logs the meal as saved, now (web item 46, 02.11.2026); the pencil opens the editor for changes first
         out.append(
-            f'<form class="uq" method="post" action="/web/usual">{hidden("csrf", csrf)}{hidden("key", key())}{hidden("meal", str(mid))}'
-            f'{hidden("quick", "1")}<button type="submit" title="Log {esc(name)} now, as saved">+ {esc(name)}</button></form>'
+            f'<span class="uqp"><form class="uq" method="post" action="/web/usual">{hidden("csrf", csrf)}{hidden("key", key())}{hidden("meal", str(mid))}'
+            f'{hidden("quick", "1")}<button type="submit" title="Log {esc(name)} now, as saved"><span class="nm">+ {esc(name)}</span></button></form>'
             f'<details class="usual uq-edit"><summary title="Change {esc(name)} before logging">{icon("edit")}'
             f'<span class="uq-n">Change {esc(name)}<span class="sr"> before logging</span></span></summary><div class="editor">'
             f'<form class="usual-edit" method="post" action="/web/usual">{hidden("csrf", csrf)}{hidden("key", key())}{hidden("meal", str(mid))}'
             f'<div class="tablewrap"><table class="ft">{_head()}<tbody>{rows}'
             f'<tr class="sum"><td>This meal</td>{"".join(f"<td class=m>{_n(v)}</td>" for v in tot)}</tr></tbody></table></div>'
             f'<div class="foot"><label>Time <input type="time" name="time" id="u{mid}-time" value="{now}" data-nowtime></label>'
-            '<button class="primary" type="submit">Log meal</button></div></form></div></details>')
+            '<button class="primary" type="submit">Log meal</button></div></form></div></details></span>')
     return f'<div class="usual-row"><span class="small">Repeat:</span>{"".join(out)}</div>'
 
 

@@ -163,6 +163,30 @@ details.uq-edit:not([open]) .uq-n{position:absolute;width:1px;height:1px;overflo
 form.uq:has(+details.uq-edit[open])>button{border-right:1px solid var(--line);border-radius:2rem;padding-right:.95rem}
 /* One-tap Again chips (08.11.2026): the amount beside the name, dimmer */
 form.aq>button .small{margin-left:.35rem;color:var(--dim)}
+/* Polish round (08.11.2026): a chip and its pencil are one unit that never breaks apart; a long name ends in "…" */
+.uqp{display:inline-flex;align-items:stretch;max-width:100%;min-width:0}
+.uqp>details.uq-edit{margin-left:0}
+.uqp:has(>details[open]){flex-basis:100%;flex-wrap:wrap}
+.uqp>form.uq{min-width:0;max-width:100%}
+.uqp>form.uq>button{min-width:0;max-width:100%;white-space:nowrap}
+.uqp .nm{overflow:hidden;text-overflow:ellipsis;min-width:0;max-width:17rem}
+.uqp form.aq>button .small{flex:none}
+.quick>.usual-row:first-of-type{margin-top:0;padding-top:0;border-top:0}
+.ft .amt{white-space:nowrap}
+/* a usual meal logged at once: one line that opens to its items (todaypage._meal_body) */
+.ft tbody.ug tr.gi{display:none}
+.ft tbody.ug:has(details.ugt[open]) tr.gi{display:table-row}
+.ft tr.gi td:first-child{padding-left:1.6rem}
+.ft tbody.mid tr.item:last-child td{padding-bottom:.42rem}
+.ft tbody.ug:not(.mid):not(:has(details.ugt[open])) tr.ugrow td{padding-bottom:1rem}
+details.ugt>summary{list-style:none;cursor:pointer}
+details.ugt>summary::-webkit-details-marker{display:none}
+details.ugt>summary::after{content:" \25B8";color:var(--dim)}
+details.ugt[open]>summary::after{content:" \25BE"}
+details.ugt>summary:hover{text-decoration:underline}
+/* phones (one column): totals, water and the quick chips first; the macro card and the food table after them */
+@media (max-width:820px){.grid>section{display:flex;flex-direction:column;gap:1.1rem}.grid>section>*{margin:0!important}
+  .grid>section>.totals{order:-3}.grid>section>.total.water{order:-2}.grid>section>.quick{order:-1}}
 .editor{margin-top:.7rem;border:1px solid var(--line);border-radius:14px;padding:.9rem 1rem;background:var(--field)}
 .editor .foot{display:flex;flex-wrap:wrap;gap:.6rem;align-items:center;justify-content:space-between;margin-top:.7rem;border-top:1px solid var(--line);padding-top:.7rem}
 
@@ -621,7 +645,8 @@ a.primary{text-decoration:none;display:inline-block}
 .allgood .ok-dot{display:inline-flex;width:2.25rem;height:2.25rem;border-radius:50%;align-items:center;justify-content:center;background:var(--accent-soft);color:var(--accent);flex:none}
 .macrobox h2{flex-direction:column;align-items:flex-start;gap:.15rem}
 @media (max-width:560px){.macros{justify-content:center}.daybar h1{font-size:1.4rem}.donut{width:8rem;height:8rem}
-  .ms th:nth-child(2),.ms td:nth-child(2),.ms th:nth-child(3),.ms td:nth-child(3){display:none}}
+  .ms th:nth-child(2),.ms td:nth-child(2),.ms th:nth-child(3),.ms td:nth-child(3){display:none}
+  .ms tfoot td:first-child{white-space:normal}}  /* "Total from macros" wraps: the table fits a phone (08.11.2026) */
 
 /* Round 1 (31.10.2026): Undo bar, the food editor on Today, Again chips, food suggestions in the entry box (two lines tall
    on the PC), the Recent page */
