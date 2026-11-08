@@ -1,7 +1,28 @@
 #!/usr/bin/env bash
 # Deploy logger-v2-core by the recipe in HANDOVER.md section 4. Usage: deploy.sh <N for trial-fixesN> <what, for the dump name>
 # Prints one line per check; "CHECK FAILED" marks a problem. Rollback: docker tag logger-v2-core:trial-fixes<N> logger-v2-core:pilot; docker compose up -d core
-cd /opt/stacks/logger-v2 || exit 1
+
+# Deploy guard (core item 30, 08.11.2026): the image is built from the checkout, so only a clean main in the main checkout
+# ships, and never two deploys at once. Each refusal says why and exits 1 before anything is touched.
+MAIN=/opt/stacks/logger-v2
+refuse() { echo "DEPLOY REFUSED: $*"; exit 1; }
+[ $# -eq 2 ] && [ -n "$2" ] || refuse "usage: tools/deploy.sh <N for trial-fixesN> <what, for the dump name>"
+[[ "$1" =~ ^[0-9]+$ ]] || refuse "N must be a number (got '$1')"
+self=$(cd "$(dirname "${BASH_SOURCE[0]}")" && git rev-parse --show-toplevel 2>/dev/null)
+here=$(git rev-parse --show-toplevel 2>/dev/null)
+[ "$self" = "$MAIN" ] && [ "$here" = "$MAIN" ] \
+  || refuse "run it as tools/deploy.sh in $MAIN itself (this script is in ${self:-no git checkout}, the current folder is in ${here:-no git checkout}); a worktree never deploys"
+cd "$MAIN" || exit 1
+[ "$(git rev-parse --absolute-git-dir)" = "$(git rev-parse --path-format=absolute --git-common-dir)" ] \
+  || refuse "$MAIN is a linked worktree, not the main checkout"
+exec 9>/tmp/logger-v2-deploy.lock
+flock -n 9 || refuse "another deploy is running (lock /tmp/logger-v2-deploy.lock); wait for it to finish"
+b=$(git symbolic-ref --quiet --short HEAD) || b="(detached HEAD)"
+[ "$b" = main ] || refuse "the main checkout is on '$b', not on main"
+dirty=$( { git status --porcelain --untracked-files=no; git status --porcelain -- core; } | sort -u)
+[ -z "$dirty" ] || { echo "$dirty" | head -n 20; refuse "uncommitted changes (listed above); commit or remove them first"; }
+echo "guard ok: main at $(git rev-parse --short HEAD), clean, no other deploy running"
+
 N="$1"; WHAT="$2"; D="private-dumps/v2-live-before-${WHAT}-$(date +%Y%m%d).dump"
 umask 077
 docker exec logger-v2-db pg_dump -U pgadmin -Fc appdata > "$D" </dev/null && echo "dump: $D $(stat -c %s "$D") bytes"
