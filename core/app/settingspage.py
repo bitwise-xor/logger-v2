@@ -211,6 +211,8 @@ def _notify(session, csrf: str) -> str:
             f'<label class="row nrow"><input type="checkbox" name="weight" value="1"{box("weight")}> No weight yet, {num("weight_after", 0.5, 12)} hours after waking</label>'
             f'<label class="row nrow"><input type="checkbox" name="habits" value="1"{box("habits")}> Habits still open, {num("habits_after", 1, 20)} hours after waking</label>'
             f'<label class="row nrow"><input type="checkbox" name="idle" value="1"{box("idle")}> Nothing logged for {num("idle_hours", 1, 12)} hours</label>'
+            f'<label class="row nrow"><input type="checkbox" name="checkin" value="1"{box("checkin")}> Mood and energy not in yet, {num("checkin_after", 2, 15.5)} hours after waking</label>'
+            f'<label class="row nrow"><input type="checkbox" name="bp_evening" value="1"{box("bp_evening")}> No evening blood pressure yet, {num("bp_evening_after", 2, 15.5)} hours after waking</label>'
             '<p class="row"><button class="primary" type="submit">Save</button></p></form>')
     return (f'<div class="grid2"><div class="card"><h2>This device</h2>{turn_on}'
             '<p class="small hint">On an iPhone (iOS 16.4 or later): add Logger to the home screen first (Share, then Add to Home Screen), '

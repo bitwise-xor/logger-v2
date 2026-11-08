@@ -12,7 +12,9 @@ from .db import connect
 from .when import BERLIN
 
 KEY = "nudges"
-DEFAULTS = {"on": True, "weight": True, "weight_after": 2.0, "habits": True, "habits_after": 14.0, "idle": True, "idle_hours": 5.0}
+# checkin and bp_evening since 08.11.2026 (the check-in on, as the owner asked; evening blood pressure offered, off)
+DEFAULTS = {"on": True, "weight": True, "weight_after": 2.0, "habits": True, "habits_after": 14.0, "idle": True, "idle_hours": 5.0,
+            "checkin": True, "checkin_after": 12.0, "bp_evening": False, "bp_evening_after": 13.0}
 AWAKE_HOURS = 16
 CHANNELS = ["web", "claude-chat", "mcp"]  # what counts as logging something (imports do not)
 
@@ -61,6 +63,19 @@ def due(cur, now: datetime) -> list[dict]:
         still = [r["label"] for r in cur.fetchall() if r["type_name"] not in avoid]
         if still:
             out.append({"kind": "habits", "title": "Habits still open", "body": ", ".join(still)})
+    if s["checkin"] and now >= wake + timedelta(hours=float(s["checkin_after"])):  # Today's card shows from 10 h (todaypage)
+        cur.execute("""SELECT DISTINCT t.name FROM measurements m JOIN log_types t ON t.id = m.type_id
+                       WHERE m.day = %s AND t.name IN ('mood', 'energy')""", (day,))
+        have = {r["name"] for r in cur.fetchall()}
+        missing = [w for w in ("mood", "energy") if w not in have]
+        if missing:
+            body = ("Mood and energy" if len(missing) == 2 else missing[0].capitalize() + " still missing") + ": one tap on Today."
+            out.append({"kind": "checkin", "title": "How was today?", "body": body})
+    if s["bp_evening"] and now >= wake + timedelta(hours=float(s["bp_evening_after"])):
+        cur.execute("""SELECT 1 FROM measurements m JOIN log_types t ON t.id = m.type_id
+                       WHERE t.name = 'bp' AND m.period = 'evening' AND m.day = %s""", (day,))
+        if not cur.fetchone():
+            out.append({"kind": "bp-evening", "title": "Evening blood pressure", "body": "No evening blood pressure logged yet today."})
     if s["idle"]:
         cur.execute("SELECT max(received_at) AS t FROM raw_inbox WHERE channel = ANY(%s)", (CHANNELS,))
         last = cur.fetchone()["t"]

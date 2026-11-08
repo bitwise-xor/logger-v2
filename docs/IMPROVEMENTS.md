@@ -19,7 +19,7 @@ Current tab first. Size: S about an hour, M about half a day, L a day or more.
 2. **26 Error page in the app's layout** (done, deploy 64): today an error shows a bare page.
 3. **50 More Insights** (M): sleep length and timing against mood, energy and fasting sugar, now that sleep times are reliable.
 4. **58 + 56 T2 Edit the body measures** (M): add, rename and reorder them in Settings > Body, neck and calf included (one change for both).
-5. **49 More nudges** (S-M): "your watch says you're up, log it?", evening blood pressure, a question open for a day.
+5. **49 More nudges** (S-M; in part done, deploy 67: check-in and evening blood pressure): "your watch says you're up, log it?", a question open for a day.
 6. **45 Digest** (M): a short daily or weekly summary sent to the owner (the export part is done; coaching on demand covers some of it).
 7. **38 Minutes for practices** (M): Shoonya, meditation, study as minutes, not only a tick.
 8. **57 A notification when the Home timer ends** (S-M): needs a scheduler more precise than the 5-minute cron.
@@ -36,7 +36,7 @@ Current tab first. Size: S about an hour, M about half a day, L a day or more.
 6. Core 13 Remove the pilot tools (S-M)
 7. Web 50 More Insights with sleep (M)
 8. Web 58 + 56 T2 Edit the body measures (M)
-9. Web 49 More nudges (S-M)
+9. Web 49 More nudges (S-M; in part done, deploy 67)
 10. Core 24 Words review (S)
 
 The first six are small and make everything after them safer or quicker; 7 to 9 build on the sleep and body data now logged.
@@ -45,7 +45,7 @@ The first six are small and make everything after them safer or quicker; 7 to 9 
 **Parked or dropped:** 42 and 16 lab report upload (owner, 02.11.2026: "not interested at the moment"), 35 swipe (not needed), 41 weight
 trend (dropped), 44 photo on a food entry (disk), 47 home-screen shortcuts (iOS limits), 51 server-side voice (only if Safari's fails),
 20/21 chat usual meal and exchange log (no ask since 29.10.), core 6 shorter prompt (not worth it now).
-**Done since 04.11.:** polish round from Claude's look at the app (deploy 66, 08.11.: chip and pencil one unit with short names, quick chips first on phones, the macro table fits a phone, a food's amount never splits, a usual meal logged at once is one line that opens, Insights in grams and without "-0"), Again chips in one tap, with a pencil for amount and time (deploy 65, 08.11.; 46, one-tap usual meals, was done on 02.11. but not marked), 48 "All look right" and 26 error page in the app's layout (deploy 64, 08.11.), the Health card's Bed and Woke up log the next sleep 12 h after the wake-up instead of moving the last one (bug, deploy 63, 06.11.), 59 to 62 sleep cycle (deploy 59, 05.11.), 45 export part + core 19 (60), 40 water target (61), gym workouts and
+**Done since 04.11.:** check-in and evening blood pressure nudges (49 in part, deploy 67, 08.11.), polish round from Claude's look at the app (deploy 66, 08.11.: chip and pencil one unit with short names, quick chips first on phones, the macro table fits a phone, a food's amount never splits, a usual meal logged at once is one line that opens, Insights in grams and without "-0"), Again chips in one tap, with a pencil for amount and time (deploy 65, 08.11.; 46, one-tap usual meals, was done on 02.11. but not marked), 48 "All look right" and 26 error page in the app's layout (deploy 64, 08.11.), the Health card's Bed and Woke up log the next sleep 12 h after the wake-up instead of moving the last one (bug, deploy 63, 06.11.), 59 to 62 sleep cycle (deploy 59, 05.11.), 45 export part + core 19 (60), 40 water target (61), gym workouts and
 home chores in Search (62); before that: Home page round 2 (53, 57), 52 coaching (51), 29 + core 26 Usage page (50), 53, 54, 55 and the
 Medical name (49), 37 mood and energy (44), 46 one-tap usual meals (43), 56 body measurements T1 (46), the Home page (47, 48).
 
@@ -157,7 +157,7 @@ Collected from the user's list of 30.10.2026 and the answers on 31.10.2026. Noth
 | 46 | **Done 02.11.2026** (commit 9733b06; marked here on 08.11.). One-tap usual meals: a tap logs the meal with its saved weights, the editor stays for changes. **Again chips in one tap too: done 08.11.2026, deploy 65** | "+ Food 60 g" logs the amount used last, now; the pencil opens amount and time first; the same food within 30 minutes asks | S |
 | 47 | Phone home-screen shortcuts that open straight at Log food or Weight | iOS limits what a web app can offer; check what works | S |
 | 48 | "All look right" on the review box | One button for a whole list of items that are fine | S |
-| 49 | More nudges: evening blood pressure (offered, not chosen), a question open for a day, a habit-specific time; Telegram as a second channel (core item 18) | Today's nudges: no weight, habits open, nothing logged for N hours, all counted from the wake-up time | S-M |
+| 49 | More nudges. **In part done 08.11.2026, deploy 67:** mood and energy not in yet (on, 12 h after waking) and evening blood pressure (off until chosen, 13 h), both in Settings > Notifications. Still open: a question open for a day, a habit-specific time; Telegram as a second channel (core item 18) | Today's nudges: no weight, habits open, nothing logged for N hours, all counted from the wake-up time | S-M |
 | 50 | Insights: more questions as the data grows (mood, steps, sleep once item 36 exists), and a longer range | Today's three cards need about 4 days in each group; the user's data had 1 day with a long gap after food | M |
 | 51 | Voice without the browser's speech recognition (record on the phone, convert on the server) if Safari's recognition is missing in the home-screen app | Only if the microphone button does not show or does not work there | M-L |
 | 52 | **Done 04.11.2026, deploy 51.** Coaching: "Coach me" on Today (any day of the date picker) and "Review this week" on the Week page, by Claude Opus 5.5 at high effort, on demand | The user's idea of 02.11.2026; details below. The chat can already coach when asked; this makes it one tap and keeps each coaching | M |

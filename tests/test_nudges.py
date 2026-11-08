@@ -100,7 +100,7 @@ def test_habits_after_fourteen_hours_and_nothing_logged_for_five_hours():
     event("wake", DAY, "07:00")
     measure("weight", DAY, "07:30", 82.4)
     assert due(at("12:30")) == {"idle-0700"}  # nothing from the web app or Claude since waking
-    assert due(at("21:30")) == {"idle-0700", "habits"}  # medication is not ticked
+    assert due(at("21:30")) == {"idle-0700", "habits", "checkin"}  # medication is not ticked; no mood or energy yet (12 h)
 
 
 def test_quiet_after_bed_and_late_at_night_and_each_nudge_once_a_day():
@@ -168,3 +168,42 @@ def test_the_service_worker_is_served_under_web_and_the_microphone_waits_for_the
     assert r.status_code == 200 and r.headers["content-type"].startswith("text/javascript") and "showNotification" in r.text
     page = web[0].get("/web/").text
     assert "data-mic hidden" in page and 'aria-label="Speak instead of typing"' in page
+
+
+# ---- the check-in and evening blood pressure nudges (08.11.2026) -----------------------------------
+
+def test_the_check_in_nudge_comes_12_hours_after_waking_until_mood_and_energy_are_in():
+    event("wake", DAY, "07:00")
+    measure("weight", DAY, "07:30", 82.4)
+    nudges.save({**nudges.DEFAULTS, "idle": False, "habits": False})
+    assert due(at("18:55")) == set() and due(at("19:00")) == {"checkin"}
+    with connect() as c, c.cursor() as cur:
+        assert [n["body"] for n in nudges.due(cur, at("19:00"))] == ["Mood and energy: one tap on Today."]
+    measure("mood", DAY, "19:10", 4)
+    with connect() as c, c.cursor() as cur:
+        assert [n["body"] for n in nudges.due(cur, at("19:15"))] == ["Energy still missing: one tap on Today."]
+    measure("energy", DAY, "19:20", 3)
+    assert due(at("19:25")) == set()
+
+
+def test_evening_blood_pressure_is_offered_but_off_until_chosen():
+    event("wake", DAY, "07:00")
+    measure("weight", DAY, "07:30", 82.4)
+    nudges.save({**nudges.DEFAULTS, "idle": False, "habits": False, "checkin": False})
+    assert due(at("20:30")) == set()
+    nudges.save({**nudges.DEFAULTS, "idle": False, "habits": False, "checkin": False, "bp_evening": True})
+    assert due(at("19:55")) == set() and due(at("20:00")) == {"bp-evening"}
+    measure("bp", DAY, "19:50", 128, 82, period="morning")
+    assert due(at("20:05")) == {"bp-evening"}  # a morning value does not count
+    measure("bp", DAY, "20:10", 125, 80, period="evening")
+    assert due(at("20:15")) == set()
+
+
+def test_settings_show_and_save_the_two_new_nudges(web):
+    page = web[0].get("/web/settings?tab=notify").text
+    assert 'name="checkin" value="1" checked' in page and 'name="checkin_after"' in page
+    assert 'name="bp_evening" value="1">' in page and 'name="bp_evening_after"' in page
+    act(web, "/web/settings/nudges", on="1", checkin="1", checkin_after="11", bp_evening="1", bp_evening_after="99",
+        back="/web/settings?tab=notify")
+    v = owner_sql("SELECT value FROM ui_settings WHERE key = 'nudges'")[0]["value"]
+    assert (v["checkin"], v["checkin_after"], v["bp_evening"], v["bp_evening_after"]) == (True, 11.0, True, 15.5)
