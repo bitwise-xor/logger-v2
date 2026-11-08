@@ -10,7 +10,7 @@ from psycopg.types.json import Jsonb
 
 from . import body, commands, cycle, habitspage, healthpage, logbook, webundo
 from .db import connect
-from .todaypage import AREAS, CHECKIN, HEALTH_ROWS, THOUGHT_TYPES
+from .todaypage import AREAS, CHECKIN, HEALTH_ROWS, REVIEW_LIMIT, THOUGHT_TYPES
 from .v1_log import Reject, _words_in
 from .when import BERLIN
 
@@ -452,6 +452,8 @@ def body_skip() -> dict:
 # ---- review ----------------------------------------------------------------------------------------
 
 def review(ref: str, act: str, form) -> dict:
+    if act == "all":
+        return review_all(str(form.get("refs", "")))
     m = re.fullmatch(r"([tfme])(\d+)", ref or "")
     if not m or act not in ("ok", "change", "delete"):
         return _rejected("Unknown item.")
@@ -492,3 +494,26 @@ def review(ref: str, act: str, form) -> dict:
             fields["when"] = f"{row['event_at'].astimezone(BERLIN):%d.%m.%Y} {t}"
     return _change([{"action": "change", "args": {"id": cid, "fields": fields}}], f"review {act}",
                    "Kept. The flag is cleared." if act == "ok" else "Changed. The flag is cleared.")
+
+
+REVIEW_TABLES = {"t": "thoughts", "f": "food_entries", "m": "measurements", "e": "events"}
+
+
+def review_all(raw: str) -> dict:
+    """"All look right" under Today's review box (web 48): clears the flag of exactly the items the page showed (their refs
+    come with the form), the same way each "Looks right" does, in one transaction with one audit row. An item cleared or
+    deleted elsewhere since is left out; Undo is offered when every item is a food entry, a value or an event (as for one)."""
+    refs = list(dict.fromkeys(raw[:REVIEW_LIMIT * 12].split()))
+    if not refs or len(refs) > REVIEW_LIMIT or not all(re.fullmatch(r"[tfme]\d{1,12}", r) for r in refs):
+        return _rejected("Unknown item.")
+    flagged = set()
+    with connect() as c:
+        for k, table in REVIEW_TABLES.items():  # one of four fixed names
+            ids = [int(r[1:]) for r in refs if r[0] == k]
+            if ids:
+                flagged |= {k + str(x["id"]) for x in c.execute(f"SELECT id FROM {table} WHERE id = ANY(%s) AND needs_review", (ids,))}
+    keep = [r for r in refs if r in flagged]
+    if not keep:
+        return {"outcome": "unchanged", "reason": "Nothing there is waiting for review any more."}
+    steps = [{"action": "change", "args": {"id": r[1:] if r[0] == "t" else r, "fields": {"needs_review": False}}} for r in keep]
+    return _change(steps, "review all", f"Kept {len(keep)} item{'' if len(keep) == 1 else 's'}. The flags are cleared.")
