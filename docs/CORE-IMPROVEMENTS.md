@@ -13,7 +13,7 @@ Size: S = about an hour, M = about half a day, L = a day or more. Rough guesses.
 The combined top 10 with the web list is at the top of `docs/IMPROVEMENTS.md`. For the core, in order (S about an hour, M about half a
 day, L a day or more):
 
-1. **30 Safe parallel sessions** (S-M, new): its own test database per worktree, and a deploy guard. On 05.11.2026 three sessions
+1. **30 Safe parallel sessions** (done, deploy 64, 08.11.2026: a test database per worktree, `tools/deploy.sh` guard): its own test database per worktree, and a deploy guard. On 05.11.2026 three sessions
    worked at once and clashed in the shared test database at first.
 2. **16 `answer()` handlers** (S-M): one small handler per question kind; the chain has 10 kinds since the nap answer (05.11.2026).
 3. **13 Remove the pilot tools** (S-M): 9 hidden tools in `mcp_app.py`, plus `service.py` and its tests; dead code that still had to

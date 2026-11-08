@@ -15,8 +15,8 @@ Current tab first. Size: S about an hour, M about half a day, L a day or more.
 
 **Web, top 10 (in order):**
 
-1. **48 "All look right"** (S): one tap clears the whole review box.
-2. **26 Error page in the app's layout** (S): today an error shows a bare page.
+1. **48 "All look right"** (done, deploy 64): one tap clears the whole review box.
+2. **26 Error page in the app's layout** (done, deploy 64): today an error shows a bare page.
 3. **50 More Insights** (M): sleep length and timing against mood, energy and fasting sugar, now that sleep times are reliable.
 4. **58 + 56 T2 Edit the body measures** (M): add, rename and reorder them in Settings > Body, neck and calf included (one change for both).
 5. **49 More nudges** (S-M): "your watch says you're up, log it?", evening blood pressure, a question open for a day.
@@ -28,9 +28,9 @@ Current tab first. Size: S about an hour, M about half a day, L a day or more.
 
 **Combined top 10 with the core list (Claude's recommendation, in order):**
 
-1. Core 30 Safe parallel sessions (S-M)
-2. Web 48 "All look right" (S)
-3. Web 26 Error page (S)
+1. Core 30 Safe parallel sessions (done, deploy 64)
+2. Web 48 "All look right" (done, deploy 64)
+3. Web 26 Error page (done, deploy 64)
 4. Core 31 Check the watch's sleep import (S)
 5. Core 16 One handler per question kind (S-M)
 6. Core 13 Remove the pilot tools (S-M)
@@ -45,7 +45,7 @@ The first six are small and make everything after them safer or quicker; 7 to 9 
 **Parked or dropped:** 42 and 16 lab report upload (owner, 02.11.2026: "not interested at the moment"), 35 swipe (not needed), 41 weight
 trend (dropped), 44 photo on a food entry (disk), 47 home-screen shortcuts (iOS limits), 51 server-side voice (only if Safari's fails),
 20/21 chat usual meal and exchange log (no ask since 29.10.), core 6 shorter prompt (not worth it now).
-**Done since 04.11.:** the Health card's Bed and Woke up log the next sleep 12 h after the wake-up instead of moving the last one (bug, deploy 63, 06.11.), 59 to 62 sleep cycle (deploy 59, 05.11.), 45 export part + core 19 (60), 40 water target (61), gym workouts and
+**Done since 04.11.:** 48 "All look right" and 26 error page in the app's layout (deploy 64, 08.11.), the Health card's Bed and Woke up log the next sleep 12 h after the wake-up instead of moving the last one (bug, deploy 63, 06.11.), 59 to 62 sleep cycle (deploy 59, 05.11.), 45 export part + core 19 (60), 40 water target (61), gym workouts and
 home chores in Search (62); before that: Home page round 2 (53, 57), 52 coaching (51), 29 + core 26 Usage page (50), 53, 54, 55 and the
 Medical name (49), 37 mood and energy (44), 46 one-tap usual meals (43), 56 body measurements T1 (46), the Home page (47, 48).
 
