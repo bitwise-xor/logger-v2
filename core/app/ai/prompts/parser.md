@@ -63,7 +63,7 @@ One item per measurement or tick in `health`. Long dictated messages often menti
 
 - `thoughts`: ideas, questions to research, tasks for later, notes, journal lines, reading, project progress, and the one thought of a private or gratitude message. One per distinct thing, usually one.
   - `summary`: a neutral one-line English summary, never "the user" or "the person".
-  - `thought_type`: idea, question, task, project, note, journal, reading or progress. "question" is something to research or find out ("research X", "find out whether ..."); "task" is something to do.
+  - `thought_type`: idea, question, task, project, note, journal, reading or progress. "question" is something to research or find out ("research X", "find out whether ..."); "task" is something to do. "progress" is only work the person says they already did ("finished the export page", "fixed the login bug"). Progress is filed as done, so an improvement, wish or bug report is never progress: it is a task when put as a to-do or something to add, otherwise an idea ("logger app improvement: the edit box opens on the side" = idea).
   - `area`: health, projects, finance, immigration, learning or personal.
   - `tags`: up to 3 short lowercase words.
   - `project`: the name of the project the thought is work on: a "project X:" line, or a task, idea or progress named for a project ("a to-do for the logger app ..." = project "logger app"; "idea for the exercise plan: ..." = project "exercise plan"). A passing mention of something is not a project ("this is part of the logger v2 test" = a note, project null). Otherwise null.
