@@ -29,7 +29,7 @@ day, L a day or more):
 **Not worth it now:** 6 shorter prompt. **Open owner decisions:** GitHub's test run as the check before a deploy; whether the repo stays
 public; the mini PC move; ending the v1 fallback.
 **Done:** 1, most of 2 (01.11.), 4, 5 (02.11., deploy 42), 7, 8, 9 (deploy 45), 10, 11, 14, 15 (GitHub runs every push), 18 (web push),
-19 export (deploy 60, 05.11.), 21, 22, 23, 26 (deploy 50), 27 and 28 step 1 (02.11.), 29 (resolved 04.11.).
+19 export (deploy 60, 05.11.), 21, 22, 23, 26 (deploy 50), 27 and 28 step 1 (02.11.), 29 (resolved 04.11.). Parser bug fix (deploy 68, 11.11.): an improvement, wish or bug report is never "progress", which is filed as done (idea #68 was hidden that way); it is a task or an idea. Golden run r19: 188 of 225 (r17: 180).
 
 ## Status (01.11.2026)
 
