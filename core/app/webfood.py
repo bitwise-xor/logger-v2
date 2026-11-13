@@ -142,9 +142,10 @@ def again(form, key: Optional[str]) -> dict:
     return logbook.log(text, key, _pred(food=[item]), channel=logbook.WEB)
 
 
-def water(form, key: Optional[str]) -> dict:
+def water(form, key: Optional[str], ml: Optional[int] = None) -> dict:
     """The water bar's button on Today (05.11.2026, item 40): a glass of water logged as a drink, like an Again chip.
-    The first tap adds "Water" to the catalogue (0 kcal, per 100 ml, a drink); an entry from here is always a drink."""
+    The first tap adds "Water" to the catalogue (0 kcal, per 100 ml, a drink); an entry from here is always a drink.
+    ml: another amount than the glass (the hub's add_water, hubtools.py); the button sends none."""
     with connect() as conn, conn.cursor() as cur:
         f = cur.execute("SELECT id, active, basis FROM foods WHERE lower(name) = 'water'").fetchone()
         if f and not f["active"]:
@@ -157,7 +158,7 @@ def water(form, key: Optional[str]) -> dict:
                                VALUES ('Water', 'ml', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 'database', 'plain water, added by the water bar',
                                        true, 'user') RETURNING id""").fetchone()
             logbook._audit(cur, "web_change", "changed", {"what": "water added to the catalogue", "ids": [f["id"]]}, logbook.WEB)
-    ml = todaypage.WATER_GLASS
+    ml = ml or todaypage.WATER_GLASS
     item = {"food": f"N{f['id']}", "food_en": "Water", "amount": ml, "unit": "ml", "grams_per_unit": None,
             "cooked": False, "drink": True, "when": None, "note": None}
     # button: two glasses within 30 minutes are meant, not a repeat to ask about (a double tap is stopped by the key)

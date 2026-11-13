@@ -25,3 +25,7 @@ APP_HOST = os.environ.get("APP_HOST", "app.19hospitalroad.fyi").lower()
 
 # The pilot's typed tools (record_weight ...) are hidden unless PILOT_TOOLS=1; v2 chats use log and answer.
 PILOT_TOOLS = os.environ.get("PILOT_TOOLS", "0") == "1"
+
+# The hub (the home dashboard) calls the MCP endpoint from the server with this token instead of the owner's sign-in
+# (auth.hub_access, 13.11.2026). The owner types it into .env; unset or shorter than 32 characters, no such token is accepted.
+HUB_TOKEN = os.environ.get("HUB_TOKEN", "").strip()

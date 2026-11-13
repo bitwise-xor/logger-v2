@@ -3,7 +3,9 @@ import functools
 import logging
 from typing import Any, Optional
 
+from mcp.server.auth.middleware.auth_context import get_access_token
 from mcp.server.mcpserver import MCPServer
+from mcp.server.mcpserver.exceptions import ToolError
 from mcp.server.transport_security import TransportSecuritySettings
 from starlette.concurrency import run_in_threadpool
 from starlette.requests import Request
@@ -12,18 +14,31 @@ from starlette.responses import JSONResponse
 from . import logbook, service
 from mcp.server.auth.settings import AuthSettings, ClientRegistrationOptions
 
-from . import auth, watch, web
+from . import auth, hubtools, watch, web
 from .config import EXTRA_ALLOWED_HOSTS, MCP_PATH, PILOT_TOOLS, PUBLIC_URL
 from .db import connect
 
 _LOG = logging.getLogger("logger.tools")  # not `log`: that is the name of the log tool below
 provider = auth.OwnerProvider(PUBLIC_URL)
+# The only tools the hub's service token may call (auth.hub_access). Every other tool refuses it, so a leaked hub token cannot
+# reach `log` (its look-ups can return private lines), the catalogue or the pilot tools. A new tool is closed to it until named here.
+HUB_TOOLS = {"today_summary", "tick_habit", "untick_habit", "add_water", "set_checkin"}
+
+
+def _not_for_hub(name: str) -> None:
+    """Refuse the call when the request came with the hub's token and the tool is not one of the hub's: before the tool does
+    anything (no AI call, no audit row, no write). The owner's sign-in tokens (Claude) pass, as does a call from inside the app."""
+    token = get_access_token()  # the SDK's: the access token of the request being handled, None outside one
+    if token is not None and token.client_id == auth.HUB_CLIENT and name not in HUB_TOOLS:
+        _LOG.warning("tool %s refused: called with the hub's token", name)
+        raise ToolError(f"{name} is not available to the hub: its token may call only {', '.join(sorted(HUB_TOOLS))}.")
 
 
 def _logged(fn):
     """A tool that fails leaves one line on the container's log: the tool and the kind of error, never what the user said."""
     @functools.wraps(fn)
     def inner(*args, **kwargs):
+        _not_for_hub(fn.__name__)
         try:
             return fn(*args, **kwargs)
         except Exception as e:  # noqa: BLE001 - logged, then raised as before
@@ -46,8 +61,12 @@ mcp = MCPServer(
 
 
 def _pilot(f):
-    """Register a pilot tool only when PILOT_TOOLS=1 (config.py)."""
-    return mcp.tool()(f) if PILOT_TOOLS else f
+    """Register a pilot tool only when PILOT_TOOLS=1 (config.py). Never for the hub's token (_not_for_hub)."""
+    @functools.wraps(f)
+    def inner(*args, **kwargs):
+        _not_for_hub(f.__name__)
+        return f(*args, **kwargs)
+    return mcp.tool()(inner) if PILOT_TOOLS else f
 
 @mcp.tool()
 @_logged
@@ -107,6 +126,48 @@ def lab_report(text: str, corrections: Optional[str] = None, source: str = "imag
 def answer(question_id: str, reply: str) -> dict[str, Any]:
     """Answer a question from `log` with the user's reply: a food name or N number, an amount, yes, or skip."""
     return logbook.answer(question_id, reply)
+
+
+# ---- the hub's tools (13.11.2026, hubtools.py): the home dashboard calls them with its service token (auth.hub_access) ----
+
+@mcp.tool()
+@_logged
+def today_summary() -> dict[str, Any]:
+    """A read-only summary of today for a dashboard: food and water against the targets, the habits with their last 7 days,
+    health values, and what waits (items to review, open questions, chores), each with a link into the web app.
+    Numbers and names only, never the user's notes. Not for answering the user in a chat: use log for look-ups."""
+    return hubtools.today_summary()
+
+
+@mcp.tool()
+@_logged
+def tick_habit(name: str, idempotency_key: Optional[str] = None) -> dict[str, Any]:
+    """Dashboard button: tick a habit once for today, as a tap on the web app's Today page. name: the habit's name from
+    today_summary. idempotency_key: a new unique string per tap, the same on a retry."""
+    return hubtools.tick_habit(name, idempotency_key)
+
+
+@mcp.tool()
+@_logged
+def untick_habit(name: str) -> dict[str, Any]:
+    """Dashboard button: take today's last tick of a habit off again. name: the habit's name from today_summary."""
+    return hubtools.untick_habit(name)
+
+
+@mcp.tool()
+@_logged
+def add_water(ml: int = 250, idempotency_key: Optional[str] = None) -> dict[str, Any]:
+    """Dashboard button: log water drunk now, 50 to 2000 ml (a glass is 250), as the Today page's water button.
+    idempotency_key as for tick_habit."""
+    return hubtools.add_water(ml, idempotency_key)
+
+
+@mcp.tool()
+@_logged
+def set_checkin(mood: Optional[int] = None, energy: Optional[int] = None, idempotency_key: Optional[str] = None) -> dict[str, Any]:
+    """Dashboard button: today's check-in, mood and energy from 1 (low) to 5 (high), one or both.
+    idempotency_key as for tick_habit."""
+    return hubtools.set_checkin(mood, energy, idempotency_key)
 
 
 @_pilot

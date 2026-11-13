@@ -14,7 +14,7 @@ from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, RedirectResponse, Response
 
-from .config import ALLOWED_REDIRECTS
+from .config import ALLOWED_REDIRECTS, HUB_TOKEN
 from .db import connect
 
 SCOPE = "log"
@@ -26,6 +26,8 @@ MAX_CLIENTS = 50
 MAX_FAILURES = 5
 FAILURE_WINDOW_MIN = 15
 SCRYPT_N = 2 ** 15  # the cost of a new password hash; the tests lower it (conftest.py), a stored hash keeps its own
+HUB_CLIENT = "hub"
+HUB_TOKEN_MIN = 32
 
 
 def _now() -> datetime:
@@ -75,6 +77,18 @@ def check_totp(secret: str, code: str, last_step: int, now: float | None = None)
         if hmac.compare_digest(_totp(secret, step), code) and step > last_step:
             found = step
     return found
+
+
+def hub_access(token: str):
+    """The hub's service token (config.HUB_TOKEN, 13.11.2026): the connector's scope, but as the client "hub", which may call
+    only the hub's tools (mcp_app._not_for_hub). No row in oauth_tokens and no end (the SDK takes expires_at None as "does not
+    expire"; the resource is not checked, validate_token_resource is off in mcp_app.py). Compared on SHA-256 digests, in
+    constant time. None when it is not set, too short, or another token."""
+    if len(HUB_TOKEN) < HUB_TOKEN_MIN:
+        return None
+    if not hmac.compare_digest(hashlib.sha256(token.encode()).digest(), hashlib.sha256(HUB_TOKEN.encode()).digest()):
+        return None
+    return AccessToken(token=token, client_id=HUB_CLIENT, scopes=[SCOPE])
 
 
 # ---- the OAuth provider --------------------------------------------------------------------------
@@ -143,6 +157,9 @@ class OwnerProvider:
             return self._issue(c, client.client_id, scopes, refresh_token.resource)
 
     async def load_access_token(self, token: str):
+        hub = hub_access(token)
+        if hub:
+            return hub
         with connect() as c:
             row = c.execute("SELECT * FROM oauth_tokens WHERE token_hash=%s AND kind='access' AND expires_at > now()", (_h(token),)).fetchone()
         if not row:
