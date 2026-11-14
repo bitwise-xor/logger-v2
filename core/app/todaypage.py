@@ -5,7 +5,7 @@ import re
 from datetime import date, datetime, timedelta
 from typing import Optional
 
-from . import body, bodypage, coachpage, cycle, gympage, habitaim, healthpage, homepage, rules, uiprefs
+from . import body, bodypage, coachpage, cycle, gratitudepage, gympage, habitaim, healthpage, homepage, rules, uiprefs
 from .db import connect
 from .webentry import esc, hidden, icon, key
 
@@ -698,6 +698,12 @@ def _home_card(d: dict) -> str:
     return "" if d["past"] or not uiprefs.shown("card", "home", d["prefs"]) else homepage.today_card()
 
 
+def _gratitude_card(d: dict, csrf: str) -> str:
+    """The Gratitude card (14.11.2026): right after the check-in; today only; hidden in Settings > Today page ("card:gratitude").
+    It shows the count and the dots, never the words of a saved line."""
+    return "" if d["past"] or not uiprefs.shown("card", "gratitude", d["prefs"]) else gratitudepage.card(csrf)
+
+
 def _coach_card(d: dict, csrf: str) -> str:
     """The Coach card (web item 52, 04.11.2026) for the day shown, earlier days too; hidden in Settings > Today page ("card:coach")."""
     return coachpage.today_card(d["day"], csrf) if uiprefs.shown("card", "coach", d["prefs"]) else ""
@@ -709,7 +715,7 @@ def render(csrf: str, asked: date | None = None) -> str:
             'Click a food to change it on the Food page.</p>' if d["past"] else "")
     review = "" if d["past"] else _review_section(d, csrf)
     return (f'{_daybar(d["day"], d["today"])}{note}<div class="grid"><section>{_food_section(d, csrf)}</section>'
-            f'<aside>{_checkin_section(d, csrf)}{_habit_section(d, csrf)}{_home_card(d)}{"" if d["past"] else gympage.today_card()}{_health_section(d, csrf)}{_coach_card(d, csrf)}{review}'
+            f'<aside>{_checkin_section(d, csrf)}{_gratitude_card(d, csrf)}{_habit_section(d, csrf)}{_home_card(d)}{"" if d["past"] else gympage.today_card()}{_health_section(d, csrf)}{_coach_card(d, csrf)}{review}'
             '<p class="small"><a href="/web/settings?tab=today">Customize this page</a></p></aside></div>')
 
 

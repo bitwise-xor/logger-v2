@@ -16,7 +16,7 @@ from starlette.concurrency import run_in_threadpool
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response
 
-from . import (activitypage, auth, export, foodpage, gym, gympage, habitspage, healthpage, home as home_actions, homepage, coach, coachpage, ideaspage, insightspage, labelread, labspage, logbook, privatepage, recentpage, searchpage, settingspage, todaypage,
+from . import (activitypage, auth, export, foodpage, gratitude, gratitudepage, gym, gympage, habitspage, healthpage, home as home_actions, homepage, coach, coachpage, ideaspage, insightspage, labelread, labspage, logbook, privatepage, recentpage, searchpage, settingspage, todaypage,
                trendspage, usagepage, webactions, weekpage, webentry, webfood, webheld, webideas, weblabs, webprivate, webhabits, websettings,
                webquestions, webpush, webundo)
 from .ai.provider import ProviderError
@@ -35,13 +35,16 @@ _HEADERS = {"Cache-Control": "no-store", "X-Frame-Options": "DENY", "Referrer-Po
             "Content-Security-Policy": "default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self'; "
                                        "form-action 'self'; frame-ancestors 'none'; base-uri 'none'; manifest-src 'self'"}
 # Where a form on the entry box or the reply may send the browser back to: any signed-in page of the app, with its query.
-BACK_ANY = re.compile(r"/web(/(questions|food(/catalogue|/usual|/trends)?|ideas(/todoist)?|health|habits|gym(/exercises|/plan|/progress|/activity|/history)?|home(/zones|/history|/edit|/pick|/chore)?|coach|week|search|private|usage|labs(/tests|/meds)?|settings|recent|insights))?/?"
+BACK_ANY = re.compile(r"/web(/(questions|food(/catalogue|/usual|/trends)?|ideas(/todoist)?|health|habits|gym(/exercises|/plan|/progress|/activity|/history)?|home(/zones|/history|/edit|/pick|/chore)?|coach|week|search|private|gratitude|usage|labs(/tests|/meds)?|settings|recent|insights))?/?"
                       r"(\?[A-Za-z0-9=&._%+-]*)?")
 _STATIC_DIR = pathlib.Path(__file__).resolve().parent / "static"
 _STATIC = {"app.css": "text/css; charset=utf-8", "app.js": "text/javascript; charset=utf-8", "theme.js": "text/javascript; charset=utf-8",
            "inter.woff2": "font/woff2", "zxing.min.js": "text/javascript; charset=utf-8",  # zxing: the barcode reader, loaded only when scanning
-           "manifest.webmanifest": "application/manifest+json", "icon.svg": "image/svg+xml", "icon-192.png": "image/png",
+           "manifest.webmanifest": "application/manifest+json", "gratitude.webmanifest": "application/manifest+json", "icon.svg": "image/svg+xml", "icon-192.png": "image/png",
            "icon-512.png": "image/png", "apple-touch-icon.png": "image/png"}
+# Where sign-in may send the browser after it (?next=): a page of this app by its path only: /web/, then lowercase letters, digits,
+# "-" and "_" in parts split by single "/"; no "//", "..", scheme, backslash, query or encoded character (14.11.2026)
+NEXT = re.compile(r"/web/[a-z0-9_-]+(/[a-z0-9_-]+)*")
 _STATIC_V = hashlib.sha256(b"".join((_STATIC_DIR / n).read_bytes() for n in sorted(_STATIC))).hexdigest()[:10]
 
 
@@ -97,30 +100,46 @@ def _pop_flash(session):
     return row["flash"] if row else None
 
 
-def page(title: str, body: str, status: int = 200, cls: str = "") -> HTMLResponse:
+def page(title: str, body: str, status: int = 200, cls: str = "", app: str = "Logger", manifest: str = "manifest.webmanifest") -> HTMLResponse:
+    """app, manifest: the name and the manifest "Add to Home Screen" uses (the Gratitude page has its own, 14.11.2026)."""
     doc = ('<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">'
-           '<meta name="theme-color" content="#2f6f4f"><link rel="manifest" href="/web/static/manifest.webmanifest">'
+           f'<meta name="theme-color" content="#2f6f4f"><link rel="manifest" href="/web/static/{manifest}">'
            '<link rel="icon" href="/web/static/icon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="/web/static/apple-touch-icon.png">'
            '<meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes">'
-           '<meta name="apple-mobile-web-app-title" content="Logger"><meta name="apple-mobile-web-app-status-bar-style" content="default">'
+           f'<meta name="apple-mobile-web-app-title" content="{html.escape(app)}"><meta name="apple-mobile-web-app-status-bar-style" content="default">'
            f'<title>{html.escape(title)}</title><script src="/web/static/theme.js?v={_STATIC_V}"></script>'  # light or dark before the first paint
            f'<link rel="stylesheet" href="/web/static/app.css?v={_STATIC_V}">'
            f'<script src="/web/static/app.js?v={_STATIC_V}" defer></script></head><body class="{cls}">{body}</body></html>')
     return HTMLResponse(doc, status_code=status, headers=_HEADERS)
 
 
-def _login_page(msg: str = "", status: int = 200) -> HTMLResponse:
+def safe_next(value) -> str:
+    """The page to open after sign-in: a strict path of this app (NEXT), else ""."""
+    v = str(value or "")
+    return v if len(v) <= 100 and NEXT.fullmatch(v) else ""
+
+
+def to_login(request: Request) -> RedirectResponse:
+    """A signed-out GET of a page: to the sign-in, which then opens this page again (its path only, if it is a plain one)."""
+    nxt = safe_next(request.url.path)
+    return RedirectResponse("/web/login" + (f"?next={nxt}" if nxt else ""), status_code=302, headers={"Cache-Control": "no-store"})
+
+
+def _login_page(msg: str = "", status: int = 200, nxt: str = "") -> HTMLResponse:
     box = f'<p class="err">{html.escape(msg)}</p>' if msg else ""
+    keep = f'<input type="hidden" name="next" value="{html.escape(nxt)}">' if safe_next(nxt) else ""
     return page("Logger sign-in", f"""<main class="login"><h1>Logger sign-in</h1>{box}
-<form method="post" action="/web/login">
+<form method="post" action="/web/login">{keep}
 <label>Password<input type="password" name="password" autocomplete="current-password" required autofocus></label>
 <label>Authenticator code<input name="code" inputmode="numeric" autocomplete="one-time-code" required></label>
 <button class="primary" type="submit">Sign in</button></form></main>""", status)
 
 
-def shell(session, body: str, status: int = 200, active: str = "") -> HTMLResponse:
+def shell(session, body: str, status: int = 200, active: str = "", entry: bool = True, title: str = "", app: str = "Logger",
+          manifest: str = "manifest.webmanifest") -> HTMLResponse:
     """A signed-in page: the top bar (the number of open questions on the Today link), the entry box, the last reply, then the body.
-    Since 04.11.2026 (web item 55) there is no Questions page: every open question is on Today."""
+    Since 04.11.2026 (web item 55) there is no Questions page: every open question is on Today.
+    entry=False: no general entry box (the Gratitude page has one text box only); title, app, manifest: see page()."""
     open_q = webquestions.count()
     links = [("today", "/web/", "Today"), ("food", "/web/food", "Food"), ("ideas", "/web/ideas", "Ideas"), ("health", "/web/health", "Health"),
              ("habits", "/web/habits", "Habits"), ("gym", "/web/gym", "Gym"), ("home", "/web/home", "Home"), ("week", "/web/week", "Week"),
@@ -155,11 +174,12 @@ def shell(session, body: str, status: int = 200, active: str = "") -> HTMLRespon
     flash = _pop_flash(session)
     reply = webentry.reply_html(flash, csrf) if flash else ""
     undo = webentry.undo_bar(session.get("undo"), csrf)
-    title = next((label for k, _href, label in links if k == active), "")
+    title = title or next((label for k, _href, label in links if k == active), "")
+    box = webentry.entry_form(csrf, (flash or {}).get("retry_text", "")) if entry else ""
     resp = page(f"{title} · Logger" if title else "Logger",
-                f'<a class="skip" href="#main">Skip to content</a>{bar}<main id="main">'
-                f'{webentry.entry_form(csrf, (flash or {}).get("retry_text", ""))}{reply}{undo}{body}</main>'
-                f'<nav class="tabs" aria-label="Main menu">{tabs}</nav>', status)
+                f'<a class="skip" href="#main">Skip to content</a>{bar}<main id="main"{"" if entry else " class=noentry"}>'
+                f'{box}{reply}{undo}{body}</main>'
+                f'<nav class="tabs" aria-label="Main menu">{tabs}</nav>', status, app=app, manifest=manifest)
     _renew(session, resp)
     return resp
 
@@ -269,7 +289,7 @@ def add_routes(mcp) -> None:
             return r
         session = current_session(request)
         if not session:
-            return RedirectResponse("/web/login", status_code=302, headers={"Cache-Control": "no-store"})
+            return to_login(request)
         return home(session, request.query_params.get("day"))
 
     @mcp.custom_route("/web/questions", methods=["GET"])
@@ -278,7 +298,7 @@ def add_routes(mcp) -> None:
             return r
         session = current_session(request)
         if not session:
-            return RedirectResponse("/web/login", status_code=302, headers={"Cache-Control": "no-store"})
+            return to_login(request)
         return RedirectResponse("/web/", status_code=302, headers={"Cache-Control": "no-store"})  # the questions are on Today since 04.11.2026
 
     @mcp.custom_route("/web/food", methods=["GET"])
@@ -287,7 +307,7 @@ def add_routes(mcp) -> None:
             return r
         session = current_session(request)
         if not session:
-            return RedirectResponse("/web/login", status_code=302, headers={"Cache-Control": "no-store"})
+            return to_login(request)
         return shell(session, foodpage.render_log(session["csrf"], request.query_params), active="food")
 
     @mcp.custom_route("/web/food/catalogue", methods=["GET"])
@@ -296,7 +316,7 @@ def add_routes(mcp) -> None:
             return r
         session = current_session(request)
         if not session:
-            return RedirectResponse("/web/login", status_code=302, headers={"Cache-Control": "no-store"})
+            return to_login(request)
         return shell(session, foodpage.render_catalogue(session["csrf"], request.query_params), active="food")
 
     @mcp.custom_route("/web/food/usual", methods=["GET"])
@@ -305,7 +325,7 @@ def add_routes(mcp) -> None:
             return r
         session = current_session(request)
         if not session:
-            return RedirectResponse("/web/login", status_code=302, headers={"Cache-Control": "no-store"})
+            return to_login(request)
         return shell(session, foodpage.render_usual(session["csrf"], request.query_params), active="food")
 
     @mcp.custom_route("/web/search", methods=["GET"])
@@ -314,7 +334,7 @@ def add_routes(mcp) -> None:
             return r
         session = current_session(request)
         if not session:
-            return RedirectResponse("/web/login", status_code=302, headers={"Cache-Control": "no-store"})
+            return to_login(request)
         return shell(session, searchpage.render(session["csrf"], request.query_params), active="search")
 
     @mcp.custom_route("/web/food/trends", methods=["GET"])
@@ -323,7 +343,7 @@ def add_routes(mcp) -> None:
             return r
         session = current_session(request)
         if not session:
-            return RedirectResponse("/web/login", status_code=302, headers={"Cache-Control": "no-store"})
+            return to_login(request)
         return shell(session, foodpage._tabs("trends") + trendspage.render(session["csrf"], request.query_params), active="food")
 
     @mcp.custom_route("/web/week", methods=["GET"])
@@ -332,7 +352,7 @@ def add_routes(mcp) -> None:
             return r
         session = current_session(request)
         if not session:
-            return RedirectResponse("/web/login", status_code=302, headers={"Cache-Control": "no-store"})
+            return to_login(request)
         return shell(session, weekpage.render(session["csrf"], request.query_params), active="week")
 
     @mcp.custom_route("/web/ideas", methods=["GET"])
@@ -341,7 +361,7 @@ def add_routes(mcp) -> None:
             return r
         session = current_session(request)
         if not session:
-            return RedirectResponse("/web/login", status_code=302, headers={"Cache-Control": "no-store"})
+            return to_login(request)
         return shell(session, ideaspage.render_thoughts(session["csrf"], request.query_params), active="ideas")
 
     @mcp.custom_route("/web/ideas/todoist", methods=["GET"])
@@ -350,7 +370,7 @@ def add_routes(mcp) -> None:
             return r
         session = current_session(request)
         if not session:
-            return RedirectResponse("/web/login", status_code=302, headers={"Cache-Control": "no-store"})
+            return to_login(request)
         body = await run_in_threadpool(lambda: ideaspage.render_todoist(session["csrf"], request.query_params))
         return shell(session, body, active="ideas")
 
@@ -360,7 +380,7 @@ def add_routes(mcp) -> None:
             return r
         session = current_session(request)
         if not session:
-            return RedirectResponse("/web/login", status_code=302, headers={"Cache-Control": "no-store"})
+            return to_login(request)
         return shell(session, privatepage.render(session["csrf"], request.query_params), active="private")
 
     @mcp.custom_route("/web/usage", methods=["GET"])
@@ -369,7 +389,7 @@ def add_routes(mcp) -> None:
             return r
         session = current_session(request)
         if not session:
-            return RedirectResponse("/web/login", status_code=302, headers={"Cache-Control": "no-store"})
+            return to_login(request)
         return shell(session, usagepage.render(request.query_params.get("r", "7")), active="usage")
 
     def labs_tab(render):
@@ -379,7 +399,7 @@ def add_routes(mcp) -> None:
                 return r
             session = current_session(request)
             if not session:
-                return RedirectResponse("/web/login", status_code=302, headers={"Cache-Control": "no-store"})
+                return to_login(request)
             return shell(session, render(session["csrf"], request.query_params), active="labs")
         return handler
 
@@ -393,7 +413,7 @@ def add_routes(mcp) -> None:
             return r
         session = current_session(request)
         if not session:
-            return RedirectResponse("/web/login", status_code=302, headers={"Cache-Control": "no-store"})
+            return to_login(request)
         r = request.query_params.get("r", "")
         days = int(r) if r in {str(x) for x in healthpage.RANGES} else healthpage.DEFAULT_RANGE
         return shell(session, healthpage.render(session["csrf"], days, request.query_params.get("all") == "1", request.query_params), active="health")
@@ -402,9 +422,10 @@ def add_routes(mcp) -> None:
     async def login_form(request: Request) -> Response:
         if (r := hidden(request)) is not None:
             return r
+        nxt = safe_next(request.query_params.get("next"))
         if current_session(request):
-            return RedirectResponse("/web/", status_code=302, headers={"Cache-Control": "no-store"})
-        return _login_page()
+            return RedirectResponse(nxt or "/web/", status_code=302, headers={"Cache-Control": "no-store"})
+        return _login_page(nxt=nxt)
 
     @mcp.custom_route("/web/login", methods=["POST"])
     async def login_submit(request: Request) -> Response:
@@ -414,6 +435,7 @@ def add_routes(mcp) -> None:
             return error_page(None, 403)
         form = await request.form()
         password, code = str(form.get("password", "")), str(form.get("code", ""))
+        nxt = safe_next(form.get("next"))
         device_token = request.cookies.get(DEVICE_COOKIE)
         with connect() as c:
             c.execute("DELETE FROM web_sessions WHERE expires_at < now()")
@@ -425,13 +447,13 @@ def add_routes(mcp) -> None:
             fails = c.execute("""SELECT count(*) AS n FROM login_failures WHERE device_hash IS NOT DISTINCT FROM %s
                                  AND at > now() - make_interval(mins => %s)""", (pool, auth.FAILURE_WINDOW_MIN)).fetchone()["n"]
             if fails >= auth.MAX_FAILURES:
-                return _login_page(f"Too many failed attempts. Try again in {auth.FAILURE_WINDOW_MIN} minutes.", 429)
+                return _login_page(f"Too many failed attempts. Try again in {auth.FAILURE_WINDOW_MIN} minutes.", 429, nxt)
             owner = c.execute("SELECT * FROM owner_credentials WHERE id=1").fetchone()
             ok_pw = auth.check_password(password, owner["password_hash"] if owner else "x$0$0$0$00$00")
             step = auth.check_totp(owner["totp_secret"], code, owner["last_totp_step"]) if owner else None
             if not (owner and ok_pw and step):
                 c.execute("INSERT INTO login_failures (device_hash) VALUES (%s)", (pool,))
-                return _login_page("Wrong password or code.", 401)
+                return _login_page("Wrong password or code.", 401, nxt)
             c.execute("UPDATE owner_credentials SET last_totp_step=%s WHERE id=1", (step,))
             c.execute("DELETE FROM login_failures WHERE device_hash IS NOT DISTINCT FROM %s", (pool,))
             device_token = device_token if known else secrets.token_urlsafe(32)
@@ -441,7 +463,7 @@ def add_routes(mcp) -> None:
             c.execute("INSERT INTO web_sessions (token_hash, csrf, expires_at, user_agent, device_hash) VALUES (%s,%s,%s,%s,%s)",
                       (_h(token), csrf, datetime.now(timezone.utc) + timedelta(days=SESSION_DAYS),
                        request.headers.get("user-agent", "")[:300], _h(device_token)))
-        resp = RedirectResponse("/web/", status_code=303, headers={"Cache-Control": "no-store"})
+        resp = RedirectResponse(nxt or "/web/", status_code=303, headers={"Cache-Control": "no-store"})
         resp.set_cookie(COOKIE, token, max_age=SESSION_DAYS * 86400, path="/", secure=True, httponly=True, samesite="strict")
         resp.set_cookie(DEVICE_COOKIE, device_token, max_age=DEVICE_DAYS * 86400, path="/", secure=True, httponly=True, samesite="strict")
         return resp
@@ -520,7 +542,7 @@ def add_routes(mcp) -> None:
             return r
         session = current_session(request)
         if not session:
-            return RedirectResponse("/web/login", status_code=302, headers={"Cache-Control": "no-store"})
+            return to_login(request)
         csrf = session["csrf"]
         return shell(session, recentpage.render(csrf, webheld.section(csrf, "/web/recent")), active="recent")
 
@@ -543,7 +565,7 @@ def add_routes(mcp) -> None:
                 return r
             session = current_session(request)
             if not session:
-                return RedirectResponse("/web/login", status_code=302, headers={"Cache-Control": "no-store"})
+                return to_login(request)
             return shell(session, render(session["csrf"], request.query_params), active=active)
         return handler
 
@@ -624,7 +646,7 @@ def add_routes(mcp) -> None:
             return r
         session = current_session(request)
         if not session:
-            return RedirectResponse("/web/login", status_code=302, headers={"Cache-Control": "no-store"})
+            return to_login(request)
         return shell(session, insightspage.render(session["csrf"]), active="insights")
 
     @mcp.custom_route("/web/foods/barcode.json", methods=["GET"])
@@ -752,7 +774,7 @@ def add_routes(mcp) -> None:
             return r
         session = current_session(request)
         if not session:
-            return RedirectResponse("/web/login", status_code=302, headers={"Cache-Control": "no-store"})
+            return to_login(request)
         return shell(session, habitspage.render(session["csrf"], request.query_params), active="habits")
 
     def habits_form(fn):
@@ -858,6 +880,95 @@ def add_routes(mcp) -> None:
     for _name, _fn in webprivate.ACTIONS.items():
         mcp.custom_route(f"/web/private/{_name}", methods=["POST"])(private_form(_fn))
 
+    # ---- the gratitude list (step B, 14.11.2026): gratitudepage.py, gratitude.py. The words of a line travel only in a POST
+    # body, into private.entries, and back in lines.json to the signed-in owner who pressed Show; never in a URL, a log line,
+    # the audit log, a flash or another table.
+    @mcp.custom_route("/web/gratitude", methods=["GET"])
+    async def gratitude_page(request: Request) -> Response:
+        if (r := hidden(request)) is not None:
+            return r
+        session = current_session(request)
+        if not session:
+            return to_login(request)
+        return shell(session, gratitudepage.render(session["csrf"]), entry=False, title="Gratitude", app="Gratitude",
+                     manifest="gratitude.webmanifest")
+
+    def grat_back(form) -> str:
+        b = str(form.get("back", ""))
+        return b if b in ("/web/", "/web/gratitude") else "/web/gratitude"
+
+    async def grat_json(request: Request, work, max_fields: int = 6) -> Response:
+        """A fetch from app.js (data-grat): signed in, same origin, the CSRF token in the X-CSRF header; a JSON answer."""
+        session = current_session(request)
+        if not session or not _origin_ok(request) or not hmac.compare_digest(request.headers.get("x-csrf", ""), session["csrf"]):
+            return JSONResponse({"ok": False, "message": "Not saved: open the page again (signed out or out of date)."}, status_code=403,
+                                headers={"Cache-Control": "no-store"})
+        try:
+            form = await request.form(max_files=0, max_fields=max_fields)
+        except Exception:  # noqa: BLE001 - an unreadable body
+            return JSONResponse({"ok": False, "message": "Not saved, try again."}, status_code=400, headers={"Cache-Control": "no-store"})
+        try:
+            out = await run_in_threadpool(lambda: work(form))
+        except Exception as e:  # noqa: BLE001 - the kind only, never the words
+            log.error("a gratitude action failed: %s", type(e).__name__)
+            out = {"ok": False, "message": "Not saved, try again."}
+        return JSONResponse(out, headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"})
+
+    def grat_save(form) -> dict:
+        out = gratitude.save(str(form.get("text", ""))[:webentry.MAX_TEXT], form_key(form))
+        if out["ok"]:  # ids, time, count, goal and the key for the next line; never the words
+            return {"ok": True, "ids": out["ids"], "at": out["at"], "count": out["count"], "goal": out["goal"], "key": webentry.key()}
+        return {"ok": False, "message": out["message"], **({"key": webentry.key()} if out.get("key_used") else {})}
+
+    @mcp.custom_route("/web/gratitude/line", methods=["POST"])
+    async def gratitude_line(request: Request) -> Response:
+        """Save a line: app.js's fetch (X-CSRF header, JSON answer), or the plain form without script (flash, back to the page)."""
+        if (r := hidden(request)) is not None:
+            return r
+        if "x-csrf" in request.headers:
+            return await grat_json(request, grat_save)
+        session = current_session(request)
+        if not session:
+            return RedirectResponse("/web/login", status_code=303, headers={"Cache-Control": "no-store"})
+        form = await request.form()
+        if not _origin_ok(request):
+            return error_page(None, 403)
+        back = grat_back(form)
+        if not csrf_ok(session, form):  # unlike post_form: the words are not kept in the flash
+            _set_flash(session, {"outcome": "rejected", "head": "Nothing saved.", "reason": "That page was out of date. It is fresh now: please type it again."})
+            return RedirectResponse(back, status_code=303, headers={"Cache-Control": "no-store"})
+        try:
+            out = await run_in_threadpool(lambda: gratitude.save(str(form.get("text", ""))[:webentry.MAX_TEXT], form_key(form)))
+        except Exception as e:  # noqa: BLE001 - the kind only
+            log.error("a gratitude save failed: %s", type(e).__name__)
+            out = {"ok": False, "message": "Not saved, try again."}
+        if not out["ok"]:
+            return done(session, {"outcome": "rejected", "head": "Nothing saved.", "reason": out["message"]}, back)
+        return done(session, {"outcome": "saved", "head": f"Saved privately. {out['count']} of {out['goal']} today."}, back)
+
+    @mcp.custom_route("/web/gratitude/edit", methods=["POST"])
+    async def gratitude_edit(request: Request) -> Response:
+        """Change the words of one of today's lines (app.js only: Edit exists only where the script runs)."""
+        if (r := hidden(request)) is not None:
+            return r
+        if "x-csrf" not in request.headers:
+            return JSONResponse({"ok": False, "message": "Change a line on the Private page."}, status_code=400, headers={"Cache-Control": "no-store"})
+        return await grat_json(request, lambda form: gratitude.edit(str(form.get("id", ""))[:20], str(form.get("text", ""))[:webentry.MAX_TEXT]))
+
+    @mcp.custom_route("/web/gratitude/lines.json", methods=["GET"])
+    async def gratitude_lines(request: Request) -> Response:
+        """Show: today's lines with their words, for the signed-in owner only, never cached."""
+        if (r := hidden(request)) is not None:
+            return r
+        if not current_session(request):
+            return JSONResponse({"ok": False}, status_code=403, headers={"Cache-Control": "no-store"})
+        try:
+            rows = await run_in_threadpool(gratitude.lines)
+        except Exception as e:  # noqa: BLE001 - the kind only
+            log.error("the gratitude lines failed: %s", type(e).__name__)
+            return JSONResponse({"ok": False}, status_code=500, headers={"Cache-Control": "no-store"})
+        return JSONResponse({"ok": True, "lines": rows}, headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"})
+
     def labs_form(fn):
         """One form of the Medical page (weblabs.ACTIONS), back to the page it came from."""
         async def handler(request: Request) -> Response:
@@ -877,7 +988,7 @@ def add_routes(mcp) -> None:
             return r
         session = current_session(request)
         if not session:
-            return RedirectResponse("/web/login", status_code=302, headers={"Cache-Control": "no-store"})
+            return to_login(request)
         return shell(session, settingspage.render(session, request.query_params), active="settings")
 
     def settings_form(fn):

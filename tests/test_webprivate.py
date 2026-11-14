@@ -22,7 +22,7 @@ def rows():
 
 
 def test_the_page_needs_sign_in_and_the_app_host():
-    assert client().get("/web/private").headers["location"] == "/web/login"
+    assert client().get("/web/private").headers["location"] == "/web/login?next=/web/private"
     assert client("log.example.test").get("/web/private").status_code == 404
 
 

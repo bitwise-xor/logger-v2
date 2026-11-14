@@ -6,7 +6,7 @@ from typing import Optional
 
 from psycopg.types.json import Jsonb
 
-from . import body, coach, logbook, nudges, settingspage, uiprefs
+from . import body, coach, gratitude, logbook, nudges, settingspage, uiprefs
 from .db import connect
 
 SID = re.compile(r"[0-9a-f-]{36}")
@@ -191,6 +191,21 @@ def today_reset(form, key: Optional[str], session) -> dict:
     return {"outcome": "changed", "head": "The Today page shows everything again, in the default order."}
 
 
+def gratitude_goal(form, key: Optional[str], session) -> dict:
+    """How many gratitude lines a day the card and the page count towards (14.11.2026)."""
+    lo, hi = gratitude.GOAL_RANGE
+    try:
+        n = int(str(form.get("goal", "")).strip())
+    except ValueError:
+        n = None
+    if n is None or not lo <= n <= hi:
+        return _rejected(f"Gratitude lines a day: give a whole number from {lo} to {hi}.")
+    gratitude.save_goal(n)
+    with connect() as conn, conn.cursor() as cur:
+        logbook._audit(cur, "web_change", "changed", {"what": "gratitude goal"}, logbook.WEB)
+    return {"outcome": "changed", "head": f"Saved. The gratitude list counts to {n} a day."}
+
+
 # ---- notifications ---------------------------------------------------------------------------------
 
 def _hours(s, lo: float, hi: float, default: float) -> float:
@@ -229,4 +244,5 @@ def push_off(form, key: Optional[str], session) -> dict:
 
 
 ACTIONS = {"device": device, "others": others, "targets": targets, "habit": habit, "habit_new": habit_new, "today": today, "today_reset": today_reset,
-           "nudges": nudge_settings, "nudge_test": nudge_test, "push_off": push_off, "height": height, "body": body_settings, "coach_goals": coach.goals_set}
+           "nudges": nudge_settings, "nudge_test": nudge_test, "push_off": push_off, "height": height, "body": body_settings, "coach_goals": coach.goals_set,
+           "gratitude": gratitude_goal}

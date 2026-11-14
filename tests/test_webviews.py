@@ -23,7 +23,7 @@ def eat_days(f, kcals):
 # ---- trends ----------------------------------------------------------------------------------------
 
 def test_the_trends_tab_needs_sign_in_and_the_app_host():
-    assert client().get("/web/food/trends").headers["location"] == "/web/login"
+    assert client().get("/web/food/trends").headers["location"] == "/web/login?next=/web/food/trends"
     assert client("log.example.test").get("/web/food/trends").status_code == 404
 
 
@@ -56,7 +56,7 @@ def test_trend_ranges_and_an_empty_range(web):
 # ---- the Week page ---------------------------------------------------------------------------------
 
 def test_the_week_page_needs_sign_in_and_the_app_host():
-    assert client().get("/web/week").headers["location"] == "/web/login"
+    assert client().get("/web/week").headers["location"] == "/web/login?next=/web/week"
     assert client("log.example.test").get("/web/week").status_code == 404
 
 
@@ -106,7 +106,7 @@ def test_other_periods_and_an_unknown_one(web):
 # ---- search ----------------------------------------------------------------------------------------
 
 def test_search_needs_sign_in_and_two_letters(web):
-    assert client().get("/web/search?q=oats").headers["location"] == "/web/login"
+    assert client().get("/web/search?q=oats").headers["location"] == "/web/login?next=/web/search"
     assert "Type at least two letters" in web[0].get("/web/search").text and "Type at least two letters" in web[0].get("/web/search?q=a").text
     assert "Private and gratitude entries are searched on the Private page only" in web[0].get("/web/search?q=oats").text
 

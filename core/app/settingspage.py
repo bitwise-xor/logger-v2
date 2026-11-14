@@ -6,7 +6,7 @@ The forms post to websettings.py; this module only reads."""
 import re
 from urllib.parse import urlencode
 
-from . import body, coachpage, export, nudges, rules, uiprefs, webpush
+from . import body, coachpage, export, gratitude, nudges, rules, uiprefs, webpush
 from .db import connect
 from .todaypage import HEALTH_ROWS, _plain
 from .webentry import esc, hidden
@@ -130,13 +130,13 @@ def today_items(cur) -> list[tuple[str, str, list[tuple[str, str]]]]:
     cur.execute("SELECT id, name FROM usual_meals ORDER BY lower(name)")
     usual = [(str(r["id"]), r["name"]) for r in cur.fetchall()]
     return [("habit", "Habits", habits), ("health", "Health card rows", health), ("usual", "Usual meal buttons", usual),
-            ("review", "Box", [("box", "To review")]), ("card", "Cards", [("home", "Home"), ("coach", "Coach")])]
+            ("review", "Box", [("box", "To review")]), ("card", "Cards", [("gratitude", "Gratitude"), ("home", "Home"), ("coach", "Coach")])]
 
 
 def _today_tab(session, csrf: str) -> str:
     with connect() as c, c.cursor() as cur:
-        groups, prefs = today_items(cur), uiprefs.load(cur)
-    out = []
+        groups, prefs, goal = today_items(cur), uiprefs.load(cur), gratitude.goal(cur)
+    out, (lo, hi) = [], gratitude.GOAL_RANGE
     for kind, heading, items in groups:
         items = uiprefs.ordered(items, lambda i: i[0], prefs["order"].get(kind, []))
         rows = "".join(f'<tr><td><label class="row"><input type="checkbox" name="show_{kind}_{i}" value="1"'
@@ -149,7 +149,12 @@ def _today_tab(session, csrf: str) -> str:
             f'<form class="row" method="post" action="/web/settings/today_reset">{hidden("csrf", csrf)}{hidden("back", url(tab="today"))}'
             '<button class="ghost" type="submit">Show everything in the default order</button></form>'
             '<p class="small hint">Food and drinks always show. A hidden item is only hidden on the Today page: it stays on the Habits page, in the Sheet '
-            'and in your records. Order: the smaller number comes first. A hidden review box still shows one line while something waits for review.</p></div>')
+            'and in your records. Order: the smaller number comes first. A hidden review box still shows one line while something waits for review.</p></div>'
+            f'<div class="card"><h2>Gratitude</h2><form method="post" action="/web/settings/gratitude">{hidden("csrf", csrf)}{hidden("back", url(tab="today"))}'
+            f'<div class="fields"><label><span>Gratitude lines a day <span class="small">{lo} to {hi}</span></span>'
+            f'<input type="number" name="goal" min="{lo}" max="{hi}" step="1" inputmode="numeric" value="{goal}" required></label></div>'
+            '<p class="row"><button class="primary" type="submit">Save</button>'
+            '<span class="small">The goal of the Gratitude card and page. More lines are always welcome.</span></p></form></div>')
 
 
 # ---- devices ---------------------------------------------------------------------------------------

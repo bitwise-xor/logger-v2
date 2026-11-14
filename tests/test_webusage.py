@@ -37,7 +37,7 @@ def chart(page):
 
 
 def test_the_page_needs_sign_in_and_the_app_host():
-    assert client().get("/web/usage").headers["location"] == "/web/login"
+    assert client().get("/web/usage").headers["location"] == "/web/login?next=/web/usage"
     assert client("log.example.test").get("/web/usage").status_code == 404
 
 

@@ -77,6 +77,9 @@ document.addEventListener("DOMContentLoaded", () => {
   const push = document.querySelector("[data-push]");
   if (push) setupPush(push);
 
+  // The gratitude list (14.11.2026): saved line by line in place, on the Gratitude page and the Today card
+  document.querySelectorAll("[data-grat]").forEach(setupGratitude);
+
   // Barcode scanner on Today (31.10.2026)
   const scan = document.querySelector("button[data-scan]");
   if (scan) setupScan(scan);
@@ -95,9 +98,10 @@ document.addEventListener("DOMContentLoaded", () => {
   // A sent form's buttons lock until the next page, so a second tap cannot send it again (a double tap wiped the Undo bar until
   // 04.11.2026). After the values are read (setTimeout), so the pressed button's own value still goes; back after 8 s just in case.
   document.addEventListener("submit", e => {
+    if (e.defaultPrevented) return;  // a form saved in place by script (the gratitude list): no busy page, no locked buttons
     document.body.classList.add("busy");
     const f = e.target;
-    if (e.defaultPrevented || (f.getAttribute("method") || "get").toLowerCase() !== "post") return;
+    if ( (f.getAttribute("method") || "get").toLowerCase() !== "post") return;
     setTimeout(() => {
       const bs = [...f.querySelectorAll("button:not([type=button])")].filter(b => !b.disabled);
       bs.forEach(b => { b.disabled = true; b.dataset.sent = "1"; });
@@ -123,6 +127,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }, true);
   const builtAt = Date.now();
   const untouched = () => (!box || !box.value.trim()) && !nowFields.some(i => i.dataset.touched)
+    && ![...document.querySelectorAll("[data-grat-input]")].some(i => i.value.trim())
     && !document.querySelector("dialog[open], details[open], input:focus, textarea:focus");
   const comeBack = () => {
     if (document.hidden) return;
@@ -620,4 +625,163 @@ function showTip(el, e) {
   for (const [k, v] of Object.entries({x: gx + 7, y: gy + 14})) text.setAttribute(k, v);
   text.textContent = best.t;
   g.append(rect, text); svg.append(g);
+}
+
+// The gratitude list (14.11.2026). Enter or Save sends the line with fetch (the X-CSRF header); the answer has no words, only
+// ids, the time, the count and the key for the next line. The words live in this page only: in the list (textContent) and,
+// after Show, as fetched from /web/gratitude/lines.json. Never in storage, the console or a URL. A failed save keeps the text
+// in the box and the same key, so trying again cannot save it twice. Without script the form posts as a normal page.
+function setupGratitude(root) {
+  const form = root.querySelector("[data-grat-form]"), input = root.querySelector("[data-grat-input]");
+  const list = root.querySelector("[data-grat-list]"), slot = root.querySelector("[data-grat-slot]");
+  const msg = root.querySelector("[data-grat-msg]"), done = root.querySelector("[data-grat-done]");
+  const more = root.querySelector("[data-grat-more]"), stuck = root.querySelector("[data-grat-stuck]");
+  const starters = root.querySelector("[data-grat-starters]"), show = root.querySelector("[data-grat-show]");
+  if (!form || !input || !list) return;
+  const csrf = root.dataset.csrf, keyField = form.querySelector("[name=key]"), btn = form.querySelector("button[type=submit]");
+  const placeholder = input.placeholder;
+  let count = Number(root.dataset.count) || 0, goal = Number(root.dataset.goal) || 10, opened = false, sending = false;
+  const say = t => { msg.textContent = t; msg.classList.toggle("err", !!t); };
+  const post = async (url, fields) => {
+    const r = await fetch(url, {method: "POST", credentials: "same-origin", cache: "no-store",
+                                headers: {"X-CSRF": csrf}, body: new URLSearchParams(fields)});
+    const j = await r.json().catch(() => ({ok: false}));
+    if (!r.ok && j.ok === undefined) j.ok = false;
+    return j;
+  };
+  const counts = () => {  // every count and every row of dots on the page
+    document.querySelectorAll("[data-grat-count]").forEach(b => { b.textContent = String(count); });
+    document.querySelectorAll("[data-grat-goal]").forEach(b => { b.textContent = String(goal); });
+    document.querySelectorAll("[data-grat-dots]").forEach(d => {
+      const dots = [...d.children];
+      while (dots.length < goal) { const s = document.createElement("span"); s.className = "gdot"; d.append(s); dots.push(s); }
+      dots.forEach((s, i) => s.classList.toggle("on", i < count));
+      d.setAttribute("aria-label", count + " of " + goal);
+    });
+    document.querySelectorAll("[data-grat-next]").forEach(n => { n.textContent = String(count + 1); });
+    root.dataset.count = String(count);
+  };
+  const reached = () => {  // after the goal: "Ten for today." and One more; never blocks another line
+    const full = count >= goal;
+    if (done) done.hidden = !full;
+    if (more) more.hidden = !full || opened;
+    form.hidden = full && !opened;
+    if (slot && slot.tagName === "LI") slot.classList.toggle("folded", full && !opened);
+  };
+  const lineItem = (n, id, text, at) => {
+    const li = document.createElement("li"), num = document.createElement("span"), bodyEl = document.createElement("span");
+    li.className = "gline"; li.dataset.id = String(id);
+    num.className = "gn"; num.textContent = String(n);
+    bodyEl.className = "gbody";
+    li.append(num, bodyEl);
+    fill(li, text, at);
+    return li;
+  };
+  const fill = (li, text, at) => {  // the line's words, its time and Edit
+    const bodyEl = li.querySelector(".gbody"), t = document.createElement("span"), s = document.createElement("span");
+    const e = document.createElement("button");
+    t.className = "gtext"; t.textContent = text;
+    s.className = "small"; s.textContent = "saved " + at;
+    e.type = "button"; e.className = "ghost sm"; e.textContent = "Edit";
+    e.addEventListener("click", () => edit(li, t.textContent, at));
+    bodyEl.replaceChildren(t, s);
+    li.querySelectorAll(":scope > button").forEach(b => b.remove());
+    li.append(e);
+    li.classList.remove("early");
+  };
+  const edit = (li, old, at) => {
+    const bodyEl = li.querySelector(".gbody"), f = document.createElement("form"), i = document.createElement("input");
+    const save = document.createElement("button"), cancel = document.createElement("button"), m = document.createElement("span");
+    f.className = "gedit"; i.value = old; i.maxLength = 1000; i.setAttribute("aria-label", "Change this line");
+    save.type = "submit"; save.className = "primary sm"; save.textContent = "Save";
+    cancel.type = "button"; cancel.className = "ghost sm"; cancel.textContent = "Cancel";
+    m.className = "small err"; m.setAttribute("role", "status");
+    f.append(i, save, cancel, m);
+    li.querySelectorAll(":scope > button").forEach(b => b.remove());
+    bodyEl.replaceChildren(f);
+    i.focus();
+    cancel.addEventListener("click", () => fill(li, old, at));
+    f.addEventListener("submit", async e => {
+      e.preventDefault();
+      const text = i.value.trim();
+      if (!text) { m.textContent = "A line cannot be empty. Delete it on the Private page."; return; }
+      save.disabled = true; i.readOnly = true; m.textContent = "";
+      try {
+        const j = await post("/web/gratitude/edit", {id: li.dataset.id, text});
+        if (j.ok) { fill(li, text.replace(/\s+/g, " "), at); return; }
+        m.textContent = j.message || "Not saved, try again.";
+      } catch (err) { m.textContent = "Not saved, try again."; }
+      save.disabled = false; i.readOnly = false; i.focus();
+    });
+  };
+  // Enter sends (Shift+Enter: a new line, for several at once); the box grows with its text
+  const grow = () => { input.style.height = ""; if (input.value.includes("\n")) input.style.height = input.scrollHeight + "px"; };
+  input.addEventListener("input", grow);
+  input.addEventListener("keydown", e => {
+    if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); form.requestSubmit(); }
+  });
+  form.addEventListener("submit", async e => {
+    e.preventDefault();  // first, so the page-wide submit handlers leave this form alone (no busy page, no locked buttons)
+    if (sending) return;
+    const text = input.value.trim();
+    if (!text) { say("Type something first."); input.focus(); return; }
+    sending = true; input.disabled = true; btn.disabled = true; say("");
+    let j;
+    try { j = await post(form.action, {text, key: keyField.value}); } catch (err) { j = {ok: false}; }
+    sending = false; input.disabled = false; btn.disabled = false;
+    if (!j.ok) {  // the text stays; the same key unless the server gave a new one (the text was changed after a failed try)
+      if (j.key) keyField.value = j.key;
+      say(j.message && j.message !== "Not saved, try again." ? j.message + " Not saved, try again." : "Not saved, try again.");
+      input.focus();
+      return;
+    }
+    const lines = text.split(/\r?\n/).map(x => x.replace(/\s+/g, " ").trim()).filter(Boolean);
+    const ids = j.ids || [];
+    ids.forEach((id, k) => {
+      if (list.querySelector(`[data-id="${CSS.escape(String(id))}"]`)) return;  // a repeat of a save that had worked
+      const words = ids.length === lines.length ? lines[k] : (k === 0 ? lines.join(" ") : "");
+      const li = lineItem(j.count - ids.length + k + 1, id, words, j.at);
+      if (slot && list.contains(slot)) {
+        list.insertBefore(li, slot);
+        const gap = list.querySelector(".gempty");
+        if (gap) gap.remove();
+      } else list.append(li);
+    });
+    count = j.count; goal = j.goal || goal; keyField.value = j.key;
+    input.value = ""; input.placeholder = placeholder; grow();
+    counts(); reached();
+    if (!form.hidden) input.focus(); else if (more) more.focus();
+  });
+  if (more) more.addEventListener("click", () => { opened = true; reached(); input.focus(); });
+  if (stuck && starters) {
+    stuck.hidden = false;
+    stuck.addEventListener("click", () => {
+      starters.hidden = !starters.hidden;
+      stuck.setAttribute("aria-expanded", String(!starters.hidden));
+    });
+    starters.querySelectorAll("[data-grat-start]").forEach(b => b.addEventListener("click", () => {
+      input.placeholder = b.dataset.gratStart;
+      starters.querySelectorAll(".chip").forEach(c => c.classList.toggle("on", c === b));
+      if (form.hidden) { opened = true; reached(); }
+      input.focus();
+    }));
+  }
+  if (show) show.addEventListener("click", async e => {  // Show: the earlier lines of today, asked for once
+    e.preventDefault();
+    show.setAttribute("aria-disabled", "true");
+    try {
+      const r = await fetch("/web/gratitude/lines.json", {credentials: "same-origin", cache: "no-store"});
+      const j = r.ok ? await r.json() : {ok: false};
+      if (!j.ok) throw new Error("no lines");
+      (j.lines || []).forEach(l => {
+        const li = list.querySelector(`li.early[data-id="${CSS.escape(String(l.id))}"]`);
+        if (li) fill(li, l.text, l.at);
+      });
+      show.closest(".gshow").hidden = true;
+    } catch (err) {
+      show.removeAttribute("aria-disabled");
+      say("Could not show them, try again.");
+    }
+  });
+  counts(); reached();
 }

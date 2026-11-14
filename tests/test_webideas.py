@@ -45,8 +45,8 @@ def todo():
 
 
 def test_the_pages_need_sign_in_and_the_app_host():
-    assert client().get("/web/ideas").headers["location"] == "/web/login"
-    assert client().get("/web/ideas/todoist").headers["location"] == "/web/login"
+    assert client().get("/web/ideas").headers["location"] == "/web/login?next=/web/ideas"
+    assert client().get("/web/ideas/todoist").headers["location"] == "/web/login?next=/web/ideas/todoist"
     assert client("log.example.test").get("/web/ideas").status_code == 404
 
 

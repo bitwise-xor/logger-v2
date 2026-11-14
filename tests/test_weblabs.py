@@ -49,7 +49,7 @@ def text(page):
 
 def test_the_pages_need_sign_in_and_the_app_host():
     for path in ("/web/labs", "/web/labs/tests", "/web/labs/meds"):
-        assert client().get(path).headers["location"] == "/web/login"
+        assert client().get(path).headers["location"] == f"/web/login?next={path}"
     assert client("log.example.test").get("/web/labs").status_code == 404
 
 

@@ -924,3 +924,43 @@ svg.times .grid{stroke:var(--line);stroke-width:1}
 svg.times .slp{fill:var(--accent)}
 svg.times .slp.nap{fill:var(--accent-soft);stroke:var(--accent);stroke-width:1}
 svg.times .up{stroke:var(--ink);stroke-width:2}
+/* 14.11.2026: the gratitude list (gratitudepage.py), the page and the Today card: a count, dots, numbered lines, one box */
+.grat .ghead{display:flex;justify-content:space-between;align-items:baseline;gap:1rem}
+.grat .gt{margin:0}
+.grat h2.gt a{color:var(--ink);font-size:1rem;font-weight:600}
+.gcount{color:var(--dim);font-weight:500;white-space:nowrap;font-variant-numeric:tabular-nums}
+.gcount b{color:var(--ink)}
+.gdots{display:flex;flex-wrap:wrap;gap:6px;margin:.6rem 0 1rem}
+.gdot{width:10px;height:10px;border-radius:50%;border:1.5px solid var(--line2)}
+.gdot.on{background:var(--accent);border-color:var(--accent)}
+.gform{display:flex;gap:.5rem;align-items:flex-end;margin:0}
+.gform textarea{flex:1;min-width:0;font-size:16px;line-height:1.5rem;min-height:2.75rem;height:2.75rem;max-height:12rem;resize:none;padding:.6rem .75rem}
+.gform textarea:placeholder-shown{overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.gform .primary{min-height:2.75rem;flex:none}
+.gmsg{margin:.35rem 0 0;font-size:.85rem}
+.gmsg:empty{display:none}
+.gmsg.err{color:var(--bad)}
+.glist{list-style:none;margin:0;padding:0}
+.grat:not(.big) .glist{margin-top:.6rem}
+.glist li{display:flex;gap:.6rem;align-items:center;min-height:2.75rem;border-top:1px solid var(--line);padding:.35rem 0}
+.glist li:first-child{border-top:0}
+.glist .gn{flex:none;width:1.6rem;text-align:right;color:var(--dim);font-size:.85rem;font-variant-numeric:tabular-nums}
+.glist .gbody{flex:1;min-width:0;display:flex;flex-direction:column}
+.glist .gtext{overflow-wrap:anywhere}
+.glist .gline.early .gtext{color:var(--dim);font-size:.9rem}
+.glist .gempty{min-height:2.25rem;border-top:0}
+.glist .gempty::after{content:"";flex:1;border-bottom:1px dashed var(--line2)}
+.glist .gslot.folded{display:none}
+.gedit{display:flex;flex-wrap:wrap;gap:.4rem;align-items:center}
+.gedit input{flex:1;min-width:8rem;font-size:16px}
+.gdone{display:flex;flex-wrap:wrap;align-items:center;gap:.8rem;margin:.8rem 0 0;color:var(--accent)}
+.gstuck{margin-top:.6rem}
+.gstuck .chips{margin:.5rem 0 0}
+.gshow{margin:0 0 .5rem}
+.gfoot{margin:.9rem 0 0}
+.gend{gap:1rem}
+.grat.big{max-width:42rem;margin:0 auto}
+.grat.big .gtext{font-size:1.05rem}
+.grat.big .gform textarea{font-size:1.05rem}
+@media (max-width:1080px){main.noentry{padding-bottom:6rem}}
+@media (max-width:520px){.grat.big{padding:1rem}.grat .gform .primary{padding:0 .9rem}}

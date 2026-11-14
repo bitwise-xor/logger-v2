@@ -29,8 +29,8 @@ def oats():
 
 
 def test_the_food_pages_need_sign_in_and_the_app_host():
-    assert client().get("/web/food").headers["location"] == "/web/login"
-    assert client().get("/web/food/catalogue").headers["location"] == "/web/login"
+    assert client().get("/web/food").headers["location"] == "/web/login?next=/web/food"
+    assert client().get("/web/food/catalogue").headers["location"] == "/web/login?next=/web/food/catalogue"
     assert client("log.example.test").get("/web/food").status_code == 404
 
 

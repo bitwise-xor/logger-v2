@@ -62,7 +62,7 @@ def weights():
 
 
 def test_the_page_needs_sign_in_and_the_app_host():
-    assert client().get("/web/health").headers["location"] == "/web/login"
+    assert client().get("/web/health").headers["location"] == "/web/login?next=/web/health"
     assert client("log.example.test").get("/web/health").status_code == 404
 
 
