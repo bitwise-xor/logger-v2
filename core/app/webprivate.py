@@ -1,18 +1,17 @@
-"""What the Private page's forms do. New entries are saved straight into the private store through log with a ready
-parser answer, so the words never go to the AI (decided 26.10.2026); a gratitude text gives one entry per line.
+"""What the Private page's forms do. New entries are saved straight into the private store through log with their label
+(privateline.py turns them into ready parser answers), so the words never go to the AI (decided 26.10.2026); a gratitude
+text gives one entry per line.
 Changes and deletions go through the logger's change function (P… ids). Replies never repeat the private words."""
 import re
 from datetime import datetime
 from typing import Optional
 
-from . import logbook, privatepage
+from . import logbook, privateline, privatepage
 from .db import connect
 from .todaypage import AREAS, THOUGHT_TYPES
-from .webactions import TIME, _change, _pred, _rejected
+from .webactions import TIME, _change, _rejected
 from .webfood import _again
 from .when import BERLIN
-
-MAX_LINES = 20
 
 
 def new(form, key: Optional[str]) -> dict:
@@ -20,23 +19,14 @@ def new(form, key: Optional[str]) -> dict:
     if kind not in privatepage.KINDS:
         return _rejected("Pick Gratitude or Private.")
     text = str(form.get("text", "")).replace("\r\n", "\n").strip()[:4000]
-    lines = [" ".join(x.split()) for x in text.split("\n")] if kind == "gratitude" else [text]
-    lines = [privatepage.words(x).strip() for x in lines if x.strip()]
-    if not lines:
-        return _rejected("Type something first.")
-    if len(lines) > MAX_LINES:
-        return _rejected(f"At most {MAX_LINES} lines at once.")
-    ids = []
-    for i, line in enumerate(lines):
-        summary = " ".join(line.split("\n")[0].split())[:200]
-        pred = _pred(private=kind, thoughts=[{"summary": summary, "thought_type": "journal" if kind == "gratitude" else "note",
-                                              "area": "personal", "tags": ["gratitude"] if kind == "gratitude" else []}])
-        out = logbook.log(f"{kind}: {line}", f"{key}-{i}" if key else None, pred, channel=logbook.WEB)
-        if out["outcome"] != "saved" or not out.get("private_id"):
-            done = f"{len(ids)} saved before it. " if ids else ""
-            return _rejected(f"{done}Line {i + 1} was not saved; nothing went anywhere else. Try it again.")
-        ids.append(out["private_id"])
-    n = len(ids)
+    try:  # the same rules as a labelled message typed anywhere (privateline.py): one entry per gratitude line, at most 20
+        privateline.entries(kind, text)
+    except privateline.Refused as e:
+        return _rejected("Type something first." if e.empty else str(e))
+    out = logbook.log(f"{kind}: {text}", key, channel=logbook.WEB)  # the label routes it past the AI, all lines in one go
+    n = len(out.get("private_ids") or [])
+    if out["outcome"] != "saved" or not n:
+        return _rejected("Nothing was saved; nothing went anywhere else. Try it again.")
     what = (f"{n} gratitude entries" if n > 1 else "1 gratitude entry") if kind == "gratitude" else "1 private entry"
     return {"outcome": "saved", "head": f"Saved {what} privately, without the AI."}
 

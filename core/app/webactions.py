@@ -8,7 +8,7 @@ from typing import Optional
 
 from psycopg.types.json import Jsonb
 
-from . import body, commands, cycle, habitspage, healthpage, logbook, webundo
+from . import body, commands, cycle, habitspage, healthpage, logbook, privateline, webundo
 from .db import connect
 from .todaypage import AREAS, CHECKIN, HEALTH_ROWS, REVIEW_LIMIT, THOUGHT_TYPES
 from .v1_log import Reject, _words_in
@@ -19,8 +19,7 @@ CHECKIN_TYPES = {t for t, _l, _w in CHECKIN}
 
 
 def _pred(**kw) -> dict:
-    return {"intent": "log", "command_text": None, "private": None, "private_unsure": False, "food": [], "usual_meals": [],
-            "health": [], "thoughts": [], "todos": [], **kw}
+    return privateline.blank(**kw)
 
 
 def _num(s: str) -> Optional[float]:

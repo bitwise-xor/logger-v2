@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 from psycopg.types.json import Jsonb
 
 from .ai import command as reader
-from . import labs, todos
+from . import labs, privateline, todos
 from .ai.provider import Provider, Usage
 from .todoist import TodoistError
 from .v1_commands import Ask, _bound, _food_today, _change, _delete_thought, _find, _find_food, _find_health, _find_private
@@ -236,6 +236,8 @@ def _report_day(cur, steps: list[dict], text: str) -> None:
 
 def handle(cur, provider: Provider, text: str, now: datetime, previous=()) -> tuple[dict, list[Usage]]:
     """One command. Look-ups answer at once; changes are read back and wait for the user's yes."""
+    if privateline.label(text):  # fail closed: a private or gratitude line never goes to the AI (14.11.2026)
+        return {"outcome": "rejected", "reason": "a private or gratitude line is not a command", "questions": []}, []
     cmd, u = reader.read(provider, text, now.astimezone(BERLIN).replace(tzinfo=None), previous, context(cur, now))
     try:
         steps = _steps(cmd["steps"])

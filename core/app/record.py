@@ -16,7 +16,7 @@ from typing import Optional
 from psycopg.types.json import Jsonb
 from pydantic import ValidationError
 
-from . import tape, v1_log, v1_thoughts
+from . import privateline, tape, v1_log, v1_thoughts
 from .ai import parser
 from .ai.provider import Provider, Usage
 from .clock import read_when
@@ -143,6 +143,8 @@ def read(cur, provider: Provider, text: str, now: datetime, previous=(), meals=(
     naive = now.replace(tzinfo=None)
     usages = []
     if pred is None:
+        if privateline.label(text):  # fail closed: a private or gratitude line never goes to the AI (logbook._private saves it)
+            raise Reject("a private or gratitude line is never read by the AI")
         pred, u = parser.parse(provider, text, naive, previous, meals)
         usages.append(u)
     r = best(cur, [pred], now)
@@ -190,7 +192,7 @@ def _save_private(cur, r: Reading, text: str, channel: str, now: datetime) -> di
                  th.area if th else None, th.tags if th else []))
     pid = cur.fetchone()["id"]
     return {"outcome": "saved", "raw_id": None, "private_id": pid, "receipt": [f"+ P{pid} ({r.private}), private store only"],
-            "notes": [] if re.match(r"^\s*(private|gratitude)\s*:", text, re.I) else
+            "notes": [] if privateline.label(text) else
             [f"saved as {r.private} without a label; say 'not private' if it should be a normal entry"], "questions": []}
 
 

@@ -13,7 +13,7 @@ from typing import Any, Optional
 
 from psycopg.types.json import Jsonb
 
-from . import commands, cycle, held, labs, lookup, record, tape, todos
+from . import commands, cycle, held, labs, lookup, privateline, record, tape, todos
 from .ai import parser
 from .ai.provider import LIVE, AnthropicProvider, Provider, ProviderError
 from .db import connect
@@ -139,6 +139,12 @@ def log(text: str, idempotency_key: Optional[str] = None, pred: Optional[dict] =
                     return {"outcome": "rejected", "message": "This idempotency key was already used for a different message."}
                 _audit(cur, "log", "replayed", {}, channel)
                 return {**row["response"], "replayed": True}
+        if pred is None and privateline.label(text):  # private and gratitude lines: saved here, never read by the AI (14.11.2026)
+            resp = _public(_private(cur, text, now, channel))
+            if idempotency_key and resp["outcome"] == "saved":
+                cur.execute("INSERT INTO idempotency_keys (key, tool, request_hash, response) VALUES (%s, 'log', %s, %s)",
+                            (idempotency_key, req_hash, Jsonb(resp)))
+            return resp
         if pred is None:  # body measurements typed as pairs ("waist 123.5 hips 128") need no AI (03.11.2026)
             pred = tape.read(cur, text)
         hid = held.find(cur, idempotency_key) if pred is None else None  # sent again while it waits: read the kept one
@@ -207,6 +213,18 @@ def _read_held(hid: int, background: bool) -> dict[str, Any]:
     text, channel, key = row["content"], row["channel"], row["idempotency_key"]
     now = row["received_at"].astimezone(BERLIN)
     try:
+        if privateline.label(text):  # kept before 14.11.2026, or by any other way: saved without the AI all the same
+            with connect() as conn, conn.cursor() as cur:
+                out = _private(cur, text, now, channel, row["tries"])
+                if background and out["outcome"] == "rejected":
+                    held.needs_you(cur, hid, out["reason"])
+                    return _public({**out, "held_id": hid})
+                resp = _public(out)
+                if key and out["outcome"] == "saved":
+                    cur.execute("""INSERT INTO idempotency_keys (key, tool, request_hash, response) VALUES (%s, 'log', %s, %s)
+                                   ON CONFLICT (key) DO NOTHING""", (key, hashlib.sha256(text.encode()).hexdigest(), Jsonb(resp)))
+                held.done(cur, hid)
+            return resp
         with connect() as conn, conn.cursor() as cur:
             prev, meals = _context(cur, now)
         preds, usages = _read(text, now, prev, meals)
@@ -249,6 +267,8 @@ def _read_held(hid: int, background: bool) -> dict[str, Any]:
 def _read(text: str, now: datetime, prev: list, meals: list) -> tuple[list[dict], list]:
     """The AI's reading, with no transaction open: the small model, and the larger model's re-read when the first reading
     leaves a question (checked in a short look at the catalogue). -> (parser answers, usages)."""
+    if privateline.label(text):  # fail closed: a private or gratitude line never goes to the AI (_read_held saves it before this)
+        raise Reject("a private or gratitude line is never read by the AI")
     naive = now.replace(tzinfo=None)
     pred, u = parser.parse(provider(), text, naive, prev, meals)
     with connect() as conn, conn.cursor() as cur:
@@ -262,11 +282,35 @@ def _read(text: str, now: datetime, prev: list, meals: list) -> tuple[list[dict]
 def _process(cur, text: str, now: datetime, pred: Optional[dict] = None, channel: str = CHANNEL) -> dict:
     """Read, save and audit one message in the caller's transaction (a quick button's ready answer, or a repeated message
     the user confirmed); the caller makes it public."""
+    if pred is None and privateline.label(text):  # e.g. "log it again?" answered yes: still saved without the AI
+        return _private(cur, text, now, channel)
     started = time.monotonic()
     prev, meals = _context(cur, now)
     sent = todos.retry(cur, provider(), now)  # to-dos that waited because Todoist was down
     r, usages, escalated = record.read(cur, provider(), text, now, prev, meals, pred=pred)
     return _save(cur, text, now, r, usages + sent["usages"], escalated, channel, prev, sent, started=started)
+
+
+def _private(cur, text: str, now: datetime, channel: str, tries: int = 0) -> dict:
+    """A labelled message (privateline.py) saved straight into the private store, in the caller's transaction: no AI, no
+    raw_inbox, no kept words, no to-dos or look-ups. A gratitude message gives one entry per line, all in this one call.
+    The reply and the audit row hold ids and counts only, never the words."""
+    started = time.monotonic()
+    try:
+        _kind, items = privateline.read(text)
+    except privateline.Refused as e:
+        _audit(cur, "log", "rejected", {"why": "private", "empty": e.empty, **({"tries": tries} if tries > 1 else {})}, channel)
+        return {"outcome": "rejected", "raw_id": None, "reason": str(e), "questions": []}
+    ids, receipt = [], []
+    for line, p in items:
+        r = record.settle(cur, {}, {}, p, now)  # a private answer needs no catalogue
+        out = record.save(cur, r, line, channel, now)
+        ids.append(out["private_id"])
+        receipt += out["receipt"]
+    _audit(cur, "log", "saved", {"raw_id": None, "private_id": ids[0], "private_ids": ids, "entries": len(ids), "ai": [],
+                                 **({"tries": tries} if tries > 1 else {}), "secs": round(time.monotonic() - started, 2)}, channel)
+    return {"outcome": "saved", "raw_id": None, "private_id": ids[0], "private_ids": ids, "receipt": receipt, "notes": [],
+            "questions": []}
 
 
 def _save(cur, text: str, now: datetime, r: record.Reading, usages: list, escalated: bool, channel: str, prev: list,
