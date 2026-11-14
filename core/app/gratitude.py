@@ -36,8 +36,9 @@ def save_goal(n: int) -> None:
                      ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()""", (KEY, Jsonb({"goal": n})))
 
 
-def count(cur) -> int:
-    cur.execute(f"SELECT count(*) AS n FROM private.entries WHERE {_TODAY}", (cycle.today(cur),))
+def count(cur, day=None) -> int:
+    """Gratitude lines of a logging day (default: today); the nudge asks for the day of its own clock."""
+    cur.execute(f"SELECT count(*) AS n FROM private.entries WHERE {_TODAY}", (day or cycle.today(cur),))
     return cur.fetchone()["n"]
 
 

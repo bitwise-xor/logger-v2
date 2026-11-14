@@ -7,14 +7,15 @@ from datetime import datetime, timedelta, timezone
 
 from psycopg.types.json import Jsonb
 
-from . import habitaim, logbook, webpush
+from . import gratitude, habitaim, logbook, webpush
 from .db import connect
 from .when import BERLIN
 
 KEY = "nudges"
 # checkin and bp_evening since 08.11.2026 (the check-in on, as the owner asked; evening blood pressure offered, off)
 DEFAULTS = {"on": True, "weight": True, "weight_after": 2.0, "habits": True, "habits_after": 14.0, "idle": True, "idle_hours": 5.0,
-            "checkin": True, "checkin_after": 12.0, "bp_evening": False, "bp_evening_after": 13.0}
+            "checkin": True, "checkin_after": 12.0, "bp_evening": False, "bp_evening_after": 13.0,
+            "gratitude": False, "gratitude_after": 14.0}  # gratitude since 14.11.2026 (off until chosen)
 AWAKE_HOURS = 16
 CHANNELS = ["web", "claude-chat", "mcp"]  # what counts as logging something (imports do not)
 
@@ -76,6 +77,11 @@ def due(cur, now: datetime) -> list[dict]:
                        WHERE t.name = 'bp' AND m.period = 'evening' AND m.day = %s""", (day,))
         if not cur.fetchone():
             out.append({"kind": "bp-evening", "title": "Evening blood pressure", "body": "No evening blood pressure logged yet today."})
+    if s["gratitude"] and now >= wake + timedelta(hours=float(s["gratitude_after"])):
+        n, goal = gratitude.count(cur, day), gratitude.goal(cur)  # only numbers go into the message, never a word of a line
+        if n < goal:
+            body = "Tap to write today's lines." if n == 0 else f"{goal - n} to go. Tap to open the list."
+            out.append({"kind": "gratitude", "title": f"Gratitude {n}/{goal}", "body": body, "url": "/web/gratitude"})
     if s["idle"]:
         cur.execute("SELECT max(received_at) AS t FROM raw_inbox WHERE channel = ANY(%s)", (CHANNELS,))
         last = cur.fetchone()["t"]
@@ -116,7 +122,7 @@ def run(now=None) -> dict:
     sent = 0
     if devices:
         for n in todo:
-            sent += bool(deliver({"title": n["title"], "body": n["body"], "url": "/web/", "tag": n["kind"]}))
+            sent += bool(deliver({"title": n["title"], "body": n["body"], "url": n.get("url", "/web/"), "tag": n["kind"]}))
             with connect() as c, c.cursor() as cur:  # marked even when no device took it: no repeats every 5 minutes
                 cur.execute("INSERT INTO push_sent (day, kind) VALUES (%s, %s) ON CONFLICT DO NOTHING", (n["day"], n["kind"]))
                 logbook._audit(cur, "nudge", "sent", {"kind": n["kind"]}, "nudges")

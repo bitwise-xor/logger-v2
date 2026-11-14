@@ -207,3 +207,100 @@ def test_settings_show_and_save_the_two_new_nudges(web):
         back="/web/settings?tab=notify")
     v = owner_sql("SELECT value FROM ui_settings WHERE key = 'nudges'")[0]["value"]
     assert (v["checkin"], v["checkin_after"], v["bp_evening"], v["bp_evening_after"]) == (True, 11.0, True, 15.5)
+
+
+# ---- the gratitude nudge (14.11.2026) --------------------------------------------------------------
+
+WORD = "tealantern"  # an invented word: it must never reach a notification
+
+
+def grat(n: int, hm: str = "10:00") -> None:
+    ts = at(hm)
+    for i in range(n):
+        owner_sql("""INSERT INTO private.entries (channel, label, content, summary, thought_type, area, tags, event_at)
+                     VALUES ('test', 'gratitude', %s, 'x', 'journal', 'personal', '{gratitude}', %s)""", f"gratitude: the {WORD} {i}", ts)
+
+
+def only_gratitude(**more):
+    nudges.save({**nudges.DEFAULTS, "idle": False, "habits": False, "checkin": False, "weight": False, **more})
+
+
+def messages(now):
+    with connect() as c, c.cursor() as cur:
+        return nudges.due(cur, now)
+
+
+def test_the_gratitude_nudge_is_off_by_default_and_comes_after_its_hours_while_the_list_is_short():
+    event("wake", DAY, "07:00")
+    assert nudges.DEFAULTS["gratitude"] is False and nudges.DEFAULTS["gratitude_after"] == 14.0
+    nudges.save({**nudges.DEFAULTS, "idle": False, "habits": False, "checkin": False, "weight": False})
+    assert due(at("21:30")) == set()  # off
+    only_gratitude(gratitude=True)
+    assert due(at("20:55")) == set()  # 14 h after waking is 21:00
+    grat(3)
+    m = messages(at("21:00"))
+    assert [(x["kind"], x["title"], x["body"], x["url"]) for x in m] == [("gratitude", "Gratitude 3/10", "7 to go. Tap to open the list.", "/web/gratitude")]
+    assert WORD not in str(m)
+
+
+def test_the_gratitude_nudge_with_nothing_written_asks_for_the_lines_and_a_changed_goal_counts():
+    event("wake", DAY, "07:00")
+    only_gratitude(gratitude=True, gratitude_after=12.0)
+    m = messages(at("19:00"))
+    assert [(x["title"], x["body"]) for x in m] == [("Gratitude 0/10", "Tap to write today's lines.")]
+    from app import gratitude
+    gratitude.save_goal(5)
+    grat(4)
+    assert [(x["title"], x["body"]) for x in messages(at("19:05"))] == [("Gratitude 4/5", "1 to go. Tap to open the list.")]
+
+
+def test_the_gratitude_nudge_stays_quiet_when_the_goal_is_reached_and_counts_only_that_day():
+    event("wake", DAY, "07:00")
+    only_gratitude(gratitude=True)
+    grat(3, "10:00")
+    owner_sql("""INSERT INTO private.entries (channel, label, content, summary, thought_type, area, tags, event_at)
+                 VALUES ('test', 'gratitude', %s, 'x', 'journal', 'personal', '{gratitude}', %s)""", f"gratitude: {WORD}", at("10:00") - timedelta(days=2))
+    assert [x["title"] for x in messages(at("21:00"))] == ["Gratitude 3/10"]  # an older line does not count
+    grat(7, "11:00")
+    assert due(at("21:05")) == set()  # ten of ten
+
+
+def test_the_gratitude_nudge_keeps_the_usual_quiet_hours_and_goes_once_a_day():
+    event("wake", DAY, "07:00")
+    only_gratitude(gratitude=True)
+    grat(1)
+    assert due(at("23:10")) == set()  # more than 16 hours after waking
+    owner_sql("INSERT INTO push_sent (day, kind) VALUES (%s, 'gratitude')", DAY)
+    assert due(at("21:05")) == set()  # already sent today
+    owner_sql("DELETE FROM push_sent")
+    event("bed", DAY, "20:30")
+    assert due(at("21:05")) == set()  # gone to bed
+
+
+def test_run_sends_the_gratitude_nudge_to_its_page_without_any_words(monkeypatch):
+    _, p256dh, auth = browser()
+    owner_sql("INSERT INTO push_subscriptions (endpoint, p256dh, auth) VALUES (%s, %s, %s)", APPLE, p256dh, auth)
+    calls = []
+    monkeypatch.setattr(webpush, "send", lambda sub, msg: calls.append(msg) or 201)
+    event("wake", DAY, "07:00")
+    only_gratitude(gratitude=True)
+    grat(2)
+    assert nudges.run(at("21:00")) == {"due": 1, "sent": 1, "devices": 1}
+    assert calls == [{"title": "Gratitude 2/10", "body": "8 to go. Tap to open the list.", "url": "/web/gratitude", "tag": "gratitude"}]
+    assert WORD not in str(calls) and WORD not in str(owner_sql("SELECT * FROM audit_log"))
+    assert nudges.run(at("21:05"))["due"] == 0  # once a day
+
+
+def test_settings_show_and_save_the_gratitude_nudge(web):
+    page = web[0].get("/web/settings?tab=notify").text
+    assert 'name="gratitude" value="1">' in page and 'name="gratitude_after"' in page and "Gratitude list: remind me when the day" in page and "lines are not full" in page
+    act(web, "/web/settings/nudges", on="1", gratitude="1", gratitude_after="99", back="/web/settings?tab=notify")
+    v = owner_sql("SELECT value FROM ui_settings WHERE key = 'nudges'")[0]["value"]
+    assert (v["gratitude"], v["gratitude_after"]) == (True, 15.5)
+    act(web, "/web/settings/nudges", on="1", gratitude_after="1", back="/web/settings?tab=notify")
+    v = owner_sql("SELECT value FROM ui_settings WHERE key = 'nudges'")[0]["value"]
+    assert (v["gratitude"], v["gratitude_after"]) == (False, 2.0)
+    act(web, "/web/settings/nudges", on="1", gratitude="1", gratitude_after="x", back="/web/settings?tab=notify")
+    v = owner_sql("SELECT value FROM ui_settings WHERE key = 'nudges'")[0]["value"]
+    assert (v["gratitude"], v["gratitude_after"]) == (True, 14.0)
+    assert 'name="gratitude" value="1" checked' in web[0].get("/web/settings?tab=notify").text
